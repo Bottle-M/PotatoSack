@@ -4,6 +4,10 @@
 
 * https://learn.microsoft.com/zh-cn/partner-center/marketplace/find-tenant-object-id
 
+## 关于OneDrive权限
+
+* https://learn.microsoft.com/zh-cn/onedrive/developer/rest-api/concepts/permissions_reference?view=odsp-graph-online
+
 ## 403问题
 
 * `AccessDenied Either scp or roles claim need to be present in the token`  
