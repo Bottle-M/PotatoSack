@@ -3,7 +3,11 @@ package indi.somebottle.potatosack.onedrive;
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.microsoft.graph.authentication.TokenCredentialAuthProvider;
+import com.microsoft.graph.models.Drive;
+import com.microsoft.graph.models.DriveItem;
 import com.microsoft.graph.models.User;
+import com.microsoft.graph.requests.DriveCollectionPage;
+import com.microsoft.graph.requests.DriveItemCollectionPage;
 import com.microsoft.graph.requests.GraphServiceClient;
 import com.microsoft.graph.requests.UserCollectionPage;
 
@@ -30,9 +34,10 @@ public class Client {
                 .builder()
                 .authenticationProvider(authProvider)
                 .buildClient();
-        User usr = graphClient.users().byId("***REMOVED***").buildRequest().get();
-        if (usr != null) {
-            System.out.println("User: " + usr.id);
+        DriveItemCollectionPage dr = graphClient.users().byId("").drive().root().children().buildRequest().get();
+        List<DriveItem> drItems=dr.getCurrentPage();
+        for(DriveItem it:drItems) {
+            System.out.println(it.name);
         }
     }
 }
