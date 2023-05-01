@@ -1,8 +1,10 @@
 package indi.somebottle.potatosack.onedrive;
 
+import com.azure.identity.AuthorizationCodeCredentialBuilder;
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.microsoft.graph.authentication.TokenCredentialAuthProvider;
+import com.microsoft.graph.http.CustomRequest;
 import com.microsoft.graph.models.Drive;
 import com.microsoft.graph.models.DriveItem;
 import com.microsoft.graph.models.User;
@@ -29,7 +31,11 @@ public class Client {
                 .clientSecret(clientSecret)
                 .tenantId(tenantId)
                 .build();
+        // new AuthorizationCodeCredentialBuilder()
+        // IAuthenticationResult
+
         authProvider = new TokenCredentialAuthProvider(scopes, clientSecretCredential);
+
         graphClient = GraphServiceClient
                 .builder()
                 .authenticationProvider(authProvider)
