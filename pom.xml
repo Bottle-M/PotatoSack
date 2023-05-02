@@ -95,6 +95,12 @@
             <version>1.2.5</version>
         </dependency>
         <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.11.0</version>
+        </dependency>
+        <!--
+        <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpcore</artifactId>
             <version>4.4.16</version>
@@ -114,5 +120,6 @@
             <artifactId>httpasyncclient</artifactId>
             <version>4.1.5</version>
         </dependency>
+        -->
     </dependencies>
 </project>
