@@ -2,20 +2,22 @@ package indi.somebottle.potatosack.onedrive;
 
 
 import com.google.gson.Gson;
-import com.google.gson.JsonParser;
+import com.google.gson.annotations.SerializedName;
 import okhttp3.*;
-import org.apache.logging.log4j.message.Message;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 
+import indi.somebottle.potatosack.utils.Constants;
+
 public class TokenFetcher {
-    private final String endPoint = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+    private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
+
     private final String clientId;
     private final String clientScrt;
     private String refreshToken;
     private String accessToken;
-    private final Gson gson=new Gson();
+    private final Gson gson = new Gson();
 
     public TokenFetcher(String clientId, String clientSecret, String refreshToken) {
         this.clientId = clientId;
@@ -44,13 +46,21 @@ public class TokenFetcher {
 
             @Override
             public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
+                // 判断是否请求成功
+                ResponseBody responseBody = response.body();
+                if (responseBody == null) {
+                    System.out.println("Req Failed");
+                    return;
+                }
+                String rawResp = responseBody.string();
+                System.out.println(rawResp);
                 if (response.isSuccessful()) { // 请求成功执行
-                    response.body().string();
+
+
                 } else {
                     System.out.println("Req Failed");
-                    System.out.println(response.body().string());
-
-                    refreshToken = "hello world";
+                    ErrorResp respObj = gson.fromJson(rawResp, ErrorResp.class);
+                    System.out.println(respObj.errorDesc);
                 }
                 client.dispatcher().executorService().shutdown(); // 关闭线程
             }
@@ -61,4 +71,33 @@ public class TokenFetcher {
     public void setRefreshToken(String token) {
         refreshToken = token;
     }
+}
+
+/**
+ * 申请新AccessToken的返回字段
+ */
+class RefreshResp {
+    @SerializedName("access_token")
+    public String accessToken;
+    @SerializedName("token_type")
+    public String tokenType;
+    @SerializedName("expires_in")
+    public String expiresIn;
+    public String scope;
+    @SerializedName("refresh_token")
+    public String refreshToken;
+}
+
+/**
+ * 请求错误时返回的字段
+ */
+class ErrorResp {
+    public String error;
+    @SerializedName("error_description")
+    public String errorDesc;
+    @SerializedName("error_codes")
+    public String[] errorCodes;
+    public String timestamp;
+    @SerializedName("error_uri")
+    public String errorUri;
 }
