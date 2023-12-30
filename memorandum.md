@@ -30,3 +30,9 @@
   - 每天的全量备份+这天的增量备份称为**一组备份**
 2. 可以配置保存备份的组数，以及增量备份的粒度
 3. 可配置仅在有玩家时增量备份
+
+## 参考文档
+
+1. [通过用户身份访问MS Graph](https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token) （包括令牌刷新）  
+2. [大文件上传](https://learn.microsoft.com/en-us/onedrive/developer/rest-api/api/driveitem_createuploadsession?view=odsp-graph-online)  
+3. 

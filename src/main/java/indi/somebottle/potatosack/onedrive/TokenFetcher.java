@@ -2,7 +2,8 @@ package indi.somebottle.potatosack.onedrive;
 
 
 import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
+import indi.somebottle.potatosack.entities.ErrorResp;
+import indi.somebottle.potatosack.entities.RefreshResp;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 import org.jetbrains.annotations.NotNull;
@@ -106,31 +107,3 @@ public class TokenFetcher {
 
 }
 
-/**
- * 申请新AccessToken的返回字段
- */
-class RefreshResp {
-    @SerializedName("access_token")
-    public String accessToken;
-    @SerializedName("token_type")
-    public String tokenType;
-    @SerializedName("expires_in")
-    public String expiresIn;
-    public String scope;
-    @SerializedName("refresh_token")
-    public String refreshToken;
-}
-
-/**
- * 请求错误时返回的字段
- */
-class ErrorResp {
-    public String error;
-    @SerializedName("error_description")
-    public String errorDesc;
-    @SerializedName("error_codes")
-    public String[] errorCodes;
-    public String timestamp;
-    @SerializedName("error_uri")
-    public String errorUri;
-}

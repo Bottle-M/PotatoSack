@@ -1,10 +1,12 @@
 package indi.somebottle.potatosack.onedrive;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
+import indi.somebottle.potatosack.entities.drivechildren.Resp;
 
 public class Client {
+    private final TokenFetcher fetcher;
+
+    public Client(TokenFetcher fetcher) {
+        this.fetcher = fetcher;
+    }
 
 }
