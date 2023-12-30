@@ -13,7 +13,6 @@ public class Test {
         String clientSecret = test[1];
         String refreshToken = test[2];
         TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken);
-        fetcher.fetch();
         Client client = new Client(fetcher);
         List<Item> list = client.listItems();
         System.out.println(list);

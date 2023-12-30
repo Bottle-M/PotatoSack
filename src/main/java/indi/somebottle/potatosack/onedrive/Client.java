@@ -8,7 +8,9 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Client {
@@ -24,6 +26,7 @@ public class Client {
      * 列出根目录下所有项目
      *
      * @return 根目录下所有项目
+     * @apiNote 请在线程内调用此方法，可能阻塞
      */
     public List<Item> listItems() {
         return listItems("");
@@ -34,6 +37,7 @@ public class Client {
      *
      * @param path 指定目录（比如 "Documents" 指的是 "根目录/Documents"）
      * @return 指定目录中的所有项目Item
+     * @apiNote 请在线程内调用此方法，可能阻塞
      */
     public List<Item> listItems(String path) {
         String url;
@@ -44,7 +48,14 @@ public class Client {
         return requestChilds(url);
     }
 
-    public List<Item> requestChilds(String url) {
+    /**
+     * 发出子目录请求
+     *
+     * @param url 子目录请求URL
+     * @return 子目录中的所有项目
+     */
+    private List<Item> requestChilds(String url) {
+        List<Item> resList = new ArrayList<>(); // 子目录中的所有项目
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -55,18 +66,27 @@ public class Client {
             Response resp = client.newCall(req).execute();
             if (resp.isSuccessful() && resp.body() != null) {
                 Resp childrenResp = gson.fromJson(resp.body().string(), Resp.class);
+                resList = childrenResp.getValue();
                 if (childrenResp.getNextLink() != null) {
-                    List<Item> page = childrenResp.getValue();
                     // 递归分页请求
-                    page.addAll(requestChilds(childrenResp.getNextLink()));
-                    return page;
-                } else {
-                    return childrenResp.getValue();
+                    resList.addAll(requestChilds(childrenResp.getNextLink()));
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return null;
+        return resList;
+    }
+
+    /**
+     * 将本地文件上传到Onedrive中
+     *
+     * @param localPath  本地文件路径
+     * @param remotePath 远程文件路径
+     * @apiNote 请在线程内调用此方法，可能阻塞
+     */
+    public void uploadFile(String localPath, String remotePath) {
+        File file = new File(localPath);
+
     }
 }

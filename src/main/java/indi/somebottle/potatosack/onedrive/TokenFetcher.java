@@ -13,7 +13,6 @@ import java.io.IOException;
 import indi.somebottle.potatosack.utils.Constants;
 
 public class TokenFetcher {
-    private final Object lock = new Object(); // 同步锁（在获取token时若请求未完成，会阻塞）
     private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
     private final String clientId;
     private final String clientScrt;
@@ -29,6 +28,9 @@ public class TokenFetcher {
         this.accessToken = "";
     }
 
+    /**
+     * @apiNote 此方法会造成阻塞
+     */
     public void fetch() {
         OkHttpClient client = new OkHttpClient();
         RequestBody body = new FormBody.Builder()
@@ -41,53 +43,44 @@ public class TokenFetcher {
                 .url(endPoint)
                 .post(body)
                 .build();
-        Call call = client.newCall(postReq);
-        call.enqueue(new Callback() {
-            @Override
-            public void onFailure(@NotNull Call call, @NotNull IOException e) {
-                System.out.println("Req Failed");
-                setRefreshToken("");
-                setAccessToken("");
-                e.printStackTrace();
-                client.dispatcher().executorService().shutdown(); // 关闭线程
-                synchronized (lock) { // 释放同步锁
-                    lock.notifyAll();
-                }
-            }
 
-            @Override
-            public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
-                // 判断是否请求成功
+        try {
+            Response response = client.newCall(postReq).execute();
+
+            if (response.isSuccessful()) {
                 ResponseBody responseBody = response.body();
-                if (responseBody == null) {
-                    System.out.println("Req Failed");
-                    return;
-                }
-                String rawResp = responseBody.string();
-                System.out.println(rawResp);
-                if (response.isSuccessful()) { // 请求成功执行
+                if (responseBody != null) {
+                    String rawResp = responseBody.string();
                     RefreshResp respObj = gson.fromJson(rawResp, RefreshResp.class);
-                    // 更新RefreshToken和AccessToken
                     setRefreshToken(respObj.refreshToken);
                     setAccessToken(respObj.accessToken);
-                    // 计算下次刷新AccessToken和RefreshToken的时间（提前60秒）
                     nextRefreshTime = Utils.timeStamp() + Integer.parseInt(respObj.expiresIn) - 60;
-                    System.out.println("Req Success");
+                    System.out.println("Token Req Success");
                 } else {
-                    System.out.println("Req Failed");
-                    setRefreshToken("");
-                    setAccessToken("");
-                    ErrorResp respObj = gson.fromJson(rawResp, ErrorResp.class);
+                    System.out.println("Token Req Failed: Response body is null");
+                }
+            } else {
+                System.out.println("Token Req Failed");
+                setRefreshToken("");
+                setAccessToken("");
+                ResponseBody errorBody = response.body();
+                if (errorBody != null) {
+                    ErrorResp respObj = gson.fromJson(errorBody.string(), ErrorResp.class);
                     System.out.println(respObj.errorDesc);
+                } else {
+                    System.out.println("Token Req Error: Response body is empty");
                 }
-                synchronized (lock) { // 释放同步锁
-                    lock.notifyAll();
-                }
-                client.dispatcher().executorService().shutdown(); // 关闭线程
             }
-        });
-
+        } catch (IOException e) {
+            System.out.println("Token Req Failed");
+            setRefreshToken("");
+            setAccessToken("");
+            e.printStackTrace();
+        } finally {
+            client.dispatcher().executorService().shutdown(); // 关闭线程
+        }
     }
+
 
     public void setNextRefreshTime(long nextRefreshTime) {
         this.nextRefreshTime = nextRefreshTime;
@@ -113,17 +106,12 @@ public class TokenFetcher {
      * 获得AccessToken（如果没有准备好会阻塞）
      *
      * @return AccessToken
+     * @apiNote 请在线程内调用此方法，可能会阻塞
      */
     public String getAccessToken() {
-        synchronized (lock) {
-            try {
-                if (accessToken.equals(""))
-                    lock.wait();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            return accessToken;
-        }
+        if (accessToken.equals(""))
+            fetch();
+        return accessToken;
     }
 
 }
