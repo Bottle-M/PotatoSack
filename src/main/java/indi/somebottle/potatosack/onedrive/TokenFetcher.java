@@ -13,6 +13,7 @@ import java.io.IOException;
 import indi.somebottle.potatosack.utils.Constants;
 
 public class TokenFetcher {
+    private final Object lock = new Object(); // 同步锁（在获取token时若请求未完成，会阻塞）
     private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
     private final String clientId;
     private final String clientScrt;
@@ -48,6 +49,10 @@ public class TokenFetcher {
                 setRefreshToken("");
                 setAccessToken("");
                 e.printStackTrace();
+                client.dispatcher().executorService().shutdown(); // 关闭线程
+                synchronized (lock) { // 释放同步锁
+                    lock.notifyAll();
+                }
             }
 
             @Override
@@ -75,6 +80,9 @@ public class TokenFetcher {
                     ErrorResp respObj = gson.fromJson(rawResp, ErrorResp.class);
                     System.out.println(respObj.errorDesc);
                 }
+                synchronized (lock) { // 释放同步锁
+                    lock.notifyAll();
+                }
                 client.dispatcher().executorService().shutdown(); // 关闭线程
             }
         });
@@ -101,8 +109,21 @@ public class TokenFetcher {
         accessToken = token;
     }
 
+    /**
+     * 获得AccessToken（如果没有准备好会阻塞）
+     *
+     * @return AccessToken
+     */
     public String getAccessToken() {
-        return accessToken;
+        synchronized (lock) {
+            try {
+                if (accessToken.equals(""))
+                    lock.wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return accessToken;
+        }
     }
 
 }

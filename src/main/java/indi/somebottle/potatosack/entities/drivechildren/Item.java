@@ -21,6 +21,19 @@ public class Item {
         return folder != null;
     }
 
+    @Override
+    public String toString() {
+        return "Item{" +
+                "createdDateTime='" + createdDateTime + '\'' +
+                ", id='" + id + '\'' +
+                ", lastModifiedDateTime='" + lastModifiedDateTime + '\'' +
+                ", name='" + name + '\'' +
+                ", size=" + size +
+                ", folder=" + folder +
+                ", file=" + file +
+                '}';
+    }
+
     public String getCreatedDateTime() {
         return createdDateTime;
     }
