@@ -31,7 +31,7 @@
 3. 第三行为`Scopes`
 4. 别忘了在第三行末尾打一个换行符（回车）
 
-![SecretFile](./pics/SecretFile.png)   
+![InputFile](./pics/InputFile.png)   
 
 然后利用输入重定向的方式执行程序：`ms-graph-auth.exe < secret.txt` （在Linux上则是`./ms-graph-auth-linux-amd64 < secret.txt`）
 
