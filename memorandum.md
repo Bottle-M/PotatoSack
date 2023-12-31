@@ -17,6 +17,18 @@
 
 * https://learn.microsoft.com/zh-cn/onedrive/developer/rest-api/concepts/permissions_reference?view=odsp-graph-online
 
+## 关于Files.ReadWrite.AppFolder权限节点
+
+在配置权限时可以仅为文件读写分配此权限节点`Files.ReadWrite.AppFolder`。  
+
+此权限节点使得程序只能请求访问**应用目录下**的文件和目录，而不能访问用户其他文件，能很大程度上提升安全性。
+
+详见文档: https://learn.microsoft.com/zh-cn/onedrive/developer/rest-api/concepts/special-folders-appfolder?view=odsp-graph-online#getting-authorization-from-the-user  
+
+但是！就目前看来这个权限节点**仅仅支持**了`OneDrive Personal`（个人/家庭版）而没有支持`OneDrive Business`（企业版）。  
+
+对于后者，此权限节点的表现和`Files.ReadWrite.All`差不多。（微软官方好像很久前就说在考虑给ODB增加此权限节点，结果到现在都没加，老鸽子了）
+
 ## 403问题
 
 * `AccessDenied Either scp or roles claim need to be present in the token`  

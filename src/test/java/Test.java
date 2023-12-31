@@ -14,9 +14,14 @@ public class Test {
         String refreshToken = test[2];
         TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken);
         Client client = new Client(fetcher);
+        List<Item> items = client.listItems("test");
+        for (Item item : items) {
+            System.out.println(item);
+        }
+        /*
         if(client.createFolder("test"))
             System.out.println("success");
         else
-            System.out.println("fail");
+            System.out.println("fail");*/
     }
 }
