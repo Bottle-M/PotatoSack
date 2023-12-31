@@ -1,7 +1,7 @@
 package indi.somebottle.potatosack.entities.drivechildren;
 
 /**
- * /drives/{drive-id}/items/{item-id}/children - value - item
+ * children - value - item
  */
 public class Item {
     private String createdDateTime;

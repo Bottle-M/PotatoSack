@@ -1,7 +1,7 @@
 package indi.somebottle.potatosack.entities.drivechildren;
 
 /**
- * /drives/{drive-id}/items/{item-id}/children - value - item中的folder字段
+ * children - value - item中的folder字段
  */
 public class FolderDetails {
 

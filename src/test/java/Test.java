@@ -14,7 +14,9 @@ public class Test {
         String refreshToken = test[2];
         TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken);
         Client client = new Client(fetcher);
-        List<Item> list = client.listItems();
-        System.out.println(list);
+        if(client.createFolder("test"))
+            System.out.println("success");
+        else
+            System.out.println("fail");
     }
 }

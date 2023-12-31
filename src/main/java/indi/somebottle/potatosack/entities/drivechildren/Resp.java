@@ -5,7 +5,7 @@ import com.google.gson.annotations.SerializedName;
 import java.util.List;
 
 /**
- * me/drive/root/children 返回的字段
+ * children 返回的字段
  */
 public class Resp {
     @SerializedName("value")

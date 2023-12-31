@@ -63,10 +63,11 @@ public class TokenFetcher {
                 System.out.println("Token Req Failed");
                 setRefreshToken("");
                 setAccessToken("");
+                System.out.println(response.code());
+                System.out.println(response.message());
                 ResponseBody errorBody = response.body();
                 if (errorBody != null) {
-                    ErrorResp respObj = gson.fromJson(errorBody.string(), ErrorResp.class);
-                    System.out.println(respObj.errorDesc);
+                    System.out.println(errorBody.string());
                 } else {
                     System.out.println("Token Req Error: Response body is empty");
                 }
