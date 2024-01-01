@@ -2,6 +2,7 @@ import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.utils.ConfigOpts;
+import indi.somebottle.potatosack.utils.Utils;
 
 import java.util.List;
 
@@ -47,16 +48,25 @@ public class Test {
     }
 
     @org.junit.Test
-    public void splitTest(){
-        String test="20-30";
+    public void splitTest() {
+        String test = "20-30";
         System.out.println(test.split("-").length);
     }
 
     @org.junit.Test
-    public void uploadTest(){
-        if(client.uploadFile("E:\\Projects\\TestArea\\nichijou.mp4","test/nichijou.mp4"))
+    public void uploadTest() {
+        if (client.uploadFile("E:\\Projects\\TestArea\\nichijou.mp4", "test/nichijou.mp4"))
             System.out.println("success");
         else
             System.out.println("fail");
+    }
+
+    @org.junit.Test
+    public void zipTest() {
+        if (Utils.Zip("E:\\Projects\\TestArea\\incre_test\\root-minecraft-world", "E:\\Projects\\TestArea\\compress_test.zip")) {
+            System.out.println("success");
+        } else {
+            System.out.println("fail");
+        }
     }
 }

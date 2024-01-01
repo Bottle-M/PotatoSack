@@ -38,7 +38,7 @@ public class FileUploader {
             // 如果超过切片大小，就进行切片
             if (nextRange[1] == -1) // 服务端没指定下一段的endPos
                 endPos = Math.min(fileSize, startPos + Constants.CHUNK_SIZE) - 1;
-            else // 服务端指定了下一段的endPos
+            else // 服务端指定了下一段的endPos，注意服务端给出的就是字节位置，不需要-1
                 endPos = Math.min(nextRange[1], startPos + Constants.CHUNK_SIZE - 1);
             int status = uploadChunk(startPos, endPos);
             switch (status) {
