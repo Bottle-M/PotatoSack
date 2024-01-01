@@ -1,4 +1,4 @@
-import indi.somebottle.potatosack.entities.drivechildren.Item;
+import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.utils.ConfigOpts;
@@ -6,22 +6,57 @@ import indi.somebottle.potatosack.utils.ConfigOpts;
 import java.util.List;
 
 public class Test {
+    private final String[] test = ConfigOpts.getTestTokens();
+    private final String clientId = test[0];
+    private final String clientSecret = test[1];
+    private final String refreshToken = test[2];
+    private final TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken);
+    private final Client client = new Client(fetcher);
+
     @org.junit.Test
-    public void test() {
-        String[] test = ConfigOpts.getTestTokens();
-        String clientId = test[0];
-        String clientSecret = test[1];
-        String refreshToken = test[2];
-        TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken);
-        Client client = new Client(fetcher);
-        List<Item> items = client.listItems("test");
-        for (Item item : items) {
-            System.out.println(item);
-        }
+    public void getItem() {
+        Item item = client.getItem("test");
+        System.out.println(item);
         /*
         if(client.createFolder("test"))
             System.out.println("success");
         else
             System.out.println("fail");*/
+    }
+
+    @org.junit.Test
+    public void listItems() {
+        List<Item> items = client.listItems("test");
+        System.out.println(items);
+    }
+
+    @org.junit.Test
+    public void createFolder() {
+        if (client.createFolder("test"))
+            System.out.println("success");
+        else
+            System.out.println("fail");
+    }
+
+    @org.junit.Test
+    public void deleteItem() {
+        if (client.deleteItem("test/nichijou.mp4"))
+            System.out.println("success");
+        else
+            System.out.println("fail");
+    }
+
+    @org.junit.Test
+    public void splitTest(){
+        String test="20-30";
+        System.out.println(test.split("-").length);
+    }
+
+    @org.junit.Test
+    public void uploadTest(){
+        if(client.uploadFile("E:\\Projects\\TestArea\\nichijou.mp4","test/nichijou.mp4"))
+            System.out.println("success");
+        else
+            System.out.println("fail");
     }
 }

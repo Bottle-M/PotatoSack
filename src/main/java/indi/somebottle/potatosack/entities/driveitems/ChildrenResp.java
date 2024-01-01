@@ -1,4 +1,4 @@
-package indi.somebottle.potatosack.entities.drivechildren;
+package indi.somebottle.potatosack.entities.driveitems;
 
 import com.google.gson.annotations.SerializedName;
 
@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * children 返回的字段
  */
-public class Resp {
+public class ChildrenResp {
     @SerializedName("value")
     private List<Item> value; // 返回的目录子项
     @SerializedName("@odata.nextLink")
