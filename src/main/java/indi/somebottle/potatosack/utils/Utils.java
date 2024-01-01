@@ -35,17 +35,19 @@ public class Utils {
     /**
      * 把目录下所有文件打包成zip
      *
-     * @param srcDirPath  源目录路径
-     * @param zipFilePath 目标zip文件路径
+     * @param srcDirPath   源目录路径
+     * @param zipFilePath  目标zip文件路径
+     * @param packAsSrcDir 是否把srcDirPath下的所有文件都放在压缩包的【srcDirPath指向的目录名】的目录下
      * @return 是否打包成功
+     * @apiNote 比如srcDirPath='./test/myfolder'，如果packAsSrcDir=true，那么打包后的zip包中根目录下是myfolder，其中是myfolder中的所有文件； 否则根目录下则是myfolder内的所有文件。
      */
-    public static boolean Zip(String srcDirPath, String zipFilePath) {
+    public static boolean Zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
             File srcDir = new File(srcDirPath);
             System.out.println("Compressing... ");
-            addItemsToZip(srcDir, srcDir.getName(), zout);
+            addItemsToZip(srcDir, packAsSrcDir ? srcDir.getName() : "", zout);
             zout.closeEntry();
             zout.flush();
             System.out.println("Compress success. File: " + zipFilePath);
@@ -71,15 +73,16 @@ public class Utils {
             throw new Exception("Error: file list is null, this should not happen!");
         }
         for (File file : files) {
+            String currentDir = (parentDir.equals("") ? "" : (parentDir + "/")) + file.getName();
             if (file.isDirectory()) {
                 // 如果是目录就递归扫描文件
-                addItemsToZip(file, parentDir + "/" + file.getName(), zout);
+                addItemsToZip(file, currentDir, zout);
             } else {
                 // 如果是文件就写入Zip
                 try (BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file))) {
-                    System.out.println("Add file: " + parentDir + "/" + file.getName());
+                    System.out.println("Add file: " + currentDir);
                     // 将条目（文件）加入zip包
-                    ZipEntry zipEntry = new ZipEntry(parentDir + "/" + file.getName());
+                    ZipEntry zipEntry = new ZipEntry(currentDir);
                     zout.putNextEntry(zipEntry);
                     // 写入文件
                     int len;

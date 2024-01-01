@@ -92,7 +92,6 @@ public class FileUploader {
                     PutSessionResp respObj = gson.fromJson(respBody, PutSessionResp.class);
                     // 读取服务端期待收到的range
                     List<String> nextRanges = respObj.getNextExpectedRanges();
-                    System.out.println(respBody);
                     if (nextRanges != null && nextRanges.size() > 0) {
                         // 解析下一次要发送的字段
                         String[] nextRangeSp = nextRanges.get(0).split("-");
