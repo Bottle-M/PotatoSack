@@ -1,0 +1,32 @@
+# OneDrive API Configuration (Support OneDrive Business(ODB)/Personal(ODC))
+onedrive:
+  # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
+  # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/ms-graph-auth
+  client-id:
+  client-secret:
+  refresh-token:
+
+# The number of full backups to keep, actually it refers to "groups of backups" to keep.
+# Note: "A group of backups" consists of a full backup and a set of incremental backups following it(before the next full backup).
+# Note: If a full backup is deleted, all incremental backups following it before the next full backup will be deleted as well.
+max-full-backups-retained: 3
+
+# The interval of full backups (in minutes)
+# Note: The full backups will be generated according to the interval below.
+full-backup-interval: 1440
+
+# The interval of incremental backups (in minutes)
+# Note: The incremental backups will be generated according to the interval below.
+incremental-backup-check-interval: 15
+
+# Whether to stop backup when no player is online
+# Note: It may save you some data traffic expenses when nobody's there.
+stop-backup-when-no-player: true
+
+# The worlds that you would like to backup, example:
+# worlds:
+#  - world
+#  - world_nether
+#  - world_the_end
+# Note: If you leave this blank, the plugin won't work.
+worlds: [ ]

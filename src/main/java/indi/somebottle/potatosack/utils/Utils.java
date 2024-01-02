@@ -103,6 +103,7 @@ public class Utils {
      * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台
      */
     public static void logError(String msg) {
+        msg = "[" + Constants.PLUGIN_PREFIX + "] " + msg;
         System.out.println(msg);
         if (PotatoSack.plugin != null) {
             // 记录到服务端日志
