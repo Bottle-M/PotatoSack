@@ -19,7 +19,7 @@ public class FileUploader {
     private final File localFile;
     private final long fileSize;
     private final String uploadUrl;
-    private long[] nextRange = {0, -1}; // 接下来要上传的字节范围[start, end]，end=-1代表end=start+CHUNK_SIZE
+    private final long[] nextRange = {0, -1}; // 接下来要上传的字节范围[start, end]，end=-1代表end=start+CHUNK_SIZE
 
     public FileUploader(File localFile, String uploadUrl) {
         System.out.println("File upload task: " + localFile.getName() + " to " + uploadUrl);
@@ -101,23 +101,22 @@ public class FileUploader {
                         else // 正常时服务端返回"start-"
                             nextRange[1] = -1; // -1代表end=start+CHUNK_SIZE
                     } else {
-                        System.out.println("Error: no next ranges, resp body: ");
-                        System.out.println(respBody);
+                        String errMsg = "Error: no next ranges, resp body: " + respBody;
+                        Utils.logError(errMsg);
                         return -1;
                     }
                 }
                 return respCode;
             } else {
-                System.out.println("Upload req failed");
-                System.out.println(resp.code());
-                System.out.println(resp.message());
+                String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
                 ResponseBody errorBody = resp.body();
                 if (errorBody != null)
-                    System.out.println(errorBody.string());
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (IOException e) {
             System.out.println("File upload failed due to IO Error");
-            e.printStackTrace();
+            Utils.logError(e.getMessage());
         }
         return -1;
     }

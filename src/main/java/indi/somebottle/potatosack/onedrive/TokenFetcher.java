@@ -2,11 +2,10 @@ package indi.somebottle.potatosack.onedrive;
 
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.entities.ErrorResp;
 import indi.somebottle.potatosack.entities.RefreshResp;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 
@@ -29,6 +28,7 @@ public class TokenFetcher {
     }
 
     /**
+     * 获取/刷新token
      * @apiNote 此方法会造成阻塞
      */
     public void fetch() {
@@ -54,29 +54,25 @@ public class TokenFetcher {
                     RefreshResp respObj = gson.fromJson(rawResp, RefreshResp.class);
                     setRefreshToken(respObj.refreshToken);
                     setAccessToken(respObj.accessToken);
+                    // 更新下次更新时间（提前60秒）
                     nextRefreshTime = Utils.timeStamp() + Integer.parseInt(respObj.expiresIn) - 60;
                     System.out.println("Token Req Success");
                 } else {
                     System.out.println("Token Req Failed: Response body is null");
                 }
             } else {
-                System.out.println("Token Req Failed");
+                String errMsg = "Token Req Failed, code:" + response.code() + ", msg:" + response.message();
                 setRefreshToken("");
                 setAccessToken("");
-                System.out.println(response.code());
-                System.out.println(response.message());
                 ResponseBody errorBody = response.body();
-                if (errorBody != null) {
-                    System.out.println(errorBody.string());
-                } else {
-                    System.out.println("Token Req Error: Response body is empty");
-                }
+                if (errorBody != null)
+                    errMsg += ", body:" + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (IOException e) {
-            System.out.println("Token Req Failed");
+            Utils.logError("Token Req Failed" + e.getMessage());
             setRefreshToken("");
             setAccessToken("");
-            e.printStackTrace();
         } finally {
             client.dispatcher().executorService().shutdown(); // 关闭线程
         }

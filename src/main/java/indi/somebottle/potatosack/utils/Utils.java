@@ -1,5 +1,7 @@
 package indi.somebottle.potatosack.utils;
 
+import indi.somebottle.potatosack.PotatoSack;
+
 import java.io.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -53,8 +55,7 @@ public class Utils {
             System.out.println("Compress success. File: " + zipFilePath);
             return true;
         } catch (Exception e) {
-            System.out.println("Compression failed.");
-            e.printStackTrace();
+            Utils.logError("Compression failed: " + e.getMessage());
         }
         return false;
     }
@@ -92,6 +93,20 @@ public class Utils {
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * 记录插件出错信息（方便追溯）
+     *
+     * @param msg 错误信息字符串
+     * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台
+     */
+    public static void logError(String msg) {
+        System.out.println(msg);
+        if (PotatoSack.plugin != null) {
+            // 记录到服务端日志
+            PotatoSack.plugin.getLogger().severe(msg);
         }
     }
 }

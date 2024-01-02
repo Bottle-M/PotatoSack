@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.onedrive;
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.driveitems.*;
 import indi.somebottle.potatosack.utils.Constants;
+import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
 import java.io.File;
@@ -69,15 +70,14 @@ public class Client {
                     resList.addAll(requestChildren(childrenResp.getNextLink()));
                 }
             } else {
-                System.out.println("Children req failed");
-                System.out.println(resp.code());
-                System.out.println(resp.message());
+                String errMsg = "Children req failed, code: " + resp.code() + ", message: " + resp.message();
                 ResponseBody errorBody = resp.body();
                 if (errorBody != null)
-                    System.out.println(errorBody.string());
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Utils.logError(e.getMessage());
         }
         return resList;
     }
@@ -105,15 +105,14 @@ public class Client {
             if (resp.isSuccessful() && resp.body() != null) {
                 return gson.fromJson(resp.body().string(), Item.class);
             } else {
-                System.out.println("Item req failed");
-                System.out.println(resp.code());
-                System.out.println(resp.message());
+                String errMsg = "Item req failed, code: " + resp.code() + ", message: " + resp.message();
                 ResponseBody errorBody = resp.body();
                 if (errorBody != null)
-                    System.out.println(errorBody.string());
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Utils.logError(e.getMessage());
         }
         return null;
     }
@@ -148,15 +147,14 @@ public class Client {
                 FileUploader uploader = new FileUploader(localFile, uploadUrl);
                 return uploader.upload();
             } else {
-                System.out.println("Upload req failed");
-                System.out.println(resp.code());
-                System.out.println(resp.message());
+                String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
                 ResponseBody errorBody = resp.body();
                 if (errorBody != null)
-                    System.out.println(errorBody.string());
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Utils.logError(e.getMessage());
         }
         return false;
     }
@@ -181,15 +179,17 @@ public class Client {
             if (resp.isSuccessful() && resp.body() != null) {
                 return true;
             } else {
+                String errMsg = "Delete req failed, code: " + resp.code() + ", message: " + resp.message();
                 System.out.println("Delete req failed");
                 System.out.println(resp.code());
                 System.out.println(resp.message());
                 ResponseBody errorBody = resp.body();
                 if (errorBody != null)
-                    System.out.println(errorBody.string());
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Utils.logError(e.getMessage());
         }
         return false;
     }
@@ -232,15 +232,14 @@ public class Client {
                 System.out.println(resp.body().string());
                 return true;
             } else {
-                System.out.println("Folder req failed");
-                System.out.println(resp.code());
-                System.out.println(resp.message());
+                String errMsg = "Folder req failed, code: " + resp.code() + ", message: " + resp.message();
                 ResponseBody errorBody = resp.body();
                 if (errorBody != null)
-                    System.out.println(errorBody.string());
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Utils.logError(e.getMessage());
         }
         return false;
     }
