@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.RefreshResp;
+import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
@@ -10,6 +11,7 @@ import okhttp3.*;
 import java.io.IOException;
 
 import indi.somebottle.potatosack.utils.Constants;
+import okhttp3.internal.Util;
 
 public class TokenFetcher {
     private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
@@ -19,19 +21,41 @@ public class TokenFetcher {
     private long nextRefreshTime = 0;
     private String accessToken;
     private final Gson gson = new Gson();
+    private final Config config;
 
-    public TokenFetcher(String clientId, String clientSecret, String refreshToken) {
+    public TokenFetcher(String clientId, String clientSecret, String refreshToken, Config config) {
         this.clientId = clientId;
         this.clientScrt = clientSecret;
         this.refreshToken = refreshToken;
         this.accessToken = "";
+        this.config = config;
     }
 
     /**
-     * 获取/刷新token
+     * 刷新token
+     *
+     * @param retry 重试次数
+     * @return 是否刷新成功
+     */
+    public boolean refresh(int retry) {
+        int fetchRetry = 0;
+        while (fetchRetry < retry) {
+            if (fetch()) {
+                return true;
+            }
+            Utils.logError("Failed to Fetch Token, Retrying...(" + fetchRetry + 1 + "/" + retry + ")");
+            fetchRetry++;
+        }
+        return false;
+    }
+
+    /**
+     * 获取token
+     *
+     * @return 是否刷新成功
      * @apiNote 此方法会造成阻塞
      */
-    public void fetch() {
+    public boolean fetch() {
         OkHttpClient client = new OkHttpClient();
         RequestBody body = new FormBody.Builder()
                 .add("client_id", clientId)
@@ -57,6 +81,10 @@ public class TokenFetcher {
                     // 更新下次更新时间（提前60秒）
                     nextRefreshTime = Utils.timeStamp() + Integer.parseInt(respObj.expiresIn) - 60;
                     System.out.println("Token Req Success");
+                    // 更新配置文件中的refreshToken
+                    if (config != null)
+                        config.setConfig("onedrive.refresh-token", respObj.refreshToken);
+                    return true;
                 } else {
                     System.out.println("Token Req Failed: Response body is null");
                 }
@@ -76,6 +104,7 @@ public class TokenFetcher {
         } finally {
             client.dispatcher().executorService().shutdown(); // 关闭线程
         }
+        return false;
     }
 
 

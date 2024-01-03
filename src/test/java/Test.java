@@ -11,9 +11,15 @@ public class Test {
     private final String clientId = test[0];
     private final String clientSecret = test[1];
     private final String refreshToken = test[2];
-    private final TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken);
+    private final TokenFetcher fetcher = new TokenFetcher(clientId, clientSecret, refreshToken, null);
     private final Client client = new Client(fetcher);
 
+    @org.junit.Test
+    public void getNextRefreshTime(){
+        System.out.println(fetcher.getNextRefreshTime());
+        fetcher.getAccessToken();
+        System.out.println(fetcher.getNextRefreshTime());
+    }
     @org.junit.Test
     public void getItem() {
         Item item = client.getItem("test");

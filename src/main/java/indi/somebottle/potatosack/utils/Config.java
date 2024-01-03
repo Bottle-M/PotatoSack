@@ -52,6 +52,31 @@ public class Config {
     }
 
     /**
+     * 获取配置项
+     *
+     * @param path 配置字段路径
+     * @return 配置项对象
+     */
+    public Object getConfig(String path) {
+        if (config == null)
+            loadConfig();
+        return config.get(path, "");
+    }
+
+    /**
+     * 设置配置项值
+     *
+     * @param path  配置字段路径
+     * @param value 配置项值
+     */
+    public void setConfig(String path, Object value) {
+        if (config == null)
+            loadConfig();
+        config.set(path, value);
+        saveConfig();
+    }
+
+    /**
      * 重载配置内容
      *
      * @return 是否重载成功

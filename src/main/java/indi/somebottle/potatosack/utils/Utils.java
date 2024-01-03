@@ -1,6 +1,7 @@
 package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
+import org.bukkit.Bukkit;
 
 import java.io.*;
 import java.util.zip.ZipEntry;
@@ -103,11 +104,14 @@ public class Utils {
      * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台
      */
     public static void logError(String msg) {
-        msg = "[" + Constants.PLUGIN_PREFIX + "] " + msg;
+        String finalMsg = "[" + Constants.PLUGIN_PREFIX + "] " + msg;
         System.out.println(msg);
         if (PotatoSack.plugin != null) {
             // 记录到服务端日志
-            PotatoSack.plugin.getLogger().severe(msg);
+            // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
+            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
+                PotatoSack.plugin.getLogger().severe(finalMsg);
+            });
         }
     }
 }
