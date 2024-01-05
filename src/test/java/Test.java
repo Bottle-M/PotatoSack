@@ -22,7 +22,7 @@ public class Test {
     }
     @org.junit.Test
     public void getItem() {
-        Item item = client.getItem("test");
+        Item item = client.getItem("test/nichijou.mp4");
         System.out.println(item);
         /*
         if(client.createFolder("test"))
@@ -47,7 +47,7 @@ public class Test {
 
     @org.junit.Test
     public void deleteItem() {
-        if (client.deleteItem("test/nichijou.mp4"))
+        if (client.deleteItem("test"))
             System.out.println("success");
         else
             System.out.println("fail");
@@ -60,8 +60,16 @@ public class Test {
     }
 
     @org.junit.Test
-    public void uploadTest() {
-        if (client.uploadFile("E:\\Projects\\TestArea\\nichijou.mp4", "test/nichijou.mp4"))
+    public void smallFileUploadTest() {
+        if (client.uploadFile("E:\\Projects\\TestArea\\1.19.json", "test/test.json"))
+            System.out.println("success");
+        else
+            System.out.println("fail");
+    }
+
+    @org.junit.Test
+    public void largeFileUploadTest() {
+        if (client.uploadLargeFile("E:\\Projects\\TestArea\\nichijou.mp4", "test/nichijou.mp4"))
             System.out.println("success");
         else
             System.out.println("fail");

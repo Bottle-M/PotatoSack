@@ -1,5 +1,7 @@
 package indi.somebottle.potatosack.entities.driveitems;
 
+import com.google.gson.annotations.SerializedName;
+
 /**
  * children - value - item
  */
@@ -11,6 +13,8 @@ public class Item {
     private long size;
     private FolderDetails folder;
     private FileDetails file;
+    @SerializedName("@microsoft.graph.downloadUrl")
+    private String downloadUrl;
 
     /**
      * 判断是否是目录
@@ -31,7 +35,16 @@ public class Item {
                 ", size=" + size +
                 ", folder=" + folder +
                 ", file=" + file +
+                ", downloadUrl='" + downloadUrl + '\'' +
                 '}';
+    }
+
+    public String getDownloadUrl() {
+        return downloadUrl;
+    }
+
+    public void setDownloadUrl(String downloadUrl) {
+        this.downloadUrl = downloadUrl;
     }
 
     public String getCreatedDateTime() {

@@ -87,6 +87,7 @@ public class Client {
      *
      * @param path 项目路径，比如"Documents"指的就是 "根目录/Documents"
      * @return 项目详细信息
+     * @apiNote 同时包含项目文件的下载URL
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
     public Item getItem(String path) {
@@ -118,14 +119,55 @@ public class Client {
     }
 
     /**
-     * 将本地文件上传到Onedrive中
+     * 小文件上传(<=4MB)，当文件大于4MB时本方法会自动调用uploadLargeFile方法，转变为大文件分块上传
+     *
+     * @param localPath  本地文件路径
+     * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
+     * @return 是否上传成功
+     * @apiNote 请在线程内调用此方法，可能阻塞
+     * @apiNote 如果remotePath所指的文件已经存在，会更新这个文件
+     */
+    public boolean uploadFile(String localPath, String remotePath) {
+        if (!new File(localPath).exists() || remotePath.equals(""))
+            return false;
+        File localFile = new File(localPath);
+        if (localFile.length() > Constants.MAX_SMALL_FILE_SIZE) // 超过了小文件最大允许大小，转为大文件上传
+            return uploadLargeFile(localPath, remotePath);
+        // 以下为小文件上传
+        String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
+        // 构造请求
+        Request req = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + fetcher.getAccessToken())
+                .put(RequestBody.create(localFile, MediaType.parse("text/plain")))
+                .build();
+        try {
+            Response resp = client.newCall(req).execute();
+            if (resp.isSuccessful() && resp.body() != null) {
+                return true;
+            } else {
+                String errMsg = "File upload failed, code: " + resp.code() + ", message: " + resp.message();
+                ResponseBody errorBody = resp.body();
+                if (errorBody != null)
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
+            }
+        } catch (IOException e) {
+            Utils.logError(e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * 将本地大文件上传到Onedrive中
      *
      * @param localPath  本地文件路径
      * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
      * @return 是否上传成功
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
-    public boolean uploadFile(String localPath, String remotePath) {
+    public boolean uploadLargeFile(String localPath, String remotePath) {
         if (!new File(localPath).exists() || remotePath.equals(""))
             return false;
         File localFile = new File(localPath);
