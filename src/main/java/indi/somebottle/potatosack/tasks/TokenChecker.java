@@ -15,7 +15,7 @@ public class TokenChecker implements Runnable {
         // 检查发现到了下次要更新token的时候了
         if (Utils.timeStamp() > tokenFetcher.getNextRefreshTime()) {
             // 尝试更新token
-            if (!tokenFetcher.refresh(3)) {
+            if (!tokenFetcher.fetch()) {
                 // 更新失败
                 Utils.logError("Fatal: Token Refresh Failed!");
             }

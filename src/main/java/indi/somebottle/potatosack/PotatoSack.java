@@ -7,10 +7,13 @@ import indi.somebottle.potatosack.tasks.TokenChecker;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
+import indi.somebottle.potatosack.utils.Utils;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.io.IOException;
 
 public final class PotatoSack extends JavaPlugin {
     public static Plugin plugin = null;
@@ -30,8 +33,8 @@ public final class PotatoSack extends JavaPlugin {
         String refreshToken = (String) config.getConfig("onedrive.refresh-token");
         // 初始化TokenFetcher
         tokenFetcher = new TokenFetcher(clientId, clientScrt, refreshToken, config);
-        // 初次获取token，最多重试3次
-        if (!tokenFetcher.refresh(3)) {
+        // 初始化获取token
+        if (!tokenFetcher.fetch()) {
             sender.toConsole("Potato Sack Failed to Initialize!");
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
@@ -39,16 +42,21 @@ public final class PotatoSack extends JavaPlugin {
         // 初始化OneDrive客户端
         odClient = new Client(tokenFetcher);
         // 检查OneDrive上插件数据目录是否建立
-        if(odClient.getItem(Constants.OD_APP_DATA_FOLDER)==null){
-            sender.toConsole("Creating data folder in OneDrive.");
-            // 如果没有建立则建立数据目录
-            if(odClient.createFolder(Constants.OD_APP_DATA_FOLDER)){
-                sender.toConsole("Successfully created data folder in OneDrive.");
-            }else{
-                sender.toConsole("Fatal: Failed to create data folder in OneDrive.");
-                getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
-                return;
+        try {
+            if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {
+                sender.toConsole("Creating data folder in OneDrive.");
+                // 如果没有建立则建立数据目录
+                if (odClient.createFolder(Constants.OD_APP_DATA_FOLDER)) {
+                    sender.toConsole("Successfully created data folder in OneDrive.");
+                } else {
+                    throw new IOException("Failed to create data folder in OneDrive.");
+                }
             }
+        } catch (IOException e) {
+            // 因为网络原因(比如连接超时)导致目录建立失败
+            Utils.logError(e.getMessage());
+            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+            return;
         }
         // 初始化异步任务定时器
         // 每30秒检查一次AccessToken是否过期

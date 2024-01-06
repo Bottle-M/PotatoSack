@@ -6,6 +6,7 @@ import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Constants;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -38,15 +39,21 @@ public class BackupMaker {
      * 从云端拉取backups.json
      *
      * @return 是否拉取成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      */
-    public boolean pullBackupRecords() {
+    public boolean pullBackupRecords() throws IOException {
         // 先对OneDrive下的插件数据目录进行列表
-        List<Item> itemsRes = odClient.listItems(Constants.OD_APP_DATA_FOLDER);
-        List<String> folderNames = new ArrayList<>(); // 取出所有目录名
+        List<Item> itemsRes;
+        String latestFolderName=""; // 找出字典序上最大的一个子目录名，这里的目录名格式形如020240104000001
+        itemsRes = odClient.listItems(Constants.OD_APP_DATA_FOLDER);
         for (Item item : itemsRes) {
-            if (item.isFolder())
-                folderNames.add(item.getName());
+            if (item.getName().compareTo(latestFolderName) > 0)
+                latestFolderName = item.getName();
         }
+        if(latestFolderName.equals(""))
+            return false;
+        // 从云端拉取backups.json
+
         return true;
     }
 

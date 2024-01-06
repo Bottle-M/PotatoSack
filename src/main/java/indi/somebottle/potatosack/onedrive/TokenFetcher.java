@@ -29,24 +29,6 @@ public class TokenFetcher {
     }
 
     /**
-     * 刷新token
-     *
-     * @param retry 重试次数
-     * @return 是否刷新成功
-     */
-    public boolean refresh(int retry) {
-        int fetchRetry = 0;
-        while (fetchRetry < retry) {
-            if (fetch()) {
-                return true;
-            }
-            Utils.logError("Failed to Fetch Token, Retrying...(" + fetchRetry + 1 + "/" + retry + ")");
-            fetchRetry++;
-        }
-        return false;
-    }
-
-    /**
      * 获取token
      *
      * @return 是否刷新成功

@@ -8,6 +8,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
@@ -20,13 +21,14 @@ public class Test {
     private final Client client = new Client(fetcher);
 
     @org.junit.Test
-    public void getNextRefreshTime(){
+    public void getNextRefreshTime() {
         System.out.println(fetcher.getNextRefreshTime());
         fetcher.getAccessToken();
         System.out.println(fetcher.getNextRefreshTime());
     }
+
     @org.junit.Test
-    public void getItem() {
+    public void getItem() throws IOException {
         Item item = client.getItem("test/nichijou.mp4");
         System.out.println(item);
         /*
@@ -37,13 +39,13 @@ public class Test {
     }
 
     @org.junit.Test
-    public void listItems() {
+    public void listItems() throws IOException {
         List<Item> items = client.listItems("test");
         System.out.println(items);
     }
 
     @org.junit.Test
-    public void createFolder() {
+    public void createFolder() throws IOException {
         if (client.createFolder("test"))
             System.out.println("success");
         else
@@ -51,7 +53,7 @@ public class Test {
     }
 
     @org.junit.Test
-    public void deleteItem() {
+    public void deleteItem() throws IOException {
         if (client.deleteItem("test"))
             System.out.println("success");
         else
@@ -65,7 +67,7 @@ public class Test {
     }
 
     @org.junit.Test
-    public void smallFileUploadTest() {
+    public void smallFileUploadTest() throws IOException {
         if (client.uploadFile("E:\\Projects\\TestArea\\1.19.json", "test/test.json"))
             System.out.println("success");
         else
@@ -73,7 +75,7 @@ public class Test {
     }
 
     @org.junit.Test
-    public void largeFileUploadTest() {
+    public void largeFileUploadTest() throws IOException {
         if (client.uploadLargeFile("E:\\Projects\\TestArea\\nichijou.mp4", "test/nichijou.mp4"))
             System.out.println("success");
         else
@@ -87,6 +89,15 @@ public class Test {
         } else {
             System.out.println("fail");
         }
+    }
+
+    @org.junit.Test
+    public void downloadTest() throws IOException {
+        File file = new File("E:\\Projects\\TestArea\\download.mp4");
+        if (client.downloadFile("test/nichijou.mp4", file))
+            System.out.println("success");
+        else
+            System.out.println("fail");
     }
 
     @org.junit.Test

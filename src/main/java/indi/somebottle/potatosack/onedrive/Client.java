@@ -7,8 +7,7 @@ import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,9 +26,10 @@ public class Client {
      * 列出根目录下所有项目
      *
      * @return 根目录下所有项目
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
-    public List<Item> listItems() {
+    public List<Item> listItems() throws IOException {
         return listItems("");
     }
 
@@ -38,9 +38,10 @@ public class Client {
      *
      * @param path 指定目录（比如 "Documents" 指的是 "根目录/Documents"）
      * @return 指定目录中的所有项目Item
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
-    public List<Item> listItems(String path) {
+    public List<Item> listItems(String path) throws IOException {
         String url;
         if (path.equals("")) // 默认为根目录
             url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + "/children";
@@ -54,8 +55,9 @@ public class Client {
      *
      * @param url 子目录请求URL
      * @return 子目录中的所有项目
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      */
-    private List<Item> requestChildren(String url) {
+    private List<Item> requestChildren(String url) throws IOException {
         List<Item> resList = new ArrayList<>(); // 子目录中的所有项目
         // 构造请求
         Request req = new Request.Builder()
@@ -81,8 +83,57 @@ public class Client {
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
+            throw e;
         }
         return resList;
+    }
+
+    /**
+     * 把文件下载到本地
+     *
+     * @param path      文件在OneDrive的路径，比如"test.txt"指的就是 "根目录/test.txt"
+     * @param localFile 本地文件File对象，指定本地文件路径
+     * @return 是否成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
+     */
+    public boolean downloadFile(String path, File localFile) throws IOException {
+        Item item = getItem(path);
+        // 若项目不存在或不是文件则无法下载
+        if (item == null || item.isFolder())
+            return false;
+        String url = item.getDownloadUrl();
+        // 构造请求
+        Request req = new Request.Builder()
+                .url(url)
+                .build();
+        // 发送请求
+        try {
+            Response resp = client.newCall(req).execute();
+            if (!resp.isSuccessful() || resp.body() == null) {
+                String errMsg = "Download failed, code: " + resp.code() + ", message: " + resp.message();
+                ResponseBody errorBody = resp.body();
+                if (errorBody != null)
+                    errMsg += "\n Resp body: " + errorBody.string();
+                Utils.logError(errMsg);
+            } else {
+                try (InputStream inputStream = resp.body().byteStream();
+                     FileOutputStream fos = new FileOutputStream(localFile)) {
+                    // 缓冲
+                    byte[] buf = new byte[8192];
+                    int bytesRead;
+                    // 将数据流写入文件
+                    while ((bytesRead = inputStream.read(buf)) != -1) {
+                        fos.write(buf, 0, bytesRead);
+                    }
+                    fos.flush();
+                }
+                return true;
+            }
+        } catch (Exception e) {
+            Utils.logError(e.getMessage());
+            throw e;
+        }
+        return false;
     }
 
     /**
@@ -90,10 +141,11 @@ public class Client {
      *
      * @param path 项目路径，比如"Documents"指的就是 "根目录/Documents"
      * @return 项目详细信息
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 同时包含项目文件的下载URL
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
-    public Item getItem(String path) {
+    public Item getItem(String path) throws IOException {
         String url;
         if (path.equals("")) // 默认为根目录
             url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH;
@@ -117,6 +169,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            throw e;
         }
         return null;
     }
@@ -127,10 +180,11 @@ public class Client {
      * @param localPath  本地文件路径
      * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
      * @return 是否上传成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，可能阻塞
      * @apiNote 如果remotePath所指的文件已经存在，会更新这个文件
      */
-    public boolean uploadFile(String localPath, String remotePath) {
+    public boolean uploadFile(String localPath, String remotePath) throws IOException {
         if (!new File(localPath).exists() || remotePath.equals(""))
             return false;
         File localFile = new File(localPath);
@@ -158,6 +212,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            throw e;
         }
         return false;
     }
@@ -168,9 +223,10 @@ public class Client {
      * @param localPath  本地文件路径
      * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
      * @return 是否上传成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
-    public boolean uploadLargeFile(String localPath, String remotePath) {
+    public boolean uploadLargeFile(String localPath, String remotePath) throws IOException {
         if (!new File(localPath).exists() || remotePath.equals(""))
             return false;
         File localFile = new File(localPath);
@@ -200,6 +256,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            throw e;
         }
         return false;
     }
@@ -209,9 +266,10 @@ public class Client {
      *
      * @param path 指定路径，比如"Documents"指的就是 "根目录/Documents"
      * @return 是否删除成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
-    public boolean deleteItem(String path) {
+    public boolean deleteItem(String path) throws IOException {
         String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path;
         // 构造请求
         Request req = new Request.Builder()
@@ -235,6 +293,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            throw e;
         }
         return false;
     }
@@ -244,9 +303,10 @@ public class Client {
      *
      * @param name 目录名
      * @return 是否建立成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，会阻塞
      */
-    public boolean createFolder(String name) {
+    public boolean createFolder(String name) throws IOException {
         return createFolder("", name);
     }
 
@@ -256,9 +316,10 @@ public class Client {
      * @param path 路径（比如"Documents" 指的是 "根目录/Documents"）
      * @param name 目录名
      * @return 是否建立成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请在线程内调用此方法，会阻塞
      */
-    public boolean createFolder(String path, String name) {
+    public boolean createFolder(String path, String name) throws IOException {
         FolderRequest folderReq = new FolderRequest(name);
         String jsonReqBody = gson.toJson(folderReq);
         String url; // 子目录请求URL
@@ -285,6 +346,7 @@ public class Client {
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
+            throw e;
         }
         return false;
     }
