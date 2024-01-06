@@ -2,6 +2,7 @@ package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.utils.Constants;
+import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
@@ -14,7 +15,9 @@ import java.util.List;
  * <a href="https://learn.microsoft.com/zh-cn/onedrive/developer/rest-api/api/driveitem_createuploadsession?view=odsp-graph-online#remarks">文档备注</a>
  */
 public class FileUploader {
-    private final OkHttpClient client = new OkHttpClient();
+    private final OkHttpClient client = new OkHttpClient.Builder()
+            .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
+            .build();
     private final Gson gson = new Gson();
     private final File localFile;
     private final long fileSize;

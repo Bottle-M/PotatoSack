@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.onedrive;
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.driveitems.*;
 import indi.somebottle.potatosack.utils.Constants;
+import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
@@ -14,7 +15,9 @@ import java.util.List;
 public class Client {
     private final TokenFetcher fetcher;
     private final Gson gson = new Gson();
-    private final OkHttpClient client = new OkHttpClient();
+    private final OkHttpClient client = new OkHttpClient.Builder()
+            .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
+            .build();
 
     public Client(TokenFetcher fetcher) {
         this.fetcher = fetcher;
@@ -40,9 +43,9 @@ public class Client {
     public List<Item> listItems(String path) {
         String url;
         if (path.equals("")) // 默认为根目录
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + "/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + "/children";
         else // 指定子目录（相对根目录）
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + path + ":/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path + ":/children";
         return requestChildren(url);
     }
 
@@ -93,9 +96,9 @@ public class Client {
     public Item getItem(String path) {
         String url;
         if (path.equals("")) // 默认为根目录
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH;
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH;
         else // 指定子目录（相对根目录）
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + path;
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path;
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -135,7 +138,7 @@ public class Client {
             return uploadLargeFile(localPath, remotePath);
         // 以下为小文件上传
         String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
-        String url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -172,7 +175,7 @@ public class Client {
             return false;
         File localFile = new File(localPath);
         String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
-        String url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + remotePath + ":/createUploadSession";
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + remotePath + ":/createUploadSession";
         UploadRequest upReq = new UploadRequest(remoteName); // 构建请求表单
         String upReqJson = gson.toJson(upReq);
         // 构造请求
@@ -209,7 +212,7 @@ public class Client {
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
     public boolean deleteItem(String path) {
-        String url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + path;
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path;
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -260,9 +263,9 @@ public class Client {
         String jsonReqBody = gson.toJson(folderReq);
         String url; // 子目录请求URL
         if (path.equals("")) // 默认为根目录
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + "/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + "/children";
         else // 指定子目录（相对根目录）
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.ROOT_PATH + ":/" + path + ":/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path + ":/children";
         Request req = new Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())

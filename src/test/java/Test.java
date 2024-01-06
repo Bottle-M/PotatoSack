@@ -2,8 +2,13 @@ import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.utils.ConfigOpts;
+import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 
+import java.io.IOException;
 import java.util.List;
 
 public class Test {
@@ -81,6 +86,28 @@ public class Test {
             System.out.println("success");
         } else {
             System.out.println("fail");
+        }
+    }
+
+    @org.junit.Test
+    public void okHttp2Test() {
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(new HttpRetryInterceptor())
+                .build();
+        Request req = new Request.Builder()
+                .url("http://unreachable.com")
+                .header("Authorization", "Bearer " + fetcher.getAccessToken())
+                .build();
+        // 发送请求
+        try {
+            Response resp = client.newCall(req).execute();
+            if (resp.isSuccessful() && resp.body() != null) {
+                System.out.println("success");
+            } else {
+                System.out.println("not accessible");
+            }
+        } catch (IOException e) {
+            System.out.println("fail due to " + e.getMessage());
         }
     }
 }

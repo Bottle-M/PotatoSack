@@ -3,14 +3,11 @@ package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.RefreshResp;
-import indi.somebottle.potatosack.utils.Config;
-import indi.somebottle.potatosack.utils.ConsoleSender;
-import indi.somebottle.potatosack.utils.Utils;
+import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
 import java.io.IOException;
 
-import indi.somebottle.potatosack.utils.Constants;
 import okhttp3.internal.Util;
 
 public class TokenFetcher {
@@ -56,7 +53,9 @@ public class TokenFetcher {
      * @apiNote 此方法会造成阻塞
      */
     public boolean fetch() {
-        OkHttpClient client = new OkHttpClient();
+        OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
+                .build();
         RequestBody body = new FormBody.Builder()
                 .add("client_id", clientId)
                 .add("grant_type", "refresh_token")

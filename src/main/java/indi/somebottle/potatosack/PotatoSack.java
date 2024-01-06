@@ -1,10 +1,12 @@
 package indi.somebottle.potatosack;
 
+import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.tasks.BackupChecker;
 import indi.somebottle.potatosack.tasks.TokenChecker;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
+import indi.somebottle.potatosack.utils.Constants;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.Plugin;
@@ -15,6 +17,7 @@ public final class PotatoSack extends JavaPlugin {
     private final ConsoleSender sender = new ConsoleSender();
     private final Config config = new Config(); // 配置文件对象
     private TokenFetcher tokenFetcher; // TokenFetcher对象
+    private Client odClient; // OneDrive客户端
 
     @Override
     public void onEnable() {
@@ -33,11 +36,25 @@ public final class PotatoSack extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }
+        // 初始化OneDrive客户端
+        odClient = new Client(tokenFetcher);
+        // 检查OneDrive上插件数据目录是否建立
+        if(odClient.getItem(Constants.OD_APP_DATA_FOLDER)==null){
+            sender.toConsole("Creating data folder in OneDrive.");
+            // 如果没有建立则建立数据目录
+            if(odClient.createFolder(Constants.OD_APP_DATA_FOLDER)){
+                sender.toConsole("Successfully created data folder in OneDrive.");
+            }else{
+                sender.toConsole("Fatal: Failed to create data folder in OneDrive.");
+                getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+                return;
+            }
+        }
         // 初始化异步任务定时器
         // 每30秒检查一次AccessToken是否过期
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
         // 每60秒检查一次备份
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, new BackupChecker(tokenFetcher), 0, 20 * 60);
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, new BackupChecker(odClient), 0, 20 * 60);
 
         sender.toConsole("Potato Sack Successfully initialized! Savor using it!");
     }
