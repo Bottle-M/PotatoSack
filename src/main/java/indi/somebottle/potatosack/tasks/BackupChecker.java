@@ -1,7 +1,6 @@
 package indi.somebottle.potatosack.tasks;
 
 import indi.somebottle.potatosack.onedrive.Client;
-import indi.somebottle.potatosack.onedrive.TokenFetcher;
 
 public class BackupChecker implements Runnable {
     private final BackupMaker backupMaker;
@@ -17,8 +16,8 @@ public class BackupChecker implements Runnable {
      * @return 是否初始化成功
      */
     public boolean initialize() {
-        // 首先检查插件目录是否有backups.json
-        if(!backupMaker.getBackupRecordsFile().exists()){
+        // 首先检查插件目录是否有backup.json
+        if(!backupMaker.getBackupRecordFile().exists()){
             // 从云端抓取getBackupRecordsFile
 
         }

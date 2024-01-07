@@ -44,9 +44,9 @@ public class Client {
     public List<Item> listItems(String path) throws IOException {
         String url;
         if (path.equals("")) // 默认为根目录
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + "/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + "/children";
         else // 指定子目录（相对根目录）
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path + ":/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + path + ":/children";
         return requestChildren(url);
     }
 
@@ -97,6 +97,10 @@ public class Client {
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      */
     public boolean downloadFile(String path, File localFile) throws IOException {
+        File parentFile = localFile.getParentFile();
+        if (!parentFile.exists())
+            if (!parentFile.mkdirs()) // 创建缺失的目录
+                return false; // 建立失败
         Item item = getItem(path);
         // 若项目不存在或不是文件则无法下载
         if (item == null || item.isFolder())
@@ -148,9 +152,9 @@ public class Client {
     public Item getItem(String path) throws IOException {
         String url;
         if (path.equals("")) // 默认为根目录
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH;
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH;
         else // 指定子目录（相对根目录）
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path;
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + path;
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -192,7 +196,7 @@ public class Client {
             return uploadLargeFile(localPath, remotePath);
         // 以下为小文件上传
         String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
-        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -231,7 +235,7 @@ public class Client {
             return false;
         File localFile = new File(localPath);
         String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
-        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + remotePath + ":/createUploadSession";
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + remotePath + ":/createUploadSession";
         UploadRequest upReq = new UploadRequest(remoteName); // 构建请求表单
         String upReqJson = gson.toJson(upReq);
         // 构造请求
@@ -270,7 +274,7 @@ public class Client {
      * @apiNote 请在线程内调用此方法，可能阻塞
      */
     public boolean deleteItem(String path) throws IOException {
-        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path;
+        String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + path;
         // 构造请求
         Request req = new Request.Builder()
                 .url(url)
@@ -324,9 +328,9 @@ public class Client {
         String jsonReqBody = gson.toJson(folderReq);
         String url; // 子目录请求URL
         if (path.equals("")) // 默认为根目录
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + "/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + "/children";
         else // 指定子目录（相对根目录）
-            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_ROOT_PATH + ":/" + path + ":/children";
+            url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + path + ":/children";
         Request req = new Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())

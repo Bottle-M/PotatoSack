@@ -93,7 +93,7 @@ public class Test {
 
     @org.junit.Test
     public void downloadTest() throws IOException {
-        File file = new File("E:\\Projects\\TestArea\\download.mp4");
+        File file = new File("E:\\Projects\\TestArea\\testNewFolder\\test2\\download.mp4");
         if (client.downloadFile("test/nichijou.mp4", file))
             System.out.println("success");
         else
