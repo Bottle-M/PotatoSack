@@ -25,6 +25,7 @@ public final class PotatoSack extends JavaPlugin {
     @Override
     public void onEnable() {
         plugin = this; // 暴露插件对象
+        BackupChecker backupChecker;
         // 开始初始化插件
         sender.toConsole("Potato Sack Initializing...");
         // 初始化配置
@@ -52,6 +53,11 @@ public final class PotatoSack extends JavaPlugin {
                     throw new IOException("Failed to create data folder in OneDrive.");
                 }
             }
+            // 初始化备份核心
+            backupChecker = new BackupChecker(odClient, config);
+            // 初始化备份
+            if (!backupChecker.initialize())
+                throw new IOException("Failed to initialize backup module.");
         } catch (IOException e) {
             // 因为网络原因(比如连接超时)导致目录建立失败
             Utils.logError(e.getMessage());
@@ -61,8 +67,8 @@ public final class PotatoSack extends JavaPlugin {
         // 初始化异步任务定时器
         // 每30秒检查一次AccessToken是否过期
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
-        // 每60秒检查一次备份
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, new BackupChecker(odClient), 0, 20 * 60);
+        // 每60秒检查一次备份（首次执行前等待60秒)
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
 
         sender.toConsole("Potato Sack Successfully initialized! Savor using it!");
     }

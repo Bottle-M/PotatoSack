@@ -35,8 +35,8 @@ public class BackupMaker {
     public BackupRecord getBackupRecord() throws IOException {
         File backupRecordFile = getBackupRecordFile();
         if (!backupRecordFile.exists())
-            if (!pullBackupRecords()) // 获取失败
-                return null;
+            if (!pullRecordsFile("backup"))
+                return null; // 获取失败
         // 读入backup.json
         String backupJson = Arrays.toString(Files.readAllBytes(backupRecordFile.toPath()));
         // 解析成配置对象
@@ -45,6 +45,7 @@ public class BackupMaker {
 
     /**
      * 获得本地的backup.json文件对象
+     *
      * @return File对象
      */
     public File getBackupRecordFile() {
@@ -63,12 +64,13 @@ public class BackupMaker {
     }
 
     /**
-     * 从云端拉取backup.json
+     * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/*.json
      *
+     * @param fileName 文件名
      * @return 是否拉取成功
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      */
-    public boolean pullBackupRecords() throws IOException {
+    public boolean pullRecordsFile(String fileName) throws IOException {
         // 先对OneDrive下的插件数据目录进行列表
         List<Item> itemsRes;
         String latestFolderName = ""; // 找出字典序上最大的一个子目录名，这里的目录名格式形如020240104000001
@@ -80,8 +82,8 @@ public class BackupMaker {
         if (latestFolderName.equals(""))
             return false;
         // 从云端拉取backup.json
-        File backupRecordFile = new File(pluginDataPath + "backup.json");
-        return odClient.downloadFile(Constants.OD_APP_DATA_FOLDER + "/" + latestFolderName + "/backup.json", backupRecordFile);
+        File recordFile = new File(pluginDataPath + fileName + ".json");
+        return odClient.downloadFile(Constants.OD_APP_DATA_FOLDER + "/" + latestFolderName + "/" + fileName + ".json", recordFile);
     }
 
 
