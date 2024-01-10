@@ -1,3 +1,4 @@
+import indi.somebottle.potatosack.entities.backup.WorldRecord;
 import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
@@ -92,6 +93,20 @@ public class Test {
     }
 
     @org.junit.Test
+    public void zipSpecificDirTest() {
+        String[] testInput = {
+                "E:\\Projects\\TestArea\\test\\config",
+                "E:\\Projects\\TestArea\\test\\logs",
+                "E:\\Projects\\TestArea\\test\\plugins"
+        };
+        if (Utils.Zip(testInput, "E:\\Projects\\TestArea\\compress_test.zip")) {
+            System.out.println("success");
+        } else {
+            System.out.println("fail");
+        }
+    }
+
+    @org.junit.Test
     public void downloadTest() throws IOException {
         File file = new File("E:\\Projects\\TestArea\\testNewFolder\\test2\\download.mp4");
         if (client.downloadFile("test/nichijou.mp4", file))
@@ -120,5 +135,17 @@ public class Test {
         } catch (IOException e) {
             System.out.println("fail due to " + e.getMessage());
         }
+    }
+
+    @org.junit.Test
+    public void dateTest() {
+        System.out.println(Utils.getDateStr());
+    }
+
+    @org.junit.Test
+    public void getLastModifyTimesTest() {
+        List<WorldRecord.PathAndTime> lastModifyTimes = Utils.getLastModifyTimes(new File("E:\\Projects\\TestArea\\test\\plugins"), null, null);
+        for(WorldRecord.PathAndTime pathAndTime : lastModifyTimes)
+            System.out.println(pathAndTime.getPath()+" - "+pathAndTime.getTime());
     }
 }

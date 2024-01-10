@@ -2,14 +2,12 @@ package indi.somebottle.potatosack.tasks;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
-import indi.somebottle.potatosack.entities.backup.WorldRecord;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.Utils;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,7 +19,7 @@ public class BackupChecker implements Runnable {
 
     public BackupChecker(Client odClient, Config config) {
         this.odClient = odClient; // 初始化OneDrive客户端
-        this.backupMaker = new BackupMaker(odClient); // 初始化备份核心模块
+        this.backupMaker = new BackupMaker(odClient, config); // 初始化备份核心模块
         this.config = config;
     }
 
@@ -39,12 +37,7 @@ public class BackupChecker implements Runnable {
                 // 如果抓取失败就直接在本地新建文件
                 if (backupRecordFile.createNewFile()) {
                     // 初始化文件JSON内容
-                    BackupRecord rec = new BackupRecord();
-                    rec.setLastFullBackup(0L);
-                    rec.setLastIncreBackup(0L);
-                    rec.setFileUpdateTime(Utils.timeStamp());
-                    // 写入文件
-                    Files.write(backupRecordFile.toPath(), gson.toJson(rec).getBytes());
+                    backupMaker.writeBackupRecord(0, 0, "");
                 } else {
                     return false;
                 }
@@ -59,11 +52,7 @@ public class BackupChecker implements Runnable {
                 if (!backupMaker.pullRecordsFile(worldName)) {
                     // 如果抓取失败就直接在本地新建文件
                     if (worldRecordFile.createNewFile()) {
-                        WorldRecord rec = new WorldRecord();
-                        rec.setFileUpdateTime(Utils.timeStamp());
-                        rec.setLastModifyTimes(new ArrayList<>());
-                        // 写入文件
-                        Files.write(worldRecordFile.toPath(), gson.toJson(rec).getBytes());
+                        backupMaker.writeWorldRecord(worldName, new ArrayList<>());
                     } else {
                         return false;
                     }
@@ -74,6 +63,17 @@ public class BackupChecker implements Runnable {
 
     @Override
     public void run() {
-
+        // 先检查是不是该进行全量备份了
+        try {
+            BackupRecord bkRec = backupMaker.getBackupRecord();
+            long fullBackupInterval = (long) config.getConfig().get("full-backup-interval");
+            if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval) {
+                // 该进行全量备份了
+                if (!backupMaker.makeFullBackup())
+                    throw new IOException("Failed to make full backup");
+            }
+        } catch (IOException e) {
+            Utils.logError(e.getMessage());
+        }
     }
 }

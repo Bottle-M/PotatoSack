@@ -9,7 +9,7 @@ public class WorldRecord {
     private long fileUpdateTime; // 世界名.json文件更新时间戳
     private List<PathAndTime> lastModifyTimes; // 存放世界数据目录中所有文件的最后修改时间
 
-    public class PathAndTime {
+    public static class PathAndTime {
         private String path; // 文件相对路径
         private long time; // 文件最后修改时间戳
 
@@ -17,16 +17,18 @@ public class WorldRecord {
             return path;
         }
 
-        public void setPath(String path) {
+        public PathAndTime setPath(String path) {
             this.path = path;
+            return this;
         }
 
         public long getTime() {
             return time;
         }
 
-        public void setTime(long time) {
+        public PathAndTime setTime(long time) {
             this.time = time;
+            return this;
         }
     }
 

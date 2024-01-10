@@ -1,9 +1,14 @@
 package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
+import indi.somebottle.potatosack.entities.backup.WorldRecord;
 import org.bukkit.Bukkit;
 
 import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -36,6 +41,36 @@ public class Utils {
     }
 
     /**
+     * 遍历获取指定目录下所有文件的最后修改时间
+     *
+     * @param srcDir     待扫描目录（File对象）
+     * @param res        （递归用） 调用时传入null即可
+     * @param parentPath （递归用），传入null即可。存储父级相对目录，比如/root/server/world/data/test.file, 则parentPath=world/data
+     * @return List<WorldRecord.PathAndTime>对象
+     */
+    public static List<WorldRecord.PathAndTime> getLastModifyTimes(File srcDir, List<WorldRecord.PathAndTime> res, String parentPath) {
+        if (res == null)
+            res = new ArrayList<>();
+        if (parentPath == null)
+            parentPath = srcDir.getName();
+        File[] files = srcDir.listFiles();
+        for (File file : files) {
+            if (file.isFile()) {
+                // 是文件则加入
+                res.add(
+                        new WorldRecord.PathAndTime()
+                                .setPath(parentPath + "/" + file.getName())
+                                .setTime(file.lastModified() / 1000) // 秒级时间戳
+                );
+            } else if (file.isDirectory()) {
+                // 是目录则继续
+                getLastModifyTimes(file, res, parentPath + "/" + file.getName());
+            }
+        }
+        return res;
+    }
+
+    /**
      * 把目录下所有文件打包成zip
      *
      * @param srcDirPath   源目录路径
@@ -51,6 +86,33 @@ public class Utils {
             File srcDir = new File(srcDirPath);
             System.out.println("Compressing... ");
             addItemsToZip(srcDir, packAsSrcDir ? srcDir.getName() : "", zout);
+            zout.closeEntry();
+            zout.flush();
+            System.out.println("Compress success. File: " + zipFilePath);
+            return true;
+        } catch (Exception e) {
+            Utils.logError("Compression failed: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * 指定多个目录打包成zip
+     *
+     * @param srcDirPath  String[] ，指定要打包的目录路径（注意：路径需要是同一目录下的子目录）
+     * @param zipFilePath String 指定打包后的zip文件路径
+     * @return 是否打包成功
+     */
+    public static boolean Zip(String[] srcDirPath, String zipFilePath) {
+        try (
+                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
+        ) {
+            System.out.println("Compressing... ");
+            for (String path : srcDirPath) {
+                File srcDir = new File(path);
+                // 将指定目录内容加入包中
+                addItemsToZip(srcDir, srcDir.getName(), zout);
+            }
             zout.closeEntry();
             zout.flush();
             System.out.println("Compress success. File: " + zipFilePath);
@@ -113,5 +175,14 @@ public class Utils {
                 PotatoSack.plugin.getLogger().severe(finalMsg);
             });
         }
+    }
+
+    /**
+     * 获得日期字符串，形如20240104
+     *
+     * @return 日期字符串
+     */
+    public static String getDateStr() {
+        return new SimpleDateFormat("yyyyMMdd").format(new Date());
     }
 }

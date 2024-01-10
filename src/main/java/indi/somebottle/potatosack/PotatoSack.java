@@ -17,7 +17,6 @@ import java.io.IOException;
 
 public final class PotatoSack extends JavaPlugin {
     public static Plugin plugin = null;
-    private final ConsoleSender sender = new ConsoleSender();
     private final Config config = new Config(); // 配置文件对象
     private TokenFetcher tokenFetcher; // TokenFetcher对象
     private Client odClient; // OneDrive客户端
@@ -27,7 +26,7 @@ public final class PotatoSack extends JavaPlugin {
         plugin = this; // 暴露插件对象
         BackupChecker backupChecker;
         // 开始初始化插件
-        sender.toConsole("Potato Sack Initializing...");
+        ConsoleSender.toConsole("Potato Sack Initializing...");
         // 初始化配置
         String clientId = (String) config.getConfig("onedrive.client-id");
         String clientScrt = (String) config.getConfig("onedrive.client-secret");
@@ -36,7 +35,7 @@ public final class PotatoSack extends JavaPlugin {
         tokenFetcher = new TokenFetcher(clientId, clientScrt, refreshToken, config);
         // 初始化获取token
         if (!tokenFetcher.fetch()) {
-            sender.toConsole("Potato Sack Failed to Initialize!");
+            ConsoleSender.toConsole("Potato Sack Failed to Initialize!");
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }
@@ -45,10 +44,10 @@ public final class PotatoSack extends JavaPlugin {
         // 检查OneDrive上插件数据目录是否建立
         try {
             if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {
-                sender.toConsole("Creating data folder in OneDrive.");
+                ConsoleSender.toConsole("Creating data folder in OneDrive.");
                 // 如果没有建立则建立数据目录
                 if (odClient.createFolder(Constants.OD_APP_DATA_FOLDER)) {
-                    sender.toConsole("Successfully created data folder in OneDrive.");
+                    ConsoleSender.toConsole("Successfully created data folder in OneDrive.");
                 } else {
                     throw new IOException("Failed to create data folder in OneDrive.");
                 }
@@ -70,7 +69,7 @@ public final class PotatoSack extends JavaPlugin {
         // 每60秒检查一次备份（首次执行前等待60秒)
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
 
-        sender.toConsole("Potato Sack Successfully initialized! Savor using it!");
+        ConsoleSender.toConsole("Potato Sack Successfully initialized! Savor using it!");
     }
 
     @Override

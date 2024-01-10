@@ -12,6 +12,8 @@ public class BackupRecord {
     private long lastIncreBackup; // 上一次增量备份时间戳
     @SerializedName("file_update_time")
     private long fileUpdateTime; // backup.json文件更新时间戳
+    @SerializedName("last_backup_id")
+    private String lastBackupId; // 最近的一次备份组号
 
     public long getLastFullBackup() {
         return lastFullBackup;
@@ -35,5 +37,13 @@ public class BackupRecord {
 
     public void setFileUpdateTime(long fileUpdateTime) {
         this.fileUpdateTime = fileUpdateTime;
+    }
+
+    public String getLastBackupId() {
+        return lastBackupId;
+    }
+
+    public void setLastBackupId(String lastBackupId) {
+        this.lastBackupId = lastBackupId;
     }
 }
