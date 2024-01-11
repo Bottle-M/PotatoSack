@@ -8,7 +8,7 @@ import indi.somebottle.potatosack.utils.Utils;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 public class BackupChecker implements Runnable {
@@ -37,7 +37,7 @@ public class BackupChecker implements Runnable {
                 // 如果抓取失败就直接在本地新建文件
                 if (backupRecordFile.createNewFile()) {
                     // 初始化文件JSON内容
-                    backupMaker.writeBackupRecord(0, 0, "");
+                    backupMaker.writeBackupRecord(0, 0, "","");
                 } else {
                     return false;
                 }
@@ -52,7 +52,7 @@ public class BackupChecker implements Runnable {
                 if (!backupMaker.pullRecordsFile(worldName)) {
                     // 如果抓取失败就直接在本地新建文件
                     if (worldRecordFile.createNewFile()) {
-                        backupMaker.writeWorldRecord(worldName, new ArrayList<>());
+                        backupMaker.writeWorldRecord(worldName, new HashMap<>());
                     } else {
                         return false;
                     }
@@ -63,14 +63,23 @@ public class BackupChecker implements Runnable {
 
     @Override
     public void run() {
-        // 先检查是不是该进行全量备份了
         try {
+            // 先检查是不是该进行全量备份了
             BackupRecord bkRec = backupMaker.getBackupRecord();
-            long fullBackupInterval = (long) config.getConfig().get("full-backup-interval");
+            long fullBackupInterval = (long) config.getConfig("full-backup-interval");
             if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval) {
                 // 该进行全量备份了
                 if (!backupMaker.makeFullBackup())
                     throw new IOException("Failed to make full backup");
+                else
+                    return; // 执行了全量备份，就不检查增量备份了
+            }
+            // 检查是不是需要进行增量备份了
+            long increBackupInterval = (long) config.getConfig("incremental-backup-check-interval");
+            if (Utils.timeStamp() - bkRec.getLastIncreBackup() > increBackupInterval) {
+                // 该进行增量备份了
+                if (!backupMaker.makeIncreBackup())
+                    throw new IOException("Failed to make incremental backup");
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());

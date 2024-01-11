@@ -2,13 +2,12 @@ package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.WorldRecord;
+import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import org.bukkit.Bukkit;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -41,33 +40,118 @@ public class Utils {
     }
 
     /**
+     * 将指定路径转换为一个可以当作Map Key的字符串
+     *
+     * @param file 文件File对象
+     * @return 转换后的字符串
+     * @apiNote 比如<p>/root/server/world/region</p><p>转换为</p><p>world/region</p>
+     */
+    public static String pathRelativeToServer(File file) {
+        if (PotatoSack.plugin == null)
+            return file.getAbsolutePath();
+        // serverPath末尾没有/
+        String serverPath = PotatoSack.plugin.getDataFolder().getParentFile().getAbsolutePath();
+        // 这里替换时加上末尾的“/”再替换
+        return file.getAbsolutePath().replace(serverPath + File.separator, "");
+    }
+
+    /**
+     * 和pathRelativeToServer操作相反，将相对路径转换为服务器内的绝对路径
+     *
+     * @param relativePath 相对路径
+     * @return 服务器内的绝对路径
+     * @apiNote 比如<p>world/region</p><p>转换为</p><p>/root/server/world/region</p>
+     */
+    public static String pathAbsToServer(String relativePath) {
+        if (PotatoSack.plugin == null)
+            return relativePath;
+        // serverPath末尾没有/
+        String serverPath = PotatoSack.plugin.getDataFolder().getParentFile().getAbsolutePath();
+        // 这里替换时加上末尾的“/”
+        return serverPath + File.separator + relativePath;
+    }
+
+    /**
      * 遍历获取指定目录下所有文件的最后修改时间
      *
-     * @param srcDir     待扫描目录（File对象）
-     * @param res        （递归用） 调用时传入null即可
-     * @param parentPath （递归用），传入null即可。存储父级相对目录，比如/root/server/world/data/test.file, 则parentPath=world/data
-     * @return List<WorldRecord.PathAndTime>对象
+     * @param srcDir 待扫描目录（File对象）
+     * @param res    （递归用） 调用时传入null即可
+     * @return Map(String - > [文件路径, 文件最后修改时间])对象
      */
-    public static List<WorldRecord.PathAndTime> getLastModifyTimes(File srcDir, List<WorldRecord.PathAndTime> res, String parentPath) {
+    public static Map<String, String[]> getLastModifyTimes(File srcDir, Map<String, String[]> res) {
         if (res == null)
-            res = new ArrayList<>();
-        if (parentPath == null)
-            parentPath = srcDir.getName();
+            res = new HashMap<>();
         File[] files = srcDir.listFiles();
         for (File file : files) {
             if (file.isFile()) {
+                // 获得相对服务器根目录的路径，比如/root/server/world/region转换为world/region
+                String relativePath = pathRelativeToServer(file);
                 // 是文件则加入
-                res.add(
-                        new WorldRecord.PathAndTime()
-                                .setPath(parentPath + "/" + file.getName())
-                                .setTime(file.lastModified() / 1000) // 秒级时间戳
+                res.put(
+                        relativePath,
+                        new String[]{
+                                relativePath,
+                                String.valueOf(file.lastModified() / 1000) // 秒级时间戳
+                        }
                 );
             } else if (file.isDirectory()) {
                 // 是目录则继续
-                getLastModifyTimes(file, res, parentPath + "/" + file.getName());
+                getLastModifyTimes(file, res);
             }
         }
         return res;
+    }
+
+    /**
+     * 获得两个lastModifiedTime Map的差集
+     *
+     * @param oldMap 旧记录Map
+     * @param newMap 新记录Map
+     * @return 被删除的文件路径列表String List
+     * @apiNote 用于找出两个增量备份间被删除的文件
+     */
+    public static List<String> getDeletedFilePaths(Map<String, String[]> oldMap, Map<String, String[]> newMap) {
+        List<String> res = new ArrayList<>();
+        for (String key : oldMap.keySet()) {
+            if (!newMap.containsKey(key)) {
+                // 旧记录中的某个文件未出现在新记录中，被删除，加入结果中
+                res.add(key);
+            }
+        }
+        return res;
+    }
+
+    /**
+     * 将指定的文件打包成Zip
+     *
+     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param outputPath   输出Zip包的路径
+     * @return 是否打包成功
+     */
+    public static boolean ZipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath) {
+        System.out.println("Compressing...");
+        try (
+                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputPath)))
+        ) {
+            for (ZipFilePath zipFilePath : zipFilePaths) {
+                System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
+                zout.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
+                File file = new File(zipFilePath.filePath);
+                FileInputStream in = new FileInputStream(file);
+                byte[] buffer = new byte[8192]; // 写入文件
+                int len;
+                while ((len = in.read(buffer)) > 0) {
+                    zout.write(buffer, 0, len);
+                }
+                in.close();
+            }
+            zout.closeEntry();
+            zout.flush();
+            return true;
+        } catch (IOException e) {
+            Utils.logError("Zip specific files failed: " + e.getMessage());
+        }
+        return false;
     }
 
     /**

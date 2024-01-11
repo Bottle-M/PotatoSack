@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.entities.backup.WorldRecord;
+import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
@@ -15,10 +16,7 @@ import org.bukkit.World;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -56,15 +54,16 @@ public class BackupMaker {
      *
      * @param lastFullBackupTime  最近一次全量备份时间戳
      * @param lastIncreBackupTime 最近一次增量备份时间戳
-     * @param lastBackupId        最近一次备份组号
+     * @param lastFullBackupId    最近一次备份组号
      * @throws IOException IO异常
      */
-    public void writeBackupRecord(long lastFullBackupTime, long lastIncreBackupTime, String lastBackupId) throws IOException {
+    public void writeBackupRecord(long lastFullBackupTime, long lastIncreBackupTime, String lastFullBackupId, String lastIncreBackupId) throws IOException {
         BackupRecord rec = new BackupRecord();
         rec.setLastFullBackup(lastFullBackupTime);
         rec.setLastIncreBackup(lastIncreBackupTime);
         rec.setFileUpdateTime(Utils.timeStamp());
-        rec.setLastBackupId(lastBackupId);
+        rec.setLastFullBackupId(lastFullBackupId);
+        rec.setLastIncreBackupId(lastIncreBackupId);
         writeBackupRecord(rec);
     }
 
@@ -87,7 +86,7 @@ public class BackupMaker {
      * @param recList   世界记录WorldRecord
      * @throws IOException IO异常
      */
-    public void writeWorldRecord(String worldName, List<WorldRecord.PathAndTime> recList) throws IOException {
+    public void writeWorldRecord(String worldName, Map<String, String[]> recList) throws IOException {
         WorldRecord rec = new WorldRecord();
         rec.setFileUpdateTime(Utils.timeStamp());
         rec.setLastModifyTimes(recList);
@@ -199,7 +198,7 @@ public class BackupMaker {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
-        // 压缩相应文件
+        // 获得世界名
         List<String> worlds = (List<String>) config.getConfig("worlds");
         // 各个世界的目录路径
         List<String> worldPaths = new ArrayList<>();
@@ -214,7 +213,7 @@ public class BackupMaker {
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             worldPaths.add(worldAbsPath);
             // 扫描世界目录下的所有文件，获得修改时间（为增量备份做准备）
-            List<WorldRecord.PathAndTime> lastModifyTimes = Utils.getLastModifyTimes(new File(worldAbsPath), null, null);
+            Map<String, String[]> lastModifyTimes = Utils.getLastModifyTimes(new File(worldAbsPath), null);
             // 世界名.json中存放世界数据目录中所有文件的最后修改时间
             writeWorldRecord(worldName, lastModifyTimes);
         }
@@ -227,12 +226,12 @@ public class BackupMaker {
             return false;
         // 3. 上传压缩好的文件
         String backUpId; // 备份组号
-        if (rec.getLastBackupId().equals("")) {
+        if (rec.getLastFullBackupId().equals("")) {
             // 尚无备份组，从序号1开始
             backUpId = "0" + Utils.getDateStr() + "000001";
         } else {
             // 末尾序号
-            int serial = Integer.parseInt(rec.getLastBackupId().substring(9)) + 1;
+            int serial = Integer.parseInt(rec.getLastFullBackupId().substring(9)) + 1;
             backUpId = "0" + Utils.getDateStr() + String.format("%06d", serial);
         }
         ConsoleSender.toConsole("Uploading Zipped Worlds...");
@@ -240,7 +239,7 @@ public class BackupMaker {
             return false;
         // 4. 更新备份记录
         // 写入backup.json
-        rec.setLastBackupId(backUpId);
+        rec.setLastFullBackupId(backUpId);
         rec.setLastFullBackup(Utils.timeStamp());
         writeBackupRecord(rec);
         // 5. 上传备份记录
@@ -274,5 +273,83 @@ public class BackupMaker {
         return true;
     }
 
+    /**
+     * 建立一个增量备份
+     *
+     * @return 是否成功
+     */
+    public boolean makeIncreBackup() throws IOException {
+        ConsoleSender.toConsole("Making incremental backup...");
+        // 获得备份记录文件
+        BackupRecord rec = getBackupRecord();
+        // 获得世界名
+        List<String> worlds = (List<String>) config.getConfig("worlds");
+        // 各个世界的目录路径（绝对路径）
+        List<String> worldPaths = new ArrayList<>();
+        // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
+        List<String> deletedPaths = new ArrayList<>();
+        // 所有有变动文件的 【绝对路径】（方便Zip打包）
+        List<ZipFilePath> increFilePaths = new ArrayList<>();
+        // 1. 扫描每个世界目录找到有差异的文件
+        for (String worldName : worlds) {
+            // 获得各个世界的配置文件;
+            World world = PotatoSack.plugin.getServer().getWorld(worldName);
+            if (world == null) {
+                Utils.logError("World " + worldName + " not found, ignored.");
+                continue;
+            }
+            String worldAbsPath = world.getWorldFolder().getAbsolutePath();
+            worldPaths.add(worldAbsPath);
+            // 扫描世界目录下的所有文件，获得修改时间（为增量备份做准备）
+            Map<String, String[]> lastModifyTimes = Utils.getLastModifyTimes(new File(worldAbsPath), null);
+            // 获得上一次增量备份时的文件修改时间
+            WorldRecord prevWorldRec = getWorldRecord(worldName);
+            Map<String, String[]> prevLastModifyTimes = prevWorldRec.getLastModifyTimes();
+            // 找到被删除的文件的路径
+            deletedPaths.addAll(
+                    Utils.getDeletedFilePaths(prevLastModifyTimes, lastModifyTimes)
+            );
+            // 找到发生变动的文件的绝对路径
+            for (String key : lastModifyTimes.keySet())
+                // 新记录中新出现的文件 or 新记录中的文件最后修改时间相比旧记录有变动
+                if (!prevLastModifyTimes.containsKey(key) || !prevLastModifyTimes.get(key)[1].equals(lastModifyTimes.get(key)[1]))
+                    increFilePaths.add( // 添加到增量文件列表
+                            new ZipFilePath(Utils.pathAbsToServer( // 获得文件绝对路径以便Zip打包
+                                    lastModifyTimes.get(key)[0]
+                            ))
+                    );
+            // 更新 世界名.json 中存放世界数据目录中所有文件的最后修改时间
+            writeWorldRecord(worldName, lastModifyTimes);
+        }
+        // 2. 压缩
+        // 写入deleted.files文件
+        String deletedRecordPath = pluginTempPath + "deleted.files";
+        String deletedFileContent = String.join("\n", deletedPaths) + "\n";
+        Files.write(new File(deletedRecordPath).toPath(), deletedFileContent.getBytes());
+        // 把deleted.files文件也加入压缩包
+        increFilePaths.add(new ZipFilePath(deletedRecordPath, "deleted.files"));
+        ConsoleSender.toConsole("Compressing...");
+        // 压缩
+        // 增量备份序号
+        String increBackupId = rec.getLastIncreBackupId();
+        if (increBackupId.equals("")) {
+            // 若还没有序号记载则从1开始
+            increBackupId = "000001";
+        } else {
+            // 否则在上一次的基础上递增
+            long increBackupIdNum = Long.parseLong(increBackupId);
+            increBackupId = String.format("%06d", increBackupIdNum + 1);
+        }
+        // 输出文件路径
+        String outputPath = pluginTempPath + "incre" + increBackupId + ".zip";
+        // 执行压缩
+        if (!Utils.ZipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath))
+            return false;
+        // 3. 上传
 
+        // 4. 更新备份记录
+        rec.setLastIncreBackupId(increBackupId);
+        // 5. 上传备份记录
+        return true;
+    }
 }

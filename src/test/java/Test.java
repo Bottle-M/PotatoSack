@@ -1,4 +1,5 @@
 import indi.somebottle.potatosack.entities.backup.WorldRecord;
+import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
@@ -12,6 +13,7 @@ import okhttp3.Response;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 public class Test {
     private final String[] test = ConfigOpts.getTestTokens();
@@ -144,8 +146,25 @@ public class Test {
 
     @org.junit.Test
     public void getLastModifyTimesTest() {
-        List<WorldRecord.PathAndTime> lastModifyTimes = Utils.getLastModifyTimes(new File("E:\\Projects\\TestArea\\test\\plugins"), null, null);
-        for(WorldRecord.PathAndTime pathAndTime : lastModifyTimes)
-            System.out.println(pathAndTime.getPath()+" - "+pathAndTime.getTime());
+        File testF = new File("E:\\Projects\\TestArea\\test\\plugins");
+        Map<String, String[]> lastModifyTimes = Utils.getLastModifyTimes(testF, null);
+        System.out.println("Parent dir: " + testF.getParentFile().getAbsolutePath() + File.separator);
+        for (String key : lastModifyTimes.keySet())
+            System.out.println(lastModifyTimes.get(key)[0] + " - " + lastModifyTimes.get(key)[1]);
+    }
+
+    @org.junit.Test
+    public void zipSpecificFileTest() {
+        ZipFilePath[] testInput = {
+                new ZipFilePath("E:\\Projects\\TestArea\\1.19.json", "test/test.json"),
+                new ZipFilePath("E:\\Projects\\TestArea\\nichijou.mp4", "nichijou.mp4")
+        };
+        if (Utils.ZipSpecificFiles(testInput, "E:\\Projects\\TestArea\\compress_test.zip")) {
+            System.out.println("success");
+        } else {
+            System.out.println("fail");
+        }
     }
 }
+
+
