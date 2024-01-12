@@ -48,12 +48,11 @@ public class TokenFetcher {
                 .url(endPoint)
                 .post(body)
                 .build();
-
+        ResponseBody responseBody = null;
         try {
             Response response = client.newCall(postReq).execute();
-
             if (response.isSuccessful()) {
-                ResponseBody responseBody = response.body();
+                responseBody = response.body();
                 if (responseBody != null) {
                     String rawResp = responseBody.string();
                     RefreshResp respObj = gson.fromJson(rawResp, RefreshResp.class);
@@ -73,9 +72,9 @@ public class TokenFetcher {
                 String errMsg = "Token Req Failed, code:" + response.code() + ", msg:" + response.message();
                 setRefreshToken("");
                 setAccessToken("");
-                ResponseBody errorBody = response.body();
-                if (errorBody != null)
-                    errMsg += ", body:" + errorBody.string();
+                responseBody = response.body();
+                if (responseBody != null)
+                    errMsg += ", body:" + responseBody.string();
                 Utils.logError(errMsg);
             }
         } catch (IOException e) {
@@ -83,6 +82,8 @@ public class TokenFetcher {
             setRefreshToken("");
             setAccessToken("");
         } finally {
+            if (responseBody != null)
+                responseBody.close();
             client.dispatcher().executorService().shutdown(); // 关闭线程
         }
         return false;

@@ -68,6 +68,7 @@ public class FileUploader {
      * @return 上传后返回的状态码（只有2XX状态码会返回，其余全返回-1）
      */
     private int uploadChunk(long start, long end) {
+        ResponseBody respBody = null;
         try {
             // 生成Range头
             String range = "bytes " + start + "-" + end + "/" + fileSize;
@@ -89,10 +90,10 @@ public class FileUploader {
                 int respCode = resp.code();
                 if (respCode == 202) {
                     // 返回202说明还需要上传其他字节
-                    if (resp.body() == null) return -1;
-                    String respBody = resp.body().string();
+                    respBody = resp.body();
+                    if (respBody == null) return -1;
                     // 读取响应
-                    PutSessionResp respObj = gson.fromJson(respBody, PutSessionResp.class);
+                    PutSessionResp respObj = gson.fromJson(respBody.string(), PutSessionResp.class);
                     // 读取服务端期待收到的range
                     List<String> nextRanges = respObj.getNextExpectedRanges();
                     if (nextRanges != null && nextRanges.size() > 0) {
@@ -112,15 +113,19 @@ public class FileUploader {
                 return respCode;
             } else {
                 String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (IOException e) {
             System.out.println("File upload failed due to IO Error");
             Utils.logError(e.getMessage());
             e.printStackTrace();
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return -1;
     }

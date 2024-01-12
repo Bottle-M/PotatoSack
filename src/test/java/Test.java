@@ -1,4 +1,3 @@
-import indi.somebottle.potatosack.entities.backup.WorldRecord;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.driveitems.Item;
 import indi.somebottle.potatosack.onedrive.Client;
@@ -87,7 +86,7 @@ public class Test {
 
     @org.junit.Test
     public void zipTest() {
-        if (Utils.Zip("E:\\Projects\\TestArea\\incre_test\\root-minecraft-world", "E:\\Projects\\TestArea\\compress_test.zip", false)) {
+        if (Utils.Zip("E:\\Projects\\TestArea\\incre_test\\root-minecraft-world", "E:\\Projects\\TestArea\\compress_test.zip", false, false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");
@@ -101,7 +100,7 @@ public class Test {
                 "E:\\Projects\\TestArea\\test\\logs",
                 "E:\\Projects\\TestArea\\test\\plugins"
         };
-        if (Utils.Zip(testInput, "E:\\Projects\\TestArea\\compress_test.zip")) {
+        if (Utils.Zip(testInput, "E:\\Projects\\TestArea\\compress_test.zip", false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");
@@ -159,7 +158,7 @@ public class Test {
                 new ZipFilePath("E:\\Projects\\TestArea\\1.19.json", "test/test.json"),
                 new ZipFilePath("E:\\Projects\\TestArea\\nichijou.mp4", "nichijou.mp4")
         };
-        if (Utils.ZipSpecificFiles(testInput, "E:\\Projects\\TestArea\\compress_test.zip")) {
+        if (Utils.ZipSpecificFiles(testInput, "E:\\Projects\\TestArea\\compress_test.zip", false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");

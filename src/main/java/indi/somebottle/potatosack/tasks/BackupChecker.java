@@ -73,7 +73,7 @@ public class BackupChecker implements Runnable {
         try {
             // 先检查是不是该进行全量备份了
             BackupRecord bkRec = backupMaker.getBackupRecord();
-            long fullBackupInterval = (long) config.getConfig("full-backup-interval");
+            long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
             if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval) {
                 // 该进行全量备份了
                 Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
@@ -88,7 +88,7 @@ public class BackupChecker implements Runnable {
             // 如果在线人数为0且配置了【无人时不进行增量备份】，则不进行增量备份检查
             if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig("stop-backup-when-no-player"))
                 return;
-            long increBackupInterval = (long) config.getConfig("incremental-backup-check-interval");
+            long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
             if (Utils.timeStamp() - bkRec.getLastIncreBackup() > increBackupInterval) {
                 // 该进行增量备份了
                 Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发

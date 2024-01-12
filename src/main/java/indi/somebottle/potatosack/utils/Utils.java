@@ -21,6 +21,20 @@ public class Utils {
     }
 
     /**
+     * 将代表数值的Object对象转换为long
+     *
+     * @param obj Object
+     * @return long
+     */
+    public static long objToLong(Object obj) {
+        if (obj instanceof Integer) {
+            return (long) (Integer) obj;
+        } else {
+            return (long) obj;
+        }
+    }
+
+    /**
      * 从文件中指定位置开始读取指定字节数
      *
      * @param file   文件
@@ -129,15 +143,17 @@ public class Utils {
      *
      * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
      * @param outputPath   输出Zip包的路径
+     * @param quiet        是否静默打包
      * @return 是否打包成功
      */
-    public static boolean ZipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath) {
+    public static boolean ZipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath, boolean quiet) {
         System.out.println("Compressing...");
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputPath)))
         ) {
             for (ZipFilePath zipFilePath : zipFilePaths) {
-                System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
+                if (!quiet)
+                    System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
                 zout.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
                 File file = new File(zipFilePath.filePath);
                 FileInputStream in = new FileInputStream(file);
@@ -163,16 +179,17 @@ public class Utils {
      * @param srcDirPath   源目录路径
      * @param zipFilePath  目标zip文件路径
      * @param packAsSrcDir 是否把srcDirPath下的所有文件都放在压缩包的【srcDirPath指向的目录名】的目录下
+     * @param quiet        是否静默打包
      * @return 是否打包成功
      * @apiNote 比如srcDirPath='./test/myfolder'，如果packAsSrcDir=true，那么打包后的zip包中根目录下是myfolder，其中是myfolder中的所有文件； 否则根目录下则是myfolder内的所有文件。
      */
-    public static boolean Zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir) {
+    public static boolean Zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
             File srcDir = new File(srcDirPath);
             System.out.println("Compressing... ");
-            addItemsToZip(srcDir, packAsSrcDir ? srcDir.getName() : "", zout);
+            addItemsToZip(srcDir, packAsSrcDir ? srcDir.getName() : "", zout, quiet);
             zout.closeEntry();
             zout.flush();
             System.out.println("Compress success. File: " + zipFilePath);
@@ -188,9 +205,10 @@ public class Utils {
      *
      * @param srcDirPath  String[] ，指定要打包的目录路径（注意：路径需要是同一目录下的子目录）
      * @param zipFilePath String 指定打包后的zip文件路径
+     * @param quiet       是否静默打包
      * @return 是否打包成功
      */
-    public static boolean Zip(String[] srcDirPath, String zipFilePath) {
+    public static boolean Zip(String[] srcDirPath, String zipFilePath, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
@@ -198,7 +216,7 @@ public class Utils {
             for (String path : srcDirPath) {
                 File srcDir = new File(path);
                 // 将指定目录内容加入包中
-                addItemsToZip(srcDir, srcDir.getName(), zout);
+                addItemsToZip(srcDir, srcDir.getName(), zout, quiet);
             }
             zout.closeEntry();
             zout.flush();
@@ -216,9 +234,10 @@ public class Utils {
      * @param srcDir    源目录File对象
      * @param parentDir 父目录路径
      * @param zout      Zip输出流（Buffered）
+     * @param quiet     是否静默打包
      * @throws Exception 打包失败抛出异常
      */
-    private static void addItemsToZip(File srcDir, String parentDir, ZipOutputStream zout) throws Exception {
+    private static void addItemsToZip(File srcDir, String parentDir, ZipOutputStream zout, boolean quiet) throws Exception {
         File[] files = srcDir.listFiles();
         if (files == null) {
             throw new Exception("Error: file list is null, this should not happen!");
@@ -227,11 +246,12 @@ public class Utils {
             String currentDir = (parentDir.equals("") ? "" : (parentDir + "/")) + file.getName();
             if (file.isDirectory()) {
                 // 如果是目录就递归扫描文件
-                addItemsToZip(file, currentDir, zout);
+                addItemsToZip(file, currentDir, zout, quiet);
             } else {
                 // 如果是文件就写入Zip
                 try (BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file))) {
-                    System.out.println("Add file: " + currentDir);
+                    if (!quiet)
+                        System.out.println("Add file: " + currentDir);
                     // 将条目（文件）加入zip包
                     ZipEntry zipEntry = new ZipEntry(currentDir);
                     zout.putNextEntry(zipEntry);

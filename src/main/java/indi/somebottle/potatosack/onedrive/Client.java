@@ -64,11 +64,13 @@ public class Client {
                 .url(url)
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())
                 .build();
+        ResponseBody respBody = null;
         // 发送请求
         try {
             Response resp = client.newCall(req).execute();
-            if (resp.isSuccessful() && resp.body() != null) {
-                ChildrenResp childrenResp = gson.fromJson(resp.body().string(), ChildrenResp.class);
+            respBody = resp.body();
+            if (resp.isSuccessful() && respBody != null) {
+                ChildrenResp childrenResp = gson.fromJson(respBody.string(), ChildrenResp.class);
                 resList = childrenResp.getValue();
                 if (childrenResp.getNextLink() != null) {
                     // 递归分页请求
@@ -76,15 +78,19 @@ public class Client {
                 }
             } else {
                 String errMsg = "Children req failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return resList;
     }
@@ -111,17 +117,19 @@ public class Client {
         Request req = new Request.Builder()
                 .url(url)
                 .build();
+        ResponseBody respBody = null;
         // 发送请求
         try {
             Response resp = client.newCall(req).execute();
-            if (!resp.isSuccessful() || resp.body() == null) {
+            respBody = resp.body();
+            if (!resp.isSuccessful() || respBody == null) {
                 String errMsg = "Download failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
+                ResponseBody errorBody = respBody;
                 if (errorBody != null)
                     errMsg += "\n Resp body: " + errorBody.string();
                 Utils.logError(errMsg);
             } else {
-                try (InputStream inputStream = resp.body().byteStream();
+                try (InputStream inputStream = respBody.byteStream();
                      FileOutputStream fos = new FileOutputStream(localFile)) {
                     // 缓冲
                     byte[] buf = new byte[8192];
@@ -138,6 +146,10 @@ public class Client {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return false;
     }
@@ -162,21 +174,27 @@ public class Client {
                 .url(url)
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())
                 .build();
+        ResponseBody respBody = null;
         try {
             Response resp = client.newCall(req).execute();
-            if (resp.isSuccessful() && resp.body() != null) {
-                return gson.fromJson(resp.body().string(), Item.class);
+            respBody = resp.body();
+            if (resp.isSuccessful() && respBody != null) {
+                return gson.fromJson(respBody.string(), Item.class);
             } else {
                 String errMsg = "Item req failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return null;
     }
@@ -206,21 +224,27 @@ public class Client {
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())
                 .put(RequestBody.create(localFile, MediaType.parse("text/plain")))
                 .build();
+        ResponseBody respBody = null;
         try {
             Response resp = client.newCall(req).execute();
-            if (resp.isSuccessful() && resp.body() != null) {
+            respBody = resp.body();
+            if (resp.isSuccessful() && respBody != null) {
                 return true;
             } else {
                 String errMsg = "File upload failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return false;
     }
@@ -248,24 +272,30 @@ public class Client {
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())
                 .post(RequestBody.create(upReqJson, MediaType.parse("application/json")))
                 .build();
+        ResponseBody respBody = null;
         try {
             Response resp = client.newCall(req).execute();
-            if (resp.isSuccessful() && resp.body() != null) {
-                UpSessionCreateResp crResp = gson.fromJson(resp.body().string(), UpSessionCreateResp.class);
+            respBody = resp.body();
+            if (resp.isSuccessful() && respBody != null) {
+                UpSessionCreateResp crResp = gson.fromJson(respBody.string(), UpSessionCreateResp.class);
                 String uploadUrl = crResp.getUploadUrl();
                 FileUploader uploader = new FileUploader(localFile, uploadUrl);
                 return uploader.upload();
             } else {
                 String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return false;
     }
@@ -286,24 +316,30 @@ public class Client {
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())
                 .delete() // DELETE请求
                 .build();
+        ResponseBody respBody = null;
         try {
             Response resp = client.newCall(req).execute();
-            if (resp.isSuccessful() && resp.body() != null) {
+            respBody = resp.body();
+            if (resp.isSuccessful() && respBody != null) {
                 return true;
             } else {
                 String errMsg = "Delete req failed, code: " + resp.code() + ", message: " + resp.message();
                 System.out.println("Delete req failed");
                 System.out.println(resp.code());
                 System.out.println(resp.message());
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        } finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return false;
     }
@@ -342,22 +378,28 @@ public class Client {
                 .header("Authorization", "Bearer " + fetcher.getAccessToken())
                 .post(RequestBody.create(jsonReqBody, MediaType.parse("application/json")))
                 .build();
+        ResponseBody respBody = null;
         try {
             Response resp = client.newCall(req).execute();
-            if (resp.isSuccessful() && resp.body() != null) {
-                System.out.println(resp.body().string());
+            respBody = resp.body();
+            if (resp.isSuccessful() && respBody != null) {
+                System.out.println(respBody.string());
                 return true;
             } else {
                 String errMsg = "Folder req failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = resp.body();
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                respBody = resp.body();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
+        }finally {
+            // 关闭responseBody
+            if (respBody != null)
+                respBody.close();
         }
         return false;
     }

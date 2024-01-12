@@ -36,6 +36,13 @@ public class BackupMaker {
         this.config = config;
         pluginTempPath = PotatoSack.plugin.getDataFolder() + File.separator + "temp" + File.separator;
         pluginDataPath = PotatoSack.plugin.getDataFolder() + File.separator + "data" + File.separator;
+        // 建立必要的目录
+        File tempDir = new File(pluginTempPath);
+        if (!tempDir.exists())
+            tempDir.mkdirs();
+        File dataDir = new File(pluginDataPath);
+        if (!dataDir.exists())
+            dataDir.mkdirs();
     }
 
     /**
@@ -222,7 +229,7 @@ public class BackupMaker {
         ConsoleSender.toConsole("Compressing...");
         String tempFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
         // 压缩
-        if (!Utils.Zip(worldPaths.toArray(new String[0]), tempFilePath))
+        if (!Utils.Zip(worldPaths.toArray(new String[0]), tempFilePath, true))
             return false;
         // 3. 上传压缩好的文件
         String lastFullBackupId; // 备份组号
@@ -349,7 +356,7 @@ public class BackupMaker {
         // 输出文件路径
         String outputPath = pluginTempPath + "incre" + increBackupId + ".zip";
         // 执行压缩
-        if (!Utils.ZipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath))
+        if (!Utils.ZipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath, true))
             return false;
         // 3. 上传
         ConsoleSender.toConsole("Uploading Incremental Backup...");
