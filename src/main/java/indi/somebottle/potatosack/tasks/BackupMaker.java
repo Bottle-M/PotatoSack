@@ -46,6 +46,21 @@ public class BackupMaker {
     }
 
     /**
+     * 请理临时目录中的文件
+     */
+    public void cleanTempDir() {
+        File tempDir = new File(pluginTempPath);
+        if (tempDir.exists()) {
+            File[] files = tempDir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    file.delete();
+                }
+            }
+        }
+    }
+
+    /**
      * 写入本地的backup.json
      *
      * @param rec 备份记录BackupRecord对象
@@ -333,6 +348,11 @@ public class BackupMaker {
                     );
             // 更新 世界名.json 中存放世界数据目录中所有文件的最后修改时间
             writeWorldRecord(worldName, lastModifyTimes);
+        }
+        // 若没有文件变更则不进行本次增量备份
+        if (increFilePaths.size() == 0 && deletedPaths.size() == 0) {
+            ConsoleSender.toConsole("No new files found, skip this incremental backup.");
+            return true;
         }
         // 2. 压缩
         // 写入deleted.files文件

@@ -1,5 +1,7 @@
 package indi.somebottle.potatosack;
 
+import indi.somebottle.potatosack.command.PotatoSackExecutor;
+import indi.somebottle.potatosack.command.PotatoSackTabCompleter;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.tasks.BackupChecker;
@@ -9,11 +11,14 @@ import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.Utils;
 import org.bukkit.Bukkit;
+import org.bukkit.command.Command;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.io.File;
 import java.io.IOException;
 
 public final class PotatoSack extends JavaPlugin {
@@ -32,6 +37,8 @@ public final class PotatoSack extends JavaPlugin {
     @Override
     public void onEnable() {
         plugin = this; // 暴露插件对象
+        System.out.println("[DEBUG]" +
+                "Server root dir: " + new File(System.getProperty("user.dir")));
         BackupChecker backupChecker;
         // 开始初始化插件
         System.out.println("Potato Sack Initializing...");
@@ -65,19 +72,27 @@ public final class PotatoSack extends JavaPlugin {
             // 初始化备份
             if (!backupChecker.initialize())
                 throw new IOException("Failed to initialize backup module.");
-        } catch (IOException e) {
+            // 初始化异步任务定时器
+            // 每30秒检查一次AccessToken是否过期
+            checkTasks[0] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
+            // 每60秒检查一次备份（首次执行前等待60秒)
+            checkTasks[1] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
+            // 注册重载配置指令
+            PluginCommand mainCommand = getCommand("potatosack");
+            if (mainCommand == null)
+                throw new NullPointerException("Unable to get command, this should not happen.");
+            // 设置指令执行者
+            mainCommand.setExecutor(new PotatoSackExecutor(config));
+            // 注册TAB补全
+            mainCommand.setTabCompleter(new PotatoSackTabCompleter());
+        } catch (Exception e) {
             // 因为网络原因(比如连接超时)导致目录建立失败
             Utils.logError(e.getMessage());
             e.printStackTrace();
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }
-        // 初始化异步任务定时器
-        // 每30秒检查一次AccessToken是否过期
-        checkTasks[0] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
-        // 每60秒检查一次备份（首次执行前等待60秒)
-        checkTasks[1] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
-        ConsoleSender.toConsole("PotatoSack Successfully initialized! Savor using it!");
+        ConsoleSender.toConsole("PotatoSack successfully initialized! Savor using it!");
     }
 
     @Override

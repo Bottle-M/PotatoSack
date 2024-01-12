@@ -14,7 +14,7 @@ public final class ConsoleSender {
      */
     public static void toConsoleSync(String text) {
         // 通过CommandSender对象的方法发送信息到控制台
-        String msg=ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + text;
+        String msg = ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + " " + text;
         CommandSender sender = Bukkit.getConsoleSender();
         sender.sendMessage(msg);
     }
@@ -27,7 +27,7 @@ public final class ConsoleSender {
      */
     public static void toConsole(String text) {
         // 通过CommandSender对象的方法发送信息到控制台
-        String msg=ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + text;
+        String msg = ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "]" + ChatColor.RESET + " " + text;
         Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
             // 放到主线程中执行
             PotatoSack.plugin.getLogger().info(msg);
@@ -43,7 +43,21 @@ public final class ConsoleSender {
     public static void toPlayer(Player target, String text) {
         // 放在主线程中执行
         Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-            target.sendMessage(ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + text);
+            target.sendMessage(ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "]" + ChatColor.RESET + " " + text);
         });
+    }
+
+    /**
+     * 自动判断是玩家还是控制台，进而发送消息
+     *
+     * @param sender 发送者对象
+     * @param text   待发送的消息内容
+     */
+    public static void autoSend(Object sender, String text) {
+        if (sender instanceof Player) {
+            toPlayer((Player) sender, text);
+        } else {
+            toConsole(text);
+        }
     }
 }

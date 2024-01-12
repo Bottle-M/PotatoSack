@@ -2,6 +2,11 @@ name: PotatoSack
 version: '${project.version}'
 main: indi.somebottle.potatosack.PotatoSack
 api-version: 1.19
-authors: [SomeBottle]
+authors: [ SomeBottle ]
 description: A simple plugin to automatically make backups
 website: https://github.com/Bottle-M
+commands:
+  potatosack:
+    description: "Reload configs of PotatoSack"
+    usage: "/potatosack reload"
+    permission: potatosack.reload

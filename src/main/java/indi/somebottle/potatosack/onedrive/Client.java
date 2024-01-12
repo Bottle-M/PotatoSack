@@ -383,7 +383,6 @@ public class Client {
             Response resp = client.newCall(req).execute();
             respBody = resp.body();
             if (resp.isSuccessful() && respBody != null) {
-                System.out.println(respBody.string());
                 return true;
             } else {
                 String errMsg = "Folder req failed, code: " + resp.code() + ", message: " + resp.message();
@@ -396,7 +395,7 @@ public class Client {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             throw e;
-        }finally {
+        } finally {
             // 关闭responseBody
             if (respBody != null)
                 respBody.close();

@@ -64,10 +64,7 @@ public class Utils {
      * @apiNote 比如<p>/root/server/world/region</p><p>转换为</p><p>world/region</p>
      */
     public static String pathRelativeToServer(File file) {
-        if (PotatoSack.plugin == null)
-            return file.getAbsolutePath();
-        // serverPath末尾没有/
-        String serverPath = PotatoSack.plugin.getDataFolder().getParentFile().getAbsolutePath();
+        String serverPath = new File(System.getProperty("user.dir")).getAbsolutePath();
         // 这里替换时加上末尾的“/”再替换
         return file.getAbsolutePath().replace(serverPath + File.separator, "");
     }
@@ -80,10 +77,7 @@ public class Utils {
      * @apiNote 比如<p>world/region</p><p>转换为</p><p>/root/server/world/region</p>
      */
     public static String pathAbsToServer(String relativePath) {
-        if (PotatoSack.plugin == null)
-            return relativePath;
-        // serverPath末尾没有/
-        String serverPath = PotatoSack.plugin.getDataFolder().getParentFile().getAbsolutePath();
+        String serverPath = new File(System.getProperty("user.dir")).getAbsolutePath();
         // 这里替换时加上末尾的“/”
         return serverPath + File.separator + relativePath;
     }

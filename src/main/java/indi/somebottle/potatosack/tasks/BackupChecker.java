@@ -74,11 +74,13 @@ public class BackupChecker implements Runnable {
             // 先检查是不是该进行全量备份了
             BackupRecord bkRec = backupMaker.getBackupRecord();
             long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
-            if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval) {
+            // 注意fullBackupInterval单位是分钟
+            if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval * 60) {
                 // 该进行全量备份了
                 Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
                 boolean bkRes = backupMaker.makeFullBackup();
                 Utils.BACKUP_SEMAPHORE.release();
+                backupMaker.cleanTempDir(); // 请理临时目录
                 if (!bkRes)
                     throw new IOException("Failed to make full backup");
                 else
@@ -89,17 +91,20 @@ public class BackupChecker implements Runnable {
             if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig("stop-backup-when-no-player"))
                 return;
             long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
-            if (Utils.timeStamp() - bkRec.getLastIncreBackup() > increBackupInterval) {
+            // 注意increBackupInterval单位是分钟
+            if (Utils.timeStamp() - bkRec.getLastIncreBackup() > increBackupInterval * 60) {
                 // 该进行增量备份了
                 Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
                 boolean bkRes = backupMaker.makeIncreBackup();
                 Utils.BACKUP_SEMAPHORE.release();
+                backupMaker.cleanTempDir(); // 请理临时目录
                 if (!bkRes)
                     throw new IOException("Failed to make incremental backup");
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
             e.printStackTrace();
+            backupMaker.cleanTempDir(); // 请理临时目录
         }
     }
 }
