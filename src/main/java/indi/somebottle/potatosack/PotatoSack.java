@@ -24,12 +24,17 @@ public final class PotatoSack extends JavaPlugin {
 
     private final BukkitTask[] checkTasks = new BukkitTask[2]; // 定时检查任务数组
 
+    /**
+     * 插件启动时进行的操作
+     *
+     * @apiNote 此处输出主要是System.out的方法实现，因为主线程会被阻塞
+     */
     @Override
     public void onEnable() {
         plugin = this; // 暴露插件对象
         BackupChecker backupChecker;
         // 开始初始化插件
-        ConsoleSender.toConsole("Potato Sack Initializing...");
+        System.out.println("Potato Sack Initializing...");
         // 初始化配置
         String clientId = (String) config.getConfig("onedrive.client-id");
         String clientScrt = (String) config.getConfig("onedrive.client-secret");
@@ -38,7 +43,7 @@ public final class PotatoSack extends JavaPlugin {
         tokenFetcher = new TokenFetcher(clientId, clientScrt, refreshToken, config);
         // 初始化获取token
         if (!tokenFetcher.fetch()) {
-            ConsoleSender.toConsole("Potato Sack Failed to Initialize! Please check configs.yml");
+            System.out.println("Potato Sack Failed to Initialize! Please check configs.yml");
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }
@@ -63,6 +68,7 @@ public final class PotatoSack extends JavaPlugin {
         } catch (IOException e) {
             // 因为网络原因(比如连接超时)导致目录建立失败
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }
@@ -81,6 +87,6 @@ public final class PotatoSack extends JavaPlugin {
         for (BukkitTask task : checkTasks)
             if (task != null)
                 task.cancel();
-        ConsoleSender.toConsole("PotatoSack Shutting Down...See you next time~");
+        ConsoleSender.toConsoleSync("PotatoSack Shutting Down...See you next time~");
     }
 }

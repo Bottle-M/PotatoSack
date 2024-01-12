@@ -8,16 +8,29 @@ import org.bukkit.entity.Player;
 
 public final class ConsoleSender {
     /**
-     * 发送消息到控制台
+     * 发送消息到控制台（仅限主线程）
      *
      * @param text 待发送的消息内容
      */
+    public static void toConsoleSync(String text) {
+        // 通过CommandSender对象的方法发送信息到控制台
+        String msg=ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + text;
+        CommandSender sender = Bukkit.getConsoleSender();
+        sender.sendMessage(msg);
+    }
+
+    /**
+     * 发送消息到控制台（可在异步方法中调用）
+     *
+     * @param text 待发送的消息内容
+     * @apiNote 请勿在插件disable后调用此方法，可以调用toConsoleSync
+     */
     public static void toConsole(String text) {
         // 通过CommandSender对象的方法发送信息到控制台
+        String msg=ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + text;
         Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
             // 放到主线程中执行
-            CommandSender sender = Bukkit.getConsoleSender();
-            sender.sendMessage(ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + text);
+            PotatoSack.plugin.getLogger().info(msg);
         });
     }
 

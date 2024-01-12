@@ -31,11 +31,14 @@ public class BackupChecker implements Runnable {
      */
     public boolean initialize() throws IOException {
         File backupRecordFile = backupMaker.getBackupRecordFile();
+        System.out.println("Reading backup record file: " + backupRecordFile.getAbsolutePath());
         // 首先检查插件目录是否有backup.json
         if (!backupRecordFile.exists()) {
             // 从云端抓取文件
             if (!backupMaker.pullRecordsFile("backup")) {
                 // 如果抓取失败就直接在本地新建文件
+                if (!backupRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
+                    backupRecordFile.getParentFile().mkdirs();
                 if (backupRecordFile.createNewFile()) {
                     // 初始化文件JSON内容
                     backupMaker.writeBackupRecord(0, 0, "", "");
@@ -48,9 +51,12 @@ public class BackupChecker implements Runnable {
         List<String> worlds = (List<String>) config.getConfig("worlds");
         for (String worldName : worlds) {
             File worldRecordFile = backupMaker.getWorldRecordsFile(worldName);
+            System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
             if (!worldRecordFile.exists())
                 // 从云端抓取
                 if (!backupMaker.pullRecordsFile(worldName)) {
+                    if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
+                        worldRecordFile.getParentFile().mkdirs();
                     // 如果抓取失败就直接在本地新建文件
                     if (worldRecordFile.createNewFile()) {
                         backupMaker.writeWorldRecord(worldName, new HashMap<>());
@@ -93,6 +99,7 @@ public class BackupChecker implements Runnable {
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
         }
     }
 }

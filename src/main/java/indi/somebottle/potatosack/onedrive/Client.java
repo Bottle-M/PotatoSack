@@ -83,6 +83,7 @@ public class Client {
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return resList;
@@ -135,6 +136,7 @@ public class Client {
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return false;
@@ -173,6 +175,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return null;
@@ -216,6 +219,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return false;
@@ -260,6 +264,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return false;
@@ -297,6 +302,7 @@ public class Client {
             }
         } catch (IOException e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return false;
@@ -350,6 +356,7 @@ public class Client {
             }
         } catch (Exception e) {
             Utils.logError(e.getMessage());
+            e.printStackTrace();
             throw e;
         }
         return false;

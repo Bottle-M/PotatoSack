@@ -120,6 +120,7 @@ public class FileUploader {
         } catch (IOException e) {
             System.out.println("File upload failed due to IO Error");
             Utils.logError(e.getMessage());
+            e.printStackTrace();
         }
         return -1;
     }

@@ -105,7 +105,7 @@ public class BackupMaker {
             if (!pullRecordsFile("backup"))
                 return null; // 获取失败
         // 读入backup.json
-        String backupJson = Arrays.toString(Files.readAllBytes(backupRecordFile.toPath()));
+        String backupJson = new String(Files.readAllBytes(backupRecordFile.toPath()));
         // 解析成配置对象
         return gson.fromJson(backupJson, BackupRecord.class);
     }
@@ -123,7 +123,7 @@ public class BackupMaker {
             if (!pullRecordsFile(worldName))
                 return null; // 获取失败
         // 读入backup.json
-        String worldJson = Arrays.toString(Files.readAllBytes(worldRecordFile.toPath()));
+        String worldJson = new String(Files.readAllBytes(worldRecordFile.toPath()));
         // 解析成配置对象
         return gson.fromJson(worldJson, WorldRecord.class);
     }
@@ -145,7 +145,7 @@ public class BackupMaker {
      * @apiNote 世界名.json中存放世界数据目录中所有文件的最后修改时间
      */
     public File getWorldRecordsFile(String worldName) {
-        return new File(pluginDataPath + ".json");
+        return new File(pluginDataPath + worldName + ".json");
     }
 
     /**

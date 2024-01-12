@@ -253,8 +253,8 @@ public class Utils {
      * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台
      */
     public static void logError(String msg) {
-        String finalMsg = "[" + Constants.PLUGIN_PREFIX + "] " + msg;
-        System.out.println(msg);
+        String finalMsg = "[" + Constants.PLUGIN_PREFIX + "] Fatal: " + msg;
+        System.out.println(finalMsg);
         if (PotatoSack.plugin != null) {
             // 记录到服务端日志
             // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
