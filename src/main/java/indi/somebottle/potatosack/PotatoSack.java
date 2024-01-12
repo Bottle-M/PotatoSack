@@ -35,7 +35,7 @@ public final class PotatoSack extends JavaPlugin {
         tokenFetcher = new TokenFetcher(clientId, clientScrt, refreshToken, config);
         // 初始化获取token
         if (!tokenFetcher.fetch()) {
-            ConsoleSender.toConsole("Potato Sack Failed to Initialize!");
+            ConsoleSender.toConsole("Potato Sack Failed to Initialize! Please check configs.yml");
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }

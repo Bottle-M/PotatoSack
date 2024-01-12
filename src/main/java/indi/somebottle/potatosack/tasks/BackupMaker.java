@@ -225,29 +225,29 @@ public class BackupMaker {
         if (!Utils.Zip(worldPaths.toArray(new String[0]), tempFilePath))
             return false;
         // 3. 上传压缩好的文件
-        String backUpId; // 备份组号
+        String lastFullBackupId; // 备份组号
         if (rec.getLastFullBackupId().equals("")) {
             // 尚无备份组，从序号1开始
-            backUpId = "0" + Utils.getDateStr() + "000001";
+            lastFullBackupId = "0" + Utils.getDateStr() + "000001";
         } else {
             // 末尾序号
             int serial = Integer.parseInt(rec.getLastFullBackupId().substring(9)) + 1;
-            backUpId = "0" + Utils.getDateStr() + String.format("%06d", serial);
+            lastFullBackupId = "0" + Utils.getDateStr() + String.format("%06d", serial);
         }
-        ConsoleSender.toConsole("Uploading Zipped Worlds...");
-        if (!odClient.uploadLargeFile(tempFilePath, Constants.OD_APP_DATA_FOLDER + "/" + backUpId + "/full.zip"))
+        ConsoleSender.toConsole("Uploading Full Backup...");
+        if (!odClient.uploadLargeFile(tempFilePath, Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/full.zip"))
             return false;
         // 4. 更新备份记录
         // 写入backup.json
-        rec.setLastFullBackupId(backUpId);
+        rec.setLastFullBackupId(lastFullBackupId);
         rec.setLastFullBackup(Utils.timeStamp());
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
-        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + backUpId + "/backup.json"))
+        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
             return false;
         for (String worldName : worlds) {
-            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + backUpId + "/" + worldName + ".json"))
+            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + worldName + ".json"))
                 return false;
         }
         // 6. 删除过时备份
@@ -269,7 +269,7 @@ public class BackupMaker {
                     return false;
             }
         }
-        ConsoleSender.toConsole("Successfully made backup: " + backUpId);
+        ConsoleSender.toConsole("Successfully made backup: " + lastFullBackupId);
         return true;
     }
 
@@ -282,6 +282,12 @@ public class BackupMaker {
         ConsoleSender.toConsole("Making incremental backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
+        String lastFullBackupId = rec.getLastFullBackupId();
+        if (lastFullBackupId.equals("")) {
+            // 如果还没有全量备份则进行全量备份
+            Utils.logError("No full backup found, trying to make full backup first.");
+            return makeFullBackup();
+        }
         // 获得世界名
         List<String> worlds = (List<String>) config.getConfig("worlds");
         // 各个世界的目录路径（绝对路径）
@@ -346,10 +352,21 @@ public class BackupMaker {
         if (!Utils.ZipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath))
             return false;
         // 3. 上传
-
+        ConsoleSender.toConsole("Uploading Incremental Backup...");
+        if (!odClient.uploadFile(outputPath, Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/incre" + increBackupId + ".zip"))
+            return false;
         // 4. 更新备份记录
         rec.setLastIncreBackupId(increBackupId);
+        rec.setLastIncreBackup(Utils.timeStamp());
+        writeBackupRecord(rec);
         // 5. 上传备份记录
+        ConsoleSender.toConsole("Uploading Record Files...");
+        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
+            return false;
+        for (String worldName : worlds) {
+            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + worldName + ".json"))
+                return false;
+        }
         return true;
     }
 }
