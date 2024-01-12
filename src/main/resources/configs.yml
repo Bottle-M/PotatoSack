@@ -19,8 +19,9 @@ full-backup-interval: 1440
 # Note: The incremental backups will be generated according to the interval below.
 incremental-backup-check-interval: 15
 
-# Whether to stop backup when no player is online
+# Whether to stop incremental backup when no player is online
 # Note: It may save you some data traffic expenses when nobody's there.
+# Note: Full backup won't be stopped, only incremental backups will be affected.
 stop-backup-when-no-player: true
 
 # The worlds that you would like to backup, example:

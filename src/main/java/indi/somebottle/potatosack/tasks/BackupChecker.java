@@ -5,6 +5,7 @@ import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.Utils;
+import org.bukkit.Bukkit;
 
 import java.io.File;
 import java.io.IOException;
@@ -37,7 +38,7 @@ public class BackupChecker implements Runnable {
                 // 如果抓取失败就直接在本地新建文件
                 if (backupRecordFile.createNewFile()) {
                     // 初始化文件JSON内容
-                    backupMaker.writeBackupRecord(0, 0, "","");
+                    backupMaker.writeBackupRecord(0, 0, "", "");
                 } else {
                     return false;
                 }
@@ -69,19 +70,28 @@ public class BackupChecker implements Runnable {
             long fullBackupInterval = (long) config.getConfig("full-backup-interval");
             if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval) {
                 // 该进行全量备份了
-                if (!backupMaker.makeFullBackup())
+                Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
+                boolean bkRes = backupMaker.makeFullBackup();
+                Utils.BACKUP_SEMAPHORE.release();
+                if (!bkRes)
                     throw new IOException("Failed to make full backup");
                 else
                     return; // 执行了全量备份，就不检查增量备份了
             }
             // 检查是不是需要进行增量备份了
+            // 如果在线人数为0且配置了【无人时不进行增量备份】，则不进行增量备份检查
+            if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig("stop-backup-when-no-player"))
+                return;
             long increBackupInterval = (long) config.getConfig("incremental-backup-check-interval");
             if (Utils.timeStamp() - bkRec.getLastIncreBackup() > increBackupInterval) {
                 // 该进行增量备份了
-                if (!backupMaker.makeIncreBackup())
+                Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
+                boolean bkRes = backupMaker.makeIncreBackup();
+                Utils.BACKUP_SEMAPHORE.release();
+                if (!bkRes)
                     throw new IOException("Failed to make incremental backup");
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             Utils.logError(e.getMessage());
         }
     }

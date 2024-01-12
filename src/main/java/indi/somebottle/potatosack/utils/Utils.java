@@ -1,18 +1,21 @@
 package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
-import indi.somebottle.potatosack.entities.backup.WorldRecord;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import org.bukkit.Bukkit;
 
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.Semaphore;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 
 public class Utils {
+    // 防止备份任务并发
+    public final static Semaphore BACKUP_SEMAPHORE = new Semaphore(1);
+
     public static long timeStamp() {
         return System.currentTimeMillis() / 1000;
     }

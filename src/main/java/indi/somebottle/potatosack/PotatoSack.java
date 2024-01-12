@@ -12,6 +12,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.IOException;
 
@@ -20,6 +21,8 @@ public final class PotatoSack extends JavaPlugin {
     private final Config config = new Config(); // 配置文件对象
     private TokenFetcher tokenFetcher; // TokenFetcher对象
     private Client odClient; // OneDrive客户端
+
+    private final BukkitTask[] checkTasks = new BukkitTask[2]; // 定时检查任务数组
 
     @Override
     public void onEnable() {
@@ -65,15 +68,19 @@ public final class PotatoSack extends JavaPlugin {
         }
         // 初始化异步任务定时器
         // 每30秒检查一次AccessToken是否过期
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
+        checkTasks[0] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
         // 每60秒检查一次备份（首次执行前等待60秒)
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
-
-        ConsoleSender.toConsole("Potato Sack Successfully initialized! Savor using it!");
+        checkTasks[1] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
+        ConsoleSender.toConsole("PotatoSack Successfully initialized! Savor using it!");
     }
 
     @Override
     public void onDisable() {
         // Plugin shutdown logic
+        // 取消定时任务
+        for (BukkitTask task : checkTasks)
+            if (task != null)
+                task.cancel();
+        ConsoleSender.toConsole("PotatoSack Shutting Down...See you next time~");
     }
 }
