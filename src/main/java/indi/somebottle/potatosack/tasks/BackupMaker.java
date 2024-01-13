@@ -266,6 +266,8 @@ public class BackupMaker {
         // 写入backup.json
         rec.setLastFullBackupId(currFullBackupId);
         rec.setLastFullBackupTime(Utils.timeStamp());
+        // 全量备份后也要修改增量备份时间记录
+        rec.setLastIncreBackupTime(Utils.timeStamp());
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
