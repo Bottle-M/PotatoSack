@@ -5,6 +5,8 @@ import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import org.bukkit.Bukkit;
 
 import java.io.*;
+import java.math.BigInteger;
+import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.Semaphore;
@@ -18,6 +20,29 @@ public class Utils {
 
     public static long timeStamp() {
         return System.currentTimeMillis() / 1000;
+    }
+
+    /**
+     * 计算文件的MD5哈希值
+     *
+     * @param file 文件File对象
+     * @return 哈希值
+     */
+    public static String fileMD5(File file) {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            byte[] buffer = new byte[16384]; // 16K的数据缓冲区
+            int readLen;
+            // 流式读入文件计算哈希
+            while ((readLen = fis.read(buffer)) != -1) {
+                md5.update(buffer, 0, readLen);
+            }
+            // 转换为十六进制字符串返回
+            return new BigInteger(1, md5.digest()).toString(16);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "";
     }
 
     /**
@@ -66,7 +91,10 @@ public class Utils {
     public static String pathRelativeToServer(File file) {
         String serverPath = new File(System.getProperty("user.dir")).getAbsolutePath();
         // 这里替换时加上末尾的“/”再替换
-        return file.getAbsolutePath().replace(serverPath + File.separator, "");
+        String replaced = file.getAbsolutePath().replace(serverPath + File.separator, "");
+        if (replaced.startsWith("./")) // 有的时候替换后是./开头，很奇妙，这里也考虑进去
+            replaced = replaced.substring(2);
+        return replaced;
     }
 
     /**
@@ -83,13 +111,13 @@ public class Utils {
     }
 
     /**
-     * 遍历获取指定目录下所有文件的最后修改时间
+     * 遍历获取指定目录下所有文件的最后哈希值
      *
      * @param srcDir 待扫描目录（File对象）
      * @param res    （递归用） 调用时传入null即可
-     * @return Map(String - > [文件路径, 文件最后修改时间])对象
+     * @return Map(String - > [文件路径, 文件最后哈希值])对象
      */
-    public static Map<String, String[]> getLastModifyTimes(File srcDir, Map<String, String[]> res) {
+    public static Map<String, String[]> getLastFileHashes(File srcDir, Map<String, String[]> res) {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -102,19 +130,19 @@ public class Utils {
                         relativePath,
                         new String[]{
                                 relativePath,
-                                String.valueOf(file.lastModified() / 1000) // 秒级时间戳
+                                Utils.fileMD5(file) // 计算文件哈希
                         }
                 );
             } else if (file.isDirectory()) {
                 // 是目录则继续
-                getLastModifyTimes(file, res);
+                getLastFileHashes(file, res);
             }
         }
         return res;
     }
 
     /**
-     * 获得两个lastModifiedTime Map的差集
+     * 获得两个lastFileHashes Map的差集
      *
      * @param oldMap 旧记录Map
      * @param newMap 新记录Map

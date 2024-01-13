@@ -111,7 +111,7 @@ public class BackupMaker {
     public void writeWorldRecord(String worldName, Map<String, String[]> recList) throws IOException {
         WorldRecord rec = new WorldRecord();
         rec.setFileUpdateTime(Utils.timeStamp());
-        rec.setLastModifyTimes(recList);
+        rec.setLastFileHashes(recList);
         writeWorldRecord(worldName, rec);
     }
 
@@ -164,7 +164,7 @@ public class BackupMaker {
      *
      * @param worldName 世界名
      * @return File对象
-     * @apiNote 世界名.json中存放世界数据目录中所有文件的最后修改时间
+     * @apiNote 世界名.json中存放世界数据目录中所有文件的最后哈希值
      */
     public File getWorldRecordsFile(String worldName) {
         return new File(pluginDataPath + worldName + ".json");
@@ -224,7 +224,7 @@ public class BackupMaker {
         List<String> worlds = (List<String>) config.getConfig("worlds");
         // 各个世界的目录路径
         List<String> worldPaths = new ArrayList<>();
-        // 1. 扫描世界目录生成包含每个文件最后修改时间的 世界名.json
+        // 1. 扫描世界目录生成包含每个文件最后哈希值的 世界名.json
         for (String worldName : worlds) {
             // 获得各个世界的配置文件;
             World world = PotatoSack.plugin.getServer().getWorld(worldName);
@@ -234,10 +234,10 @@ public class BackupMaker {
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             worldPaths.add(worldAbsPath);
-            // 扫描世界目录下的所有文件，获得修改时间（为增量备份做准备）
-            Map<String, String[]> lastModifyTimes = Utils.getLastModifyTimes(new File(worldAbsPath), null);
-            // 世界名.json中存放世界数据目录中所有文件的最后修改时间
-            writeWorldRecord(worldName, lastModifyTimes);
+            // 扫描世界目录下的所有文件，获得文件哈希（为增量备份做准备）
+            Map<String, String[]> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
+            // 世界名.json中存放世界数据目录中所有文件的最后哈希值
+            writeWorldRecord(worldName, lastFileHashes);
         }
         // 2. 开始压缩
         // 临时文件路径
@@ -328,26 +328,30 @@ public class BackupMaker {
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             worldPaths.add(worldAbsPath);
-            // 扫描世界目录下的所有文件，获得修改时间（为增量备份做准备）
-            Map<String, String[]> lastModifyTimes = Utils.getLastModifyTimes(new File(worldAbsPath), null);
-            // 获得上一次增量备份时的文件修改时间
+            // 扫描世界目录下的所有文件，获得哈希值（为增量备份做准备）
+            Map<String, String[]> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
+            // 获得上一次增量备份时的文件哈希值
             WorldRecord prevWorldRec = getWorldRecord(worldName);
-            Map<String, String[]> prevLastModifyTimes = prevWorldRec.getLastModifyTimes();
+            Map<String, String[]> prevLastFileHashes = prevWorldRec.getLastFileHashes();
             // 找到被删除的文件的路径
             deletedPaths.addAll(
-                    Utils.getDeletedFilePaths(prevLastModifyTimes, lastModifyTimes)
+                    Utils.getDeletedFilePaths(prevLastFileHashes, lastFileHashes)
             );
             // 找到发生变动的文件的绝对路径
-            for (String key : lastModifyTimes.keySet())
+            for (String key : lastFileHashes.keySet()) {
+                String debug = "[DEBUG]key:" + key +
+                        " prevContains:" + prevLastFileHashes.containsKey(key);
+                System.out.println(debug);
                 // 新记录中新出现的文件 or 新记录中的文件最后修改时间相比旧记录有变动
-                if (!prevLastModifyTimes.containsKey(key) || !prevLastModifyTimes.get(key)[1].equals(lastModifyTimes.get(key)[1]))
+                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key)[1].equals(lastFileHashes.get(key)[1]))
                     increFilePaths.add( // 添加到增量文件列表
                             new ZipFilePath(Utils.pathAbsToServer( // 获得文件绝对路径以便Zip打包
-                                    lastModifyTimes.get(key)[0]
+                                    lastFileHashes.get(key)[0]
                             ))
                     );
-            // 更新 世界名.json 中存放世界数据目录中所有文件的最后修改时间
-            writeWorldRecord(worldName, lastModifyTimes);
+            }
+            // 更新 世界名.json 中存放世界数据目录中所有文件的最后哈希值
+            writeWorldRecord(worldName, lastFileHashes);
         }
         // 若没有文件变更则不进行本次增量备份
         if (increFilePaths.size() == 0 && deletedPaths.size() == 0) {
@@ -394,6 +398,7 @@ public class BackupMaker {
             if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + worldName + ".json"))
                 return false;
         }
+        ConsoleSender.toConsole("Successfully made incremental backup: " + increBackupId + " in backup group " + lastFullBackupId);
         return true;
     }
 }

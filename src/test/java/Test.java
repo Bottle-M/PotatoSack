@@ -11,6 +11,7 @@ import okhttp3.Response;
 
 import java.io.File;
 import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 
@@ -146,7 +147,7 @@ public class Test {
     @org.junit.Test
     public void getLastModifyTimesTest() {
         File testF = new File("E:\\Projects\\TestArea\\test\\plugins");
-        Map<String, String[]> lastModifyTimes = Utils.getLastModifyTimes(testF, null);
+        Map<String, String[]> lastModifyTimes = Utils.getLastFileHashes(testF, null);
         System.out.println("Parent dir: " + testF.getParentFile().getAbsolutePath() + File.separator);
         for (String key : lastModifyTimes.keySet())
             System.out.println(lastModifyTimes.get(key)[0] + " - " + lastModifyTimes.get(key)[1]);
@@ -163,6 +164,16 @@ public class Test {
         } else {
             System.out.println("fail");
         }
+    }
+
+    @org.junit.Test
+    public void md5Test() throws NoSuchAlgorithmException {
+        long startTime=System.currentTimeMillis();
+        System.out.println(Utils.fileMD5(
+                new File("E:\\Projects\\TestArea\\1.19.json")
+        ));
+        long endTime=System.currentTimeMillis();
+        System.out.println(endTime-startTime+"ms");
     }
 }
 

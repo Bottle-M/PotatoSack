@@ -20,7 +20,7 @@ AppFolder
     ├── incre000001.zip # 存放所有指定世界的增量备份
     ├── incre000002.zip
     ├── incre000003.zip
-    ├── world.json # 存放world世界目录下所有文件的修改情况（最后修改时间）
+    ├── world.json # 存放world世界目录下所有文件的修改情况（最后的MD5哈希）
     ├── world_nether.json
     └── world_the_end.json
 ```
@@ -37,7 +37,7 @@ AppFolder
 
 ### 世界名.json
 
-存放各个世界数据目录中的所有文件的最后修改时间。
+存放各个世界数据目录中的所有文件的最后哈希值。
 
 ### incre*.zip
 
@@ -100,8 +100,8 @@ incre*.zip # 压缩包内
 
 比如对`world`世界进行增量备份:
 
-1. 读取`world.json`中存放的所有文件的最后修改时间集`timeSet1`。
-2. 扫描`world`目录中的所有文件，得到所有文件的最后修改时间集`timeSet2`
-3. 计算`timeSet1`和`timeSet2`的差集`diffSet`，差集中的是被删除的文件，将其写入`deleted.files`文件中。
+1. 读取`world.json`中存放的所有文件的最后md5哈希值`md5Set1`。
+2. 扫描`world`目录中的所有文件，得到所有文件的最后md5哈希值`md5Set2`
+3. 计算`md5Set1`和`md5Set2`的差集`diffSet`，差集中的是被删除的文件，将其写入`deleted.files`文件中。
 4. 将有更新的文件打包成`incre*.zip`，更新`backup.json`和`world.json`。
 5. 将第4步产生的文件传输到云端。
