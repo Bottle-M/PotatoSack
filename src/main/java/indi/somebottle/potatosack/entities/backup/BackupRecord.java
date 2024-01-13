@@ -6,10 +6,10 @@ import com.google.gson.annotations.SerializedName;
  * 用于解析backup.json
  */
 public class BackupRecord {
-    @SerializedName("last_full_backup")
-    private long lastFullBackup; // 上一次全量备份时间戳
-    @SerializedName("last_incre_backup")
-    private long lastIncreBackup; // 上一次增量备份时间戳
+    @SerializedName("last_full_backup_time")
+    private long lastFullBackupTime; // 上一次全量备份时间戳
+    @SerializedName("last_incre_backup_time")
+    private long lastIncreBackupTime; // 上一次增量备份时间戳
     @SerializedName("file_update_time")
     private long fileUpdateTime; // backup.json文件更新时间戳
     @SerializedName("last_full_backup_id")
@@ -18,20 +18,20 @@ public class BackupRecord {
     @SerializedName("last_incre_backup_id")
     private String lastIncreBackupId; // 最近的一次增量备份号
 
-    public long getLastFullBackup() {
-        return lastFullBackup;
+    public long getLastFullBackupTime() {
+        return lastFullBackupTime;
     }
 
-    public void setLastFullBackup(long lastFullBackup) {
-        this.lastFullBackup = lastFullBackup;
+    public void setLastFullBackupTime(long lastFullBackupTime) {
+        this.lastFullBackupTime = lastFullBackupTime;
     }
 
-    public long getLastIncreBackup() {
-        return lastIncreBackup;
+    public long getLastIncreBackupTime() {
+        return lastIncreBackupTime;
     }
 
-    public void setLastIncreBackup(long lastIncreBackup) {
-        this.lastIncreBackup = lastIncreBackup;
+    public void setLastIncreBackupTime(long lastIncreBackupTime) {
+        this.lastIncreBackupTime = lastIncreBackupTime;
     }
 
     public long getFileUpdateTime() {

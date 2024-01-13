@@ -23,6 +23,19 @@ public class Client {
     }
 
     /**
+     * 获得用户在OneDrive中的AppFolder的Web URL
+     *
+     * @return 用户在OneDrive中的AppFolder WebURL
+     */
+    public String getAppFolderUrl() throws IOException {
+        Item appFolder = getItem("");
+        if (appFolder != null)
+            return appFolder.getWebUrl();
+        else
+            return "";
+    }
+
+    /**
      * 列出根目录下所有项目
      *
      * @return 根目录下所有项目

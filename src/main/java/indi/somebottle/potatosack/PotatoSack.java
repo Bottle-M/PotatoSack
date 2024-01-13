@@ -20,6 +20,7 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.logging.Logger;
 
 public final class PotatoSack extends JavaPlugin {
     public static Plugin plugin = null;
@@ -56,8 +57,10 @@ public final class PotatoSack extends JavaPlugin {
         }
         // 初始化OneDrive客户端
         odClient = new Client(tokenFetcher);
-        // 检查OneDrive上插件数据目录是否建立
         try {
+            // 输出Onedrive AppFolder
+            System.out.println("Onedrive AppFolder URL: " + odClient.getAppFolderUrl());
+            // 检查OneDrive上插件数据目录是否建立
             if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {
                 ConsoleSender.toConsole("Creating data folder in OneDrive.");
                 // 如果没有建立则建立数据目录

@@ -75,7 +75,7 @@ public class BackupChecker implements Runnable {
             BackupRecord bkRec = backupMaker.getBackupRecord();
             long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
             // 注意fullBackupInterval单位是分钟
-            if (Utils.timeStamp() - bkRec.getLastFullBackup() > fullBackupInterval * 60) {
+            if (Utils.timeStamp() - bkRec.getLastFullBackupTime() > fullBackupInterval * 60) {
                 // 该进行全量备份了
                 Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
                 boolean bkRes = backupMaker.makeFullBackup();
@@ -92,7 +92,7 @@ public class BackupChecker implements Runnable {
                 return;
             long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
             // 注意increBackupInterval单位是分钟
-            if (Utils.timeStamp() - bkRec.getLastIncreBackup() > increBackupInterval * 60) {
+            if (Utils.timeStamp() - bkRec.getLastIncreBackupTime() > increBackupInterval * 60) {
                 // 该进行增量备份了
                 Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
                 boolean bkRes = backupMaker.makeIncreBackup();

@@ -175,6 +175,11 @@ public class Test {
         long endTime=System.currentTimeMillis();
         System.out.println(endTime-startTime+"ms");
     }
+
+    @org.junit.Test
+    public void getAppFolderTest() throws IOException {
+        System.out.println(client.getAppFolderUrl());
+    }
 }
 
 

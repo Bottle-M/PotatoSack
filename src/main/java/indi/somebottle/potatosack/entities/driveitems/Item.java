@@ -13,6 +13,7 @@ public class Item {
     private long size;
     private FolderDetails folder;
     private FileDetails file;
+    private String webUrl;
     @SerializedName("@microsoft.graph.downloadUrl")
     private String downloadUrl;
 
@@ -35,8 +36,17 @@ public class Item {
                 ", size=" + size +
                 ", folder=" + folder +
                 ", file=" + file +
+                ", webUrl='" + webUrl + '\'' +
                 ", downloadUrl='" + downloadUrl + '\'' +
                 '}';
+    }
+
+    public String getWebUrl() {
+        return webUrl;
+    }
+
+    public void setWebUrl(String webUrl) {
+        this.webUrl = webUrl;
     }
 
     public String getDownloadUrl() {

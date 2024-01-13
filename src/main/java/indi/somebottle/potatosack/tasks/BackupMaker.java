@@ -81,8 +81,8 @@ public class BackupMaker {
      */
     public void writeBackupRecord(long lastFullBackupTime, long lastIncreBackupTime, String lastFullBackupId, String lastIncreBackupId) throws IOException {
         BackupRecord rec = new BackupRecord();
-        rec.setLastFullBackup(lastFullBackupTime);
-        rec.setLastIncreBackup(lastIncreBackupTime);
+        rec.setLastFullBackupTime(lastFullBackupTime);
+        rec.setLastIncreBackupTime(lastIncreBackupTime);
         rec.setFileUpdateTime(Utils.timeStamp());
         rec.setLastFullBackupId(lastFullBackupId);
         rec.setLastIncreBackupId(lastIncreBackupId);
@@ -247,29 +247,32 @@ public class BackupMaker {
         if (!Utils.Zip(worldPaths.toArray(new String[0]), tempFilePath, true))
             return false;
         // 3. 上传压缩好的文件
-        String lastFullBackupId; // 备份组号
-        if (rec.getLastFullBackupId().equals("")) {
-            // 尚无备份组，从序号1开始
-            lastFullBackupId = "0" + Utils.getDateStr() + "000001";
+        String currFullBackupId; // 备份组号
+        String currDate = Utils.getDateStr(); // 当前日期，形如20240104
+        String lastFullBackupId = rec.getLastFullBackupId(); // 获得前一次的备份组号
+        if (lastFullBackupId.equals("") || !lastFullBackupId.substring(1, 9).equals(currDate)) {
+            // 1. 尚无备份组 或 2. 不是同一天，从序号1重新开始
+            currFullBackupId = "0" + currDate + "000001";
+            rec.setLastIncreBackupId(""); // 同时重置增量备份ID
         } else {
             // 末尾序号
-            int serial = Integer.parseInt(rec.getLastFullBackupId().substring(9)) + 1;
-            lastFullBackupId = "0" + Utils.getDateStr() + String.format("%06d", serial);
+            int serial = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
+            currFullBackupId = "0" + currDate + String.format("%06d", serial);
         }
         ConsoleSender.toConsole("Uploading Full Backup...");
-        if (!odClient.uploadLargeFile(tempFilePath, Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/full.zip"))
+        if (!odClient.uploadLargeFile(tempFilePath, Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip"))
             return false;
         // 4. 更新备份记录
         // 写入backup.json
-        rec.setLastFullBackupId(lastFullBackupId);
-        rec.setLastFullBackup(Utils.timeStamp());
+        rec.setLastFullBackupId(currFullBackupId);
+        rec.setLastFullBackupTime(Utils.timeStamp());
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
-        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
+        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
             return false;
         for (String worldName : worlds) {
-            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + worldName + ".json"))
+            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/" + worldName + ".json"))
                 return false;
         }
         // 6. 删除过时备份
@@ -291,7 +294,7 @@ public class BackupMaker {
                     return false;
             }
         }
-        ConsoleSender.toConsole("Successfully made backup: " + lastFullBackupId);
+        ConsoleSender.toConsole("Successfully made backup: " + currFullBackupId);
         return true;
     }
 
@@ -339,9 +342,6 @@ public class BackupMaker {
             );
             // 找到发生变动的文件的绝对路径
             for (String key : lastFileHashes.keySet()) {
-                String debug = "[DEBUG]key:" + key +
-                        " prevContains:" + prevLastFileHashes.containsKey(key);
-                System.out.println(debug);
                 // 新记录中新出现的文件 or 新记录中的文件最后修改时间相比旧记录有变动
                 if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key)[1].equals(lastFileHashes.get(key)[1]))
                     increFilePaths.add( // 添加到增量文件列表
@@ -388,7 +388,7 @@ public class BackupMaker {
             return false;
         // 4. 更新备份记录
         rec.setLastIncreBackupId(increBackupId);
-        rec.setLastIncreBackup(Utils.timeStamp());
+        rec.setLastIncreBackupTime(Utils.timeStamp());
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
