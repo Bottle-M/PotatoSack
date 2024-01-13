@@ -121,6 +121,8 @@ public class Utils {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
+        if (files == null)
+            return res;
         for (File file : files) {
             if (file.isFile()) {
                 // 获得相对服务器根目录的路径，比如/root/server/world/region转换为world/region

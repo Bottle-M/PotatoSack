@@ -1,6 +1,5 @@
 package indi.somebottle.potatosack.tasks;
 
-import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
@@ -14,12 +13,9 @@ import java.util.List;
 
 public class BackupChecker implements Runnable {
     private final BackupMaker backupMaker;
-    private final Client odClient;
     private final Config config;
-    private final Gson gson = new Gson();
 
     public BackupChecker(Client odClient, Config config) {
-        this.odClient = odClient; // 初始化OneDrive客户端
         this.backupMaker = new BackupMaker(odClient, config); // 初始化备份核心模块
         this.config = config;
     }

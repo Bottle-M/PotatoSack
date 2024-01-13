@@ -8,8 +8,6 @@ import okhttp3.*;
 
 import java.io.IOException;
 
-import okhttp3.internal.Util;
-
 public class TokenFetcher {
     private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
     private final String clientId;

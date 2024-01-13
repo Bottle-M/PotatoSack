@@ -317,8 +317,6 @@ public class BackupMaker {
         }
         // 获得世界名
         List<String> worlds = (List<String>) config.getConfig("worlds");
-        // 各个世界的目录路径（绝对路径）
-        List<String> worldPaths = new ArrayList<>();
         // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
         List<String> deletedPaths = new ArrayList<>();
         // 所有有变动文件的 【绝对路径】（方便Zip打包）
@@ -332,7 +330,6 @@ public class BackupMaker {
                 continue;
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
-            worldPaths.add(worldAbsPath);
             // 扫描世界目录下的所有文件，获得哈希值（为增量备份做准备）
             Map<String, String[]> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
             // 获得上一次增量备份时的文件哈希值

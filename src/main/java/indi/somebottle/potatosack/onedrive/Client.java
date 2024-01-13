@@ -137,9 +137,8 @@ public class Client {
             respBody = resp.body();
             if (!resp.isSuccessful() || respBody == null) {
                 String errMsg = "Download failed, code: " + resp.code() + ", message: " + resp.message();
-                ResponseBody errorBody = respBody;
-                if (errorBody != null)
-                    errMsg += "\n Resp body: " + errorBody.string();
+                if (respBody != null)
+                    errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
             } else {
                 try (InputStream inputStream = respBody.byteStream();
@@ -229,7 +228,6 @@ public class Client {
         if (localFile.length() > Constants.MAX_SMALL_FILE_SIZE) // 超过了小文件最大允许大小，转为大文件上传
             return uploadLargeFile(localPath, remotePath);
         // 以下为小文件上传
-        String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
         String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
         // 构造请求
         Request req = new Request.Builder()
