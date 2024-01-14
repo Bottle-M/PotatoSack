@@ -88,7 +88,7 @@ public class FileUploader {
             if (resp.isSuccessful()) {
                 System.out.println("Upload req success");
                 int respCode = resp.code();
-                respBody = resp.body(); // 放在这里才能保证ReponseBody不会泄露
+                respBody = resp.body(); // 放在这里才能保证ResponseBody不会泄露
                 if (respCode == 202) {
                     // 返回202说明还需要上传其他字节
                     if (respBody == null) return -1;
