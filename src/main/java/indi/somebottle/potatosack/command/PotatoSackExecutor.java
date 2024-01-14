@@ -20,7 +20,7 @@ public class PotatoSackExecutor implements CommandExecutor {
         if (args.length == 1) {
             switch (args[0]) {
                 case "reload":
-                    if ((sender instanceof Player) && !sender.hasPermission("potatosack.reload")) {
+                    if ((sender instanceof Player) && !sender.hasPermission("potatosack.reload") && !sender.isOp()) {
                         ConsoleSender.autoSend(sender, "You don't have permission to execute this command!");
                         return false;
                     }

@@ -10,6 +10,7 @@ import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.Utils;
+import okhttp3.OkHttpClient;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.Plugin;
@@ -18,6 +19,8 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class PotatoSack extends JavaPlugin {
     public static Plugin plugin = null;
@@ -35,6 +38,7 @@ public final class PotatoSack extends JavaPlugin {
     @Override
     public void onEnable() {
         plugin = this; // 暴露插件对象
+        Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE); // 设置OkHttpClient日志级别
         System.out.println("[DEBUG]" +
                 "Server root dir: " + new File(System.getProperty("user.dir")));
         BackupChecker backupChecker;

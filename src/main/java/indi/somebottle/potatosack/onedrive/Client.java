@@ -91,7 +91,6 @@ public class Client {
                 }
             } else {
                 String errMsg = "Children req failed, code: " + resp.code() + ", message: " + resp.message();
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
@@ -194,7 +193,6 @@ public class Client {
                 return gson.fromJson(respBody.string(), Item.class);
             } else {
                 String errMsg = "Item req failed, code: " + resp.code() + ", message: " + resp.message();
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
@@ -243,7 +241,6 @@ public class Client {
                 return true;
             } else {
                 String errMsg = "File upload failed, code: " + resp.code() + ", message: " + resp.message();
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
@@ -294,7 +291,6 @@ public class Client {
                 return uploader.upload();
             } else {
                 String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
@@ -338,7 +334,6 @@ public class Client {
                 System.out.println("Delete req failed");
                 System.out.println(resp.code());
                 System.out.println(resp.message());
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);
@@ -397,7 +392,6 @@ public class Client {
                 return true;
             } else {
                 String errMsg = "Folder req failed, code: " + resp.code() + ", message: " + resp.message();
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 Utils.logError(errMsg);

@@ -49,8 +49,8 @@ public class TokenFetcher {
         ResponseBody responseBody = null;
         try {
             Response response = client.newCall(postReq).execute();
+            responseBody = response.body();
             if (response.isSuccessful()) {
-                responseBody = response.body();
                 if (responseBody != null) {
                     String rawResp = responseBody.string();
                     RefreshResp respObj = gson.fromJson(rawResp, RefreshResp.class);
@@ -70,7 +70,6 @@ public class TokenFetcher {
                 String errMsg = "Token Req Failed, code:" + response.code() + ", msg:" + response.message();
                 setRefreshToken("");
                 setAccessToken("");
-                responseBody = response.body();
                 if (responseBody != null)
                     errMsg += ", body:" + responseBody.string();
                 Utils.logError(errMsg);
