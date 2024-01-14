@@ -253,7 +253,6 @@ public class BackupMaker {
         if (lastFullBackupId.equals("") || !lastFullBackupId.substring(1, 9).equals(currDate)) {
             // 1. 尚无备份组 或 2. 不是同一天，从序号1重新开始
             currFullBackupId = "0" + currDate + "000001";
-            rec.setLastIncreBackupId(""); // 同时重置增量备份ID
         } else {
             // 末尾序号
             int serial = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
@@ -268,6 +267,7 @@ public class BackupMaker {
         rec.setLastFullBackupTime(Utils.timeStamp());
         // 全量备份后也要修改增量备份时间记录
         rec.setLastIncreBackupTime(Utils.timeStamp());
+        rec.setLastIncreBackupId(""); // 同时重置增量备份ID，让其从000001重新开始
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
