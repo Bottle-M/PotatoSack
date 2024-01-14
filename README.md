@@ -15,3 +15,9 @@ Lang: 中文简体 | [English](#施工中)
 1. 在这里[下载](https://github.com/Bottle-M/PotatoSack/releases/latest)插件。
 2. 把插件复制到你服务器目录下的`plugins`目录中。
 
+
+## FAQ
+
+1. 初次启动控制台打印出了404错误...
+
+
