@@ -9,14 +9,13 @@ import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.Semaphore;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 
 public class Utils {
     // 防止备份任务并发
-    public final static Semaphore BACKUP_SEMAPHORE = new Semaphore(1);
+    public final static BackupMutex BACKUP_MUTEX = new BackupMutex();
 
     public static long timeStamp() {
         return System.currentTimeMillis() / 1000;

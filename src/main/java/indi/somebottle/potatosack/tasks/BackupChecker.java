@@ -67,16 +67,19 @@ public class BackupChecker implements Runnable {
     @Override
     public void run() {
         try {
+            // 如果已经有备份任务在执行，则不继续本次检查
+            if (Utils.BACKUP_MUTEX.isOnGoing())
+                return;
             // 先检查是不是该进行全量备份了
             BackupRecord bkRec = backupMaker.getBackupRecord();
             long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
             // 注意fullBackupInterval单位是分钟
             if (Utils.timeStamp() - bkRec.getLastFullBackupTime() > fullBackupInterval * 60) {
                 // 该进行全量备份了
-                Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
+                Utils.BACKUP_MUTEX.setOnGoing(true); // 防止备份任务并发
                 boolean bkRes = backupMaker.makeFullBackup();
-                Utils.BACKUP_SEMAPHORE.release();
                 backupMaker.cleanTempDir(); // 请理临时目录
+                Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
                 if (!bkRes)
                     throw new IOException("Failed to make full backup");
                 else
@@ -90,10 +93,10 @@ public class BackupChecker implements Runnable {
             // 注意increBackupInterval单位是分钟
             if (Utils.timeStamp() - bkRec.getLastIncreBackupTime() > increBackupInterval * 60) {
                 // 该进行增量备份了
-                Utils.BACKUP_SEMAPHORE.acquire(); // 防止备份任务并发
+                Utils.BACKUP_MUTEX.setOnGoing(true); // 防止备份任务并发
                 boolean bkRes = backupMaker.makeIncreBackup();
-                Utils.BACKUP_SEMAPHORE.release();
                 backupMaker.cleanTempDir(); // 请理临时目录
+                Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
                 if (!bkRes)
                     throw new IOException("Failed to make incremental backup");
             }
