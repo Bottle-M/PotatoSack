@@ -5,7 +5,7 @@ import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.entities.backup.WorldRecord;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
-import indi.somebottle.potatosack.entities.driveitems.Item;
+import indi.somebottle.potatosack.entities.onedrive.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
@@ -244,7 +244,7 @@ public class BackupMaker {
         ConsoleSender.toConsole("Compressing...");
         String tempFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
         // 压缩
-        if (!Utils.Zip(worldPaths.toArray(new String[0]), tempFilePath, true))
+        if (!Utils.zip(worldPaths.toArray(new String[0]), tempFilePath, true))
             return false;
         // 3. 上传压缩好的文件
         String currFullBackupId; // 备份组号
@@ -379,7 +379,7 @@ public class BackupMaker {
         // 输出文件路径
         String outputPath = pluginTempPath + "incre" + increBackupId + ".zip";
         // 执行压缩
-        if (!Utils.ZipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath, true))
+        if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath, true))
             return false;
         // 3. 上传
         ConsoleSender.toConsole("Uploading Incremental Backup...");

@@ -1,4 +1,4 @@
-package indi.somebottle.potatosack.entities.driveitems;
+package indi.somebottle.potatosack.entities.onedrive;
 
 /**
  * createUploadSession 请求后返回的结果字段

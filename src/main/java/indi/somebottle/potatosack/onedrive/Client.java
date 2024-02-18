@@ -1,7 +1,8 @@
 package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.entities.driveitems.*;
+import indi.somebottle.potatosack.entities.backup.ZipFilePath;
+import indi.somebottle.potatosack.entities.onedrive.*;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
@@ -258,18 +259,14 @@ public class Client {
     }
 
     /**
-     * 将本地大文件上传到Onedrive中
+     * （用于大文件上传）建立文件上传会话
      *
-     * @param localPath  本地文件路径
      * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
-     * @return 是否上传成功
+     * @return uploadUrl 上传URL
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
-     * @apiNote 请在线程内调用此方法，可能阻塞
+     * @apiNote 请保证remotePath不为空
      */
-    public boolean uploadLargeFile(String localPath, String remotePath) throws IOException {
-        if (!new File(localPath).exists() || remotePath.equals(""))
-            return false;
-        File localFile = new File(localPath);
+    private String createUploadSession(String remotePath) throws IOException {
         String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
         String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + remotePath + ":/createUploadSession";
         UploadRequest upReq = new UploadRequest(remoteName); // 构建请求表单
@@ -286,25 +283,72 @@ public class Client {
             respBody = resp.body();
             if (resp.isSuccessful() && respBody != null) {
                 UpSessionCreateResp crResp = gson.fromJson(respBody.string(), UpSessionCreateResp.class);
-                String uploadUrl = crResp.getUploadUrl();
-                FileUploader uploader = new FileUploader(localFile, uploadUrl);
-                return uploader.upload();
+                return crResp.getUploadUrl();
             } else {
                 String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                throw new IOException(errMsg);
             }
-        } catch (IOException e) {
-            Utils.logError(e.getMessage());
-            e.printStackTrace();
-            throw e;
         } finally {
             // 关闭responseBody
             if (respBody != null)
                 respBody.close();
         }
-        return false;
+    }
+
+    /**
+     * <p>压缩的同时进行文件上传（仅用于大文件）</p><bold>此处传入的是ZipFilePath[]，是将指定的文件进行打包后上传。</bold>
+     *
+     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param remotePath   远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
+     * @param quiet        是否静默打包（不显示 Adding... 信息)
+     * @return 是否上传成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
+     * @apiNote 请在线程内调用此方法，可能阻塞
+     */
+    public boolean zipPipingUpload(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException {
+        if (zipFilePaths.length == 0 || remotePath.equals(""))
+            return false;
+        String uploadUrl = createUploadSession(remotePath); // 建立上传会话
+        StreamedZipUploader uploader = new StreamedZipUploader(uploadUrl);
+        return uploader.zipSpecifiedAndUpload(zipFilePaths, quiet);
+    }
+
+    /**
+     * <p>压缩的同时进行文件上传（仅用于大文件）</p><bold>此处传入的是String[]。</bold>
+     * <p>srcDirPath指定要打包的目录路径（注意：这些目录必须在同一级）</p>
+     *
+     * @param srcDirPath 指定要打包的目录路径（注意：这些目录必须在同一级）
+     * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
+     * @param quiet      是否静默打包（不显示 Adding... 信息)
+     * @return 是否上传成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
+     */
+    public boolean zipPipingUpload(String[] srcDirPath, String remotePath, boolean quiet) throws IOException {
+        if (srcDirPath.length == 0 || remotePath.equals(""))
+            return false;
+        String uploadUrl = createUploadSession(remotePath); // 建立上传会话
+        StreamedZipUploader uploader = new StreamedZipUploader(uploadUrl);
+        return uploader.zipAndUpload(srcDirPath, quiet);
+    }
+
+    /**
+     * 将本地大文件上传到Onedrive中
+     *
+     * @param localPath  本地文件路径
+     * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
+     * @return 是否上传成功
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
+     * @apiNote 请在线程内调用此方法，可能阻塞
+     */
+    public boolean uploadLargeFile(String localPath, String remotePath) throws IOException {
+        if (!new File(localPath).exists() || remotePath.equals(""))
+            return false;
+        File localFile = new File(localPath);
+        String uploadUrl = createUploadSession(remotePath); // 建立上传会话
+        FileUploader uploader = new FileUploader(localFile, uploadUrl);
+        return uploader.upload();
     }
 
     /**

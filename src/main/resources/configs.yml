@@ -24,6 +24,11 @@ incremental-backup-check-interval: 15
 # Note: Full backup won't be stopped, only incremental backups will be affected.
 stop-backup-when-no-player: true
 
+# Whether to upload files while compressing them.
+# Note: It will prevent zip file from being written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
+# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
+use-streaming-compression-upload: false
+
 # The worlds that you would like to backup, example:
 # worlds:
 #  - world

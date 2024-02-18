@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.tasks;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 import org.bukkit.Bukkit;
 
@@ -77,6 +78,9 @@ public class BackupChecker implements Runnable {
             if (Utils.timeStamp() - bkRec.getLastFullBackupTime() > fullBackupInterval * 60) {
                 // 该进行全量备份了
                 Utils.BACKUP_MUTEX.setOnGoing(true); // 防止备份任务并发
+                // 暂时停止世界自动保存
+                Utils.setWorldsSave(false);
+                ConsoleSender.toConsole("Temporarily stop world auto-save...");
                 boolean bkRes = backupMaker.makeFullBackup();
                 backupMaker.cleanTempDir(); // 请理临时目录
                 Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
@@ -94,6 +98,9 @@ public class BackupChecker implements Runnable {
             if (Utils.timeStamp() - bkRec.getLastIncreBackupTime() > increBackupInterval * 60) {
                 // 该进行增量备份了
                 Utils.BACKUP_MUTEX.setOnGoing(true); // 防止备份任务并发
+                // 暂时停止世界自动保存
+                Utils.setWorldsSave(false);
+                ConsoleSender.toConsole("Temporarily stop world auto-save...");
                 boolean bkRes = backupMaker.makeIncreBackup();
                 backupMaker.cleanTempDir(); // 请理临时目录
                 Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
@@ -104,6 +111,10 @@ public class BackupChecker implements Runnable {
             Utils.logError(e.getMessage());
             e.printStackTrace();
             backupMaker.cleanTempDir(); // 请理临时目录
+        } finally {
+            // 重新启动世界自动保存
+            Utils.setWorldsSave(true);
+            ConsoleSender.toConsole("Restart world auto-save...");
         }
     }
 }

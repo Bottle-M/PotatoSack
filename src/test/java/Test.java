@@ -1,5 +1,5 @@
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
-import indi.somebottle.potatosack.entities.driveitems.Item;
+import indi.somebottle.potatosack.entities.onedrive.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.utils.ConfigOpts;
@@ -11,9 +11,6 @@ import okhttp3.Response;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.math.BigInteger;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
@@ -89,8 +86,20 @@ public class Test {
     }
 
     @org.junit.Test
+    public void zipPipingUploadTest() throws IOException {
+        String[] testInput = {
+                "E:\\Projects\\TestArea\\test_video",
+                "E:\\Projects\\TestArea\\test_video2"
+        };
+        if (client.zipPipingUpload(testInput, "test/compressed.zip", true))
+            System.out.println("success");
+        else
+            System.out.println("fail");
+    }
+
+    @org.junit.Test
     public void zipTest() {
-        if (Utils.Zip("E:\\Projects\\TestArea\\incre_test\\root-minecraft-world", "E:\\Projects\\TestArea\\compress_test.zip", false, false)) {
+        if (Utils.zip("E:\\Projects\\TestArea\\incre_test\\root-minecraft-world", "E:\\Projects\\TestArea\\compress_test.zip", false, false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");
@@ -104,7 +113,7 @@ public class Test {
                 "E:\\Projects\\TestArea\\test\\logs",
                 "E:\\Projects\\TestArea\\test\\plugins"
         };
-        if (Utils.Zip(testInput, "E:\\Projects\\TestArea\\compress_test.zip", false)) {
+        if (Utils.zip(testInput, "E:\\Projects\\TestArea\\compress_test.zip", false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");
@@ -162,7 +171,7 @@ public class Test {
                 new ZipFilePath("E:\\Projects\\TestArea\\1.19.json", "test/test.json"),
                 new ZipFilePath("E:\\Projects\\TestArea\\nichijou.mp4", "nichijou.mp4")
         };
-        if (Utils.ZipSpecificFiles(testInput, "E:\\Projects\\TestArea\\compress_test.zip", false)) {
+        if (Utils.zipSpecificFiles(testInput, "E:\\Projects\\TestArea\\compress_test.zip", false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");
@@ -189,34 +198,6 @@ public class Test {
     @org.junit.Test
     public void getAppFolderTest() throws IOException {
         System.out.println(client.getAppFolderUrl());
-    }
-
-    @org.junit.Test
-    public void anvilFileTest() throws IOException {
-        File file1 = new File("C:\\Users\\58379\\Desktop\\test\\incre000001\\world\\region\\r.0.0.mca");
-        File file2 = new File("C:\\Users\\58379\\Desktop\\test\\incre000002\\world\\region\\r.0.0.mca");
-        System.out.println("file1 size: " + file1.length());
-        System.out.println("file2 size: " + file2.length());
-        try(RandomAccessFile ras=new RandomAccessFile(file1,"r")){
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            ras.seek(0);
-            byte[] b = new byte[4096];
-            int readLen=ras.read(b);
-            md.update(b,0,readLen);
-            System.out.println(new BigInteger(1,md.digest()).toString(16));
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-        try(RandomAccessFile ras=new RandomAccessFile(file2,"r")){
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            ras.seek(0);
-            byte[] b = new byte[4096];
-            int readLen=ras.read(b);
-            md.update(b,0,readLen);
-            System.out.println(new BigInteger(1,md.digest()).toString(16));
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
     }
 }
 

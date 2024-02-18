@@ -1,4 +1,4 @@
-package indi.somebottle.potatosack.entities.driveitems;
+package indi.somebottle.potatosack.entities.onedrive;
 
 /**
  * children - value - item中的file字段

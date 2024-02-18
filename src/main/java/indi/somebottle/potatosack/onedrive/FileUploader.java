@@ -1,6 +1,7 @@
 package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
+import indi.somebottle.potatosack.entities.onedrive.PutSessionResp;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
@@ -86,7 +87,7 @@ public class FileUploader {
             // 发送请求
             Response resp = client.newCall(req).execute();
             if (resp.isSuccessful()) {
-                System.out.println("Upload req success");
+                System.out.println(" --> Chunk successfully uploaded.");
                 int respCode = resp.code();
                 respBody = resp.body(); // 放在这里才能保证ResponseBody不会泄露
                 if (respCode == 202) {
@@ -128,29 +129,5 @@ public class FileUploader {
                 respBody.close();
         }
         return -1;
-    }
-
-    /**
-     * PUT请求uploadUrl的响应
-     */
-    private static class PutSessionResp {
-        private String expirationDateTime;
-        private List<String> nextExpectedRanges;
-
-        public String getExpirationDateTime() {
-            return expirationDateTime;
-        }
-
-        public void setExpirationDateTime(String expirationDateTime) {
-            this.expirationDateTime = expirationDateTime;
-        }
-
-        public List<String> getNextExpectedRanges() {
-            return nextExpectedRanges;
-        }
-
-        public void setNextExpectedRanges(List<String> nextExpectedRanges) {
-            this.nextExpectedRanges = nextExpectedRanges;
-        }
     }
 }

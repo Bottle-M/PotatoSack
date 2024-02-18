@@ -166,10 +166,10 @@ public class Utils {
      *
      * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
      * @param outputPath   输出Zip包的路径
-     * @param quiet        是否静默打包
+     * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 是否打包成功
      */
-    public static boolean ZipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath, boolean quiet) {
+    public static boolean zipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath, boolean quiet) {
         System.out.println("Compressing...");
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputPath)))
@@ -206,7 +206,7 @@ public class Utils {
      * @return 是否打包成功
      * @apiNote 比如srcDirPath='./test/myfolder'，如果packAsSrcDir=true，那么打包后的zip包中根目录下是myfolder，其中是myfolder中的所有文件； 否则根目录下则是myfolder内的所有文件。
      */
-    public static boolean Zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
+    public static boolean zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
@@ -228,10 +228,10 @@ public class Utils {
      *
      * @param srcDirPath  String[] ，指定要打包的目录路径（注意：路径需要是同一目录下的子目录）
      * @param zipFilePath String 指定打包后的zip文件路径
-     * @param quiet       是否静默打包
+     * @param quiet       是否静默打包（不显示 Adding... 信息)
      * @return 是否打包成功
      */
-    public static boolean Zip(String[] srcDirPath, String zipFilePath, boolean quiet) {
+    public static boolean zip(String[] srcDirPath, String zipFilePath, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
@@ -260,7 +260,7 @@ public class Utils {
      * @param quiet     是否静默打包
      * @throws Exception 打包失败抛出异常
      */
-    private static void addItemsToZip(File srcDir, String parentDir, ZipOutputStream zout, boolean quiet) throws Exception {
+    public static void addItemsToZip(File srcDir, String parentDir, ZipOutputStream zout, boolean quiet) throws Exception {
         File[] files = srcDir.listFiles();
         if (files == null) {
             throw new Exception("Error: file list is null, this should not happen!");
@@ -303,6 +303,22 @@ public class Utils {
             // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
             Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
                 PotatoSack.plugin.getLogger().severe(finalMsg);
+            });
+        }
+    }
+
+    /**
+     * 设置所有世界：是否自动保存
+     *
+     * @param value true / false
+     */
+    public static void setWorldsSave(boolean value) {
+        if (PotatoSack.plugin != null) {
+            // 在主线程中，设置全部世界的保存情况
+            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
+                Bukkit.getWorlds().forEach(world -> {
+                    world.setAutoSave(value);
+                });
             });
         }
     }
