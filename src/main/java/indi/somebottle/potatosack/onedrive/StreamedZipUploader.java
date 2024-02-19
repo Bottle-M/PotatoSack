@@ -211,7 +211,7 @@ public class StreamedZipUploader {
             Utils.logError("Compression / upload failed: " + e.getMessage());
             return false;
         }
-        System.out.println("Compression / upload success. Total size: " + totalSize);
+        System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
     }
 

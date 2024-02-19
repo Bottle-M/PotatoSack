@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.utils;
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import org.bukkit.Bukkit;
+import org.bukkit.World;
 
 import java.io.*;
 import java.math.BigInteger;
@@ -319,19 +320,50 @@ public class Utils {
     }
 
     /**
-     * 设置所有世界：是否自动保存
+     * 设置**所有**世界：是否启动自动保存
      *
-     * @param value true / false
+     * @param value 是否停止
+     * @return 被影响的世界字符串List
      */
-    public static void setWorldsSave(boolean value) {
+    public static List<String> setWorldsSave(boolean value) {
+        return setWorldsSave(null, value);
+    }
+
+    /**
+     * 设置指定世界：是否启动自动保存
+     *
+     * @param worlds 世界名列表
+     * @param value  是否停止
+     * @return 被影响的世界字符串List
+     */
+    public static List<String> setWorldsSave(List<String> worlds, boolean value) {
+        // 这样写是因为，有的插件（比如一些需要地图还原的小游戏插件）依赖于将 world 设置为非自动保存
+        // 这里我会将受到影响的世界返回，下次设置时可以作为 worlds 参数传入，以免影响到一些世界原有的状态
+        List<String> affectedWorlds = new ArrayList<>(); // 受影响的世界
         if (PotatoSack.plugin != null) {
+            List<World> worldList;
+            if (worlds == null) {
+                // 如果没有指定世界，则默认为全部
+                worldList = Bukkit.getWorlds();
+            } else {
+                worldList = new ArrayList<>();
+                for (String worldName : worlds) {
+                    World world = Bukkit.getWorld(worldName);
+                    if (world != null)
+                        worldList.add(world);
+                }
+            }
             // 在主线程中，设置全部世界的保存情况
             Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-                Bukkit.getWorlds().forEach(world -> {
+                // 停止世界自动保存
+                worldList.forEach(world -> {
+                    if (world.isAutoSave() != value) // 和要设定的值不一样，说明有变更
+                        affectedWorlds.add(world.getName());
                     world.setAutoSave(value);
                 });
             });
         }
+        return affectedWorlds;
     }
 
     /**

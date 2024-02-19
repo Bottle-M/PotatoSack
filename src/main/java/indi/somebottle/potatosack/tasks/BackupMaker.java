@@ -255,8 +255,20 @@ public class BackupMaker {
         if ((boolean) config.getConfig("use-streaming-compression-upload")) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
-            if (!odClient.zipPipingUpload(worldPaths.toArray(new String[0]), remotePath, true))
-                return false;
+            // 这里需要临时禁止自动保存
+            // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
+            // 要保证这个期间世界数据不会变动，否则会上传失败
+            // 储存停止自动保存的世界
+            List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
+            ConsoleSender.toConsole("Temporarily stopped world auto-save...");
+            try {
+                if (!odClient.zipPipingUpload(worldPaths.toArray(new String[0]), remotePath, true))
+                    return false;
+            } finally {
+                // 恢复世界自动保存
+                Utils.setWorldsSave(saveStoppedWorlds, true);
+                ConsoleSender.toConsole("Restarted world auto-save...");
+            }
         } else {
             // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
@@ -391,8 +403,20 @@ public class BackupMaker {
         if ((boolean) config.getConfig("use-streaming-compression-upload")) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Upload ]<------");
-            if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
-                return false;
+            // 这里需要临时禁止自动保存
+            // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
+            // 要保证这个期间世界数据不会变动，否则会上传失败
+            // 储存停止自动保存的世界
+            List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
+            ConsoleSender.toConsole("Temporarily stopped world auto-save...");
+            try {
+                if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
+                    return false;
+            } finally {
+                // 恢复世界自动保存
+                Utils.setWorldsSave(saveStoppedWorlds, true);
+                ConsoleSender.toConsole("Restarted world auto-save...");
+            }
         } else {
             // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");

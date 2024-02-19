@@ -2,7 +2,7 @@ package indi.somebottle.potatosack.onedrive;
 
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.entities.RefreshResp;
+import indi.somebottle.potatosack.entities.onedrive.RefreshResp;
 import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
