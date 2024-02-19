@@ -99,10 +99,9 @@ public class Test {
     @org.junit.Test
     public void zipPipingUploadTest_File() throws IOException {
         ZipFilePath[] testInput = {
-                new ZipFilePath("E:\\Projects\\TestArea\\test_video\\nichijou.mp4", "test_video1.mp4"),
-                new ZipFilePath("E:\\Projects\\TestArea\\test_video2\\box.mp4", "test_video2.mp4"),
-                new ZipFilePath("E:\\Projects\\TestArea\\test_video2\\rick.mp4", "test_video3.mp4"),
-                new ZipFilePath("E:\\Projects\\TestArea\\1.19.json", "1.19.test.json")
+                new ZipFilePath("E:\\Projects\\TestArea\\1.19.json", "1.19.test.json"),
+                new ZipFilePath("E:\\Projects\\TestArea\\coscli.log", "coscli.test.json"),
+                new ZipFilePath("E:\\Projects\\TestArea\\filelist.txt", "filelist.txt"),
         };
         if (client.zipPipingUpload(testInput, "test/compressed.zip", true))
             System.out.println("success");
