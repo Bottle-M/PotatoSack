@@ -2,7 +2,6 @@ import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.onedrive.Item;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
-import indi.somebottle.potatosack.utils.ConfigOpts;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.OkHttpClient;

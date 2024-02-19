@@ -239,14 +239,6 @@ public class BackupMaker {
             // 世界名.json中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
         }
-        // 2. 开始压缩
-        // 临时文件路径
-        ConsoleSender.toConsole("Compressing...");
-        String tempFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
-        // 压缩
-        if (!Utils.zip(worldPaths.toArray(new String[0]), tempFilePath, true))
-            return false;
-        // 3. 上传压缩好的文件
         String currFullBackupId; // 备份组号
         String currDate = Utils.getDateStr(); // 当前日期，形如20240104
         String lastFullBackupId = rec.getLastFullBackupId(); // 获得前一次的备份组号
@@ -258,9 +250,27 @@ public class BackupMaker {
             int serial = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
             currFullBackupId = "0" + currDate + String.format("%06d", serial);
         }
-        ConsoleSender.toConsole("Uploading Full Backup...");
-        if (!odClient.uploadLargeFile(tempFilePath, Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip"))
-            return false;
+        // 文件在云端的路径
+        String remotePath = Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
+        if ((boolean) config.getConfig("use-streaming-compression-upload")) {
+            // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
+            ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
+            if (!odClient.zipPipingUpload(worldPaths.toArray(new String[0]), remotePath, true))
+                return false;
+        } else {
+            // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
+            ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
+            ConsoleSender.toConsole("Compressing...");
+            // 临时文件路径
+            String tempFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
+            // 2. 开始压缩
+            if (!Utils.zip(worldPaths.toArray(new String[0]), tempFilePath, true))
+                return false;
+            // 3. 上传压缩好的文件
+            ConsoleSender.toConsole("Uploading Full Backup...");
+            if (!odClient.uploadLargeFile(tempFilePath, remotePath))
+                return false;
+        }
         // 4. 更新备份记录
         // 写入backup.json
         rec.setLastFullBackupId(currFullBackupId);
@@ -376,15 +386,26 @@ public class BackupMaker {
             long increBackupIdNum = Long.parseLong(increBackupId);
             increBackupId = String.format("%06d", increBackupIdNum + 1);
         }
-        // 输出文件路径
-        String outputPath = pluginTempPath + "incre" + increBackupId + ".zip";
-        // 执行压缩
-        if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath, true))
-            return false;
-        // 3. 上传
-        ConsoleSender.toConsole("Uploading Incremental Backup...");
-        if (!odClient.uploadFile(outputPath, Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/incre" + increBackupId + ".zip"))
-            return false;
+        // 压缩包在云端的路径
+        String remotePath = Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/incre" + increBackupId + ".zip";
+        if ((boolean) config.getConfig("use-streaming-compression-upload")) {
+            // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
+            ConsoleSender.toConsole("------>[ Using Streaming Upload ]<------");
+            if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
+                return false;
+        } else {
+            // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
+            ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
+            // 输出文件路径
+            String outputPath = pluginTempPath + "incre" + increBackupId + ".zip";
+            // 执行压缩
+            if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath, true))
+                return false;
+            // 3. 上传
+            ConsoleSender.toConsole("Uploading Incremental Backup...");
+            if (!odClient.uploadFile(outputPath, remotePath))
+                return false;
+        }
         // 4. 更新备份记录
         rec.setLastIncreBackupId(increBackupId);
         rec.setLastIncreBackupTime(Utils.timeStamp());
