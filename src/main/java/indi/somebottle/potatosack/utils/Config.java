@@ -116,8 +116,11 @@ public class Config {
         if (config.get("incremental-backup-check-interval") == null) {
             config.set("incremental-backup-check-interval", 15);
         }
-        if (config.get("stop-backup-when-no-player") == null) {
-            config.set("stop-backup-when-no-player", true);
+        if (config.get("stop-incremental-backup-when-no-player") == null) {
+            config.set("stop-incremental-backup-when-no-player", true);
+        }
+        if (config.get("use-streaming-compression-upload") == null) {
+            config.set("use-streaming-compression-upload", false);
         }
         if (config.get("worlds") == null) {
             List<String> worlds = new ArrayList<>();

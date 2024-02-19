@@ -3,7 +3,6 @@ package indi.somebottle.potatosack.tasks;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
-import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 import org.bukkit.Bukkit;
 
@@ -88,7 +87,7 @@ public class BackupChecker implements Runnable {
             }
             // 检查是不是需要进行增量备份了
             // 如果在线人数为0且配置了【无人时不进行增量备份】，则不进行增量备份检查
-            if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig("stop-backup-when-no-player"))
+            if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig("stop-incremental-backup-when-no-player"))
                 return;
             long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
             // 注意increBackupInterval单位是分钟

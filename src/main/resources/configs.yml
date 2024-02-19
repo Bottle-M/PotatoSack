@@ -22,9 +22,9 @@ incremental-backup-check-interval: 15
 # Whether to stop incremental backup when no player is online
 # Note: It may save you some data traffic expenses when nobody's there.
 # Note: Full backup won't be stopped, only incremental backups will be affected.
-stop-backup-when-no-player: true
+stop-incremental-backup-when-no-player: true
 
-# Whether to upload files while compressing them.
+# Whether to upload files while compressing them. (Time-space trade-off)
 # Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
 # Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
 use-streaming-compression-upload: false
