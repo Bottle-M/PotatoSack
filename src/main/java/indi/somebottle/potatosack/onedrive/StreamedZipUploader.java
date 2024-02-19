@@ -9,12 +9,11 @@ import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.List;
-import java.util.zip.ZipEntry;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipOutputStream;
 
 /**
@@ -52,6 +51,7 @@ public class StreamedZipUploader {
          * @throws IOException 上传失败时抛出 IO异常
          */
         private void uploadBuf() throws IOException {
+            // 将缓冲区中的块上传，并清空缓冲区
             // 检查上传数据是否有缺失
             if (expectRangeStart != chunkOffset) {
                 // 服务端期待下次接受的 range 和本地要传输的不匹配
@@ -59,13 +59,12 @@ public class StreamedZipUploader {
             }
             long currRangeEnd = chunkOffset + writePos - 1; // 本次 range 的最后一个字节的编号
             ResponseBody respBody = null;
-            // 将缓冲区中的块上传，并清空缓冲区
             // 生成Range头
             String range = "bytes " + chunkOffset + "-" + currRangeEnd + "/" + totalSize;
-            System.out.println("Compressing + Uploading chunk: " + range);
+            System.out.println("Compressing + Uploading chunk: " + range + " Byte(s)");
             try {
                 // 建立文件内容请求体
-                // 用 Arrays.copyOfRange 方法对缓冲区切片复制，防止其他数据误写入
+                // 用Arrays.copyOfRange复制缓冲区切片，防止多余数据被上传
                 RequestBody fileReqBody = RequestBody.create(Arrays.copyOfRange(buffer, 0, writePos), MediaType.parse("application/octet-stream"));
                 // 构造请求
                 Request req = new Request.Builder()
@@ -143,8 +142,18 @@ public class StreamedZipUploader {
          */
         @Override
         public void close() throws IOException {
-            if (writePos > 0)
+            if (uploadSessionClosed) {
+                if (writePos > 0) // 虽然关闭了上传会话，但内存还有数据没有上传
+                    throw new IOException("Unexpected: Upload session closed.");
+                // 如果上传会话已经正常关闭，无需再次执行 close
+            } else if (writePos > 0) {
+                // 如果上传会话未关闭，且缓冲区有剩余内容
                 uploadBuf(); // 上传缓冲区并冲刷掉
+            } else {
+                // 上传会话未关闭且缓冲区没有剩余内容
+                // 这是异常情况！
+                throw new IOException("Unexpected: Upload session not closed although there's no more data to upload.");
+            }
         }
     }
 
@@ -152,44 +161,20 @@ public class StreamedZipUploader {
      * CounterOutputStream 不执行任何写入操作，仅仅计算 Zip 文件流输出的字节数
      */
     private static class CounterOutputStream extends OutputStream {
-        // 初始0字节
-        private long counter = 0L;
+        // 计数器
+        private final AtomicLong counter;
+
+        public CounterOutputStream(AtomicLong counter) {
+            this.counter = counter;
+        }
 
         @Override
-        public void write(int b) throws IOException {
-            // 每写入一个字节，counter自增
-            counter++;
+        public void write(int b) {
+            counter.incrementAndGet();
         }
 
-        public long getCounter() {
-            return counter;
-        }
     }
 
-    /**
-     * 辅助zipSpecifiedAndUpload方法，将指定的文件加入Zip流
-     *
-     * @param zos          Zip输出流
-     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
-     * @param quiet        是否静默打包（不显示 Adding... 信息)
-     */
-    private void zipSpecifiedFiles(ZipOutputStream zos, ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
-        for (ZipFilePath zipFilePath : zipFilePaths) {
-            if (!quiet)
-                System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
-            zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
-            File file = new File(zipFilePath.filePath);
-            FileInputStream in = new FileInputStream(file);
-            byte[] buffer = new byte[8192]; // 写入文件
-            int len;
-            while ((len = in.read(buffer)) > 0) {
-                zos.write(buffer, 0, len);
-            }
-            in.close();
-        }
-        zos.closeEntry();
-        zos.flush();
-    }
 
     /**
      * 将指定的文件打包成Zip并上传
@@ -199,18 +184,21 @@ public class StreamedZipUploader {
      * @return 是否打包上传成功
      */
     public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) {
+        AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         System.out.println("Calculating file size... ");
         // 先统计文件大小
         try (
-                CounterOutputStream cos = new CounterOutputStream();
+                CounterOutputStream cos = new CounterOutputStream(fileSizeCounter);
                 ZipOutputStream zout = new ZipOutputStream(cos)
         ) {
-            zipSpecifiedFiles(zout, zipFilePaths, quiet);
-            totalSize = cos.getCounter();
+            // 进行文件压缩
+            Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
         } catch (Exception e) {
             Utils.logError("Calculation failed: " + e.getMessage());
             return false;
         }
+        // 注意，要在流关闭后再取出结果
+        totalSize = fileSizeCounter.get();
         System.out.println("Calculation success. Total size: " + totalSize);
         // 再进行文件压缩和上传
         System.out.println("Compressing and uploading... ");
@@ -218,7 +206,7 @@ public class StreamedZipUploader {
                 UploadOutputStream uos = new UploadOutputStream();
                 ZipOutputStream zout = new ZipOutputStream(uos)
         ) {
-            zipSpecifiedFiles(zout, zipFilePaths, quiet);
+            Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
         } catch (Exception e) {
             Utils.logError("Compression / upload failed: " + e.getMessage());
             return false;
@@ -237,8 +225,9 @@ public class StreamedZipUploader {
      */
     public boolean zipAndUpload(String[] srcDirPath, boolean quiet) {
         // 先统计一次文件大小
+        AtomicLong fileSizeCounter = new AtomicLong(0L); // 初始化计数器
         try (
-                CounterOutputStream cos = new CounterOutputStream();
+                CounterOutputStream cos = new CounterOutputStream(fileSizeCounter);
                 ZipOutputStream zout = new ZipOutputStream(cos)
         ) {
             System.out.println("Calculating file size... ");
@@ -249,11 +238,12 @@ public class StreamedZipUploader {
             }
             zout.closeEntry();
             zout.flush();
-            totalSize = cos.getCounter();
         } catch (Exception e) {
             Utils.logError("Calculation failed: " + e.getMessage());
             return false;
         }
+        // 注意，要在流关闭后再取出结果
+        totalSize = fileSizeCounter.get();
         System.out.println("Calculation success. Total size: " + totalSize);
         // 再对文件进行压缩并上传
         try (
@@ -272,7 +262,7 @@ public class StreamedZipUploader {
             Utils.logError("Compression / upload failed: " + e.getMessage());
             return false;
         }
-        System.out.println("Compression / upload success. Total size: " + totalSize);
+        System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
     }
 }

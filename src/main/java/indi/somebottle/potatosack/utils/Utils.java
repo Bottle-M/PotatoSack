@@ -162,6 +162,31 @@ public class Utils {
     }
 
     /**
+     * 将指定的文件加入Zip流
+     *
+     * @param zos          Zip输出流
+     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param quiet        是否静默打包（不显示 Adding... 信息)
+     */
+    public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
+        for (ZipFilePath zipFilePath : zipFilePaths) {
+            if (!quiet)
+                System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
+            zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
+            File file = new File(zipFilePath.filePath);
+            FileInputStream in = new FileInputStream(file);
+            byte[] buffer = new byte[8192]; // 写入文件
+            int len;
+            while ((len = in.read(buffer)) > 0) {
+                zos.write(buffer, 0, len);
+            }
+            in.close();
+        }
+        zos.closeEntry();
+        zos.flush();
+    }
+
+    /**
      * 将指定的文件打包成Zip
      *
      * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
@@ -174,21 +199,7 @@ public class Utils {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputPath)))
         ) {
-            for (ZipFilePath zipFilePath : zipFilePaths) {
-                if (!quiet)
-                    System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
-                zout.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
-                File file = new File(zipFilePath.filePath);
-                FileInputStream in = new FileInputStream(file);
-                byte[] buffer = new byte[8192]; // 写入文件
-                int len;
-                while ((len = in.read(buffer)) > 0) {
-                    zout.write(buffer, 0, len);
-                }
-                in.close();
-            }
-            zout.closeEntry();
-            zout.flush();
+            zipSpecificFilesUtil(zout, zipFilePaths, quiet);
             return true;
         } catch (IOException e) {
             Utils.logError("Zip specific files failed: " + e.getMessage());
@@ -272,7 +283,7 @@ public class Utils {
                 addItemsToZip(file, currentDir, zout, quiet);
             } else {
                 // 如果是文件就写入Zip
-                try (BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file))) {
+                try (FileInputStream fis = new FileInputStream(file)) {
                     if (!quiet)
                         System.out.println("Add file: " + currentDir);
                     // 将条目（文件）加入zip包
@@ -281,7 +292,7 @@ public class Utils {
                     // 写入文件
                     int len;
                     byte[] buf = new byte[8192];
-                    while ((len = bin.read(buf)) != -1) {
+                    while ((len = fis.read(buf)) != -1) {
                         zout.write(buf, 0, len);
                     }
                 }
