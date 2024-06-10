@@ -185,12 +185,12 @@ public class BackupMaker {
     /**
      * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/*.json
      *
-     * @param fileName 文件名数组String[]，指定要下载的一组json文件
+     * @param fileNames 文件名数组String[]，指定要下载的一组json文件
      * @return 是否拉取成功
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 文件名不包含.json后缀
      */
-    public boolean pullRecordsFile(String[] fileName) throws IOException {
+    public boolean pullRecordsFile(String[] fileNames) throws IOException {
         // 先对OneDrive下的插件数据目录进行列表
         List<Item> itemsRes;
         String latestFolderName = ""; // 找出字典序上最大的一个子目录名，这里的目录名格式形如020240104000001
@@ -203,7 +203,7 @@ public class BackupMaker {
             return false;
         // 从云端拉取backup.json
         boolean success = true;
-        for (String name : fileName) {
+        for (String name : fileNames) {
             File recordFile = new File(pluginDataPath + name + ".json");
             success = odClient.downloadFile(Constants.OD_APP_DATA_FOLDER + "/" + latestFolderName + "/" + name + ".json", recordFile) && success;
         }

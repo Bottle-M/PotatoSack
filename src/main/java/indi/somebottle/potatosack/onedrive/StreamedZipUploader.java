@@ -20,7 +20,7 @@ import java.util.zip.ZipOutputStream;
  * 本模块用于实现在压缩的同时进行上传，可以避免这样的情况：
  * 比如很多家的面板服会限制磁盘大小，而一般的备份建立方式会先建立一个 Zip 文件存放在本地临时目录，然后再进行上传，这就要求磁盘剩余的空间能容纳下这个压缩包。
  * 如果剩余空间不够，可能导致压缩文件写入失败。
- * 这个模块的思路是将压缩文件块先
+ * 这个模块的思路是时间换空间，先模拟压缩一遍，计算出压缩文件的总大小，然后再压缩一遍，边压缩边上传，即可避免磁盘剩余空间不够的情况
  */
 public class StreamedZipUploader {
     private final OkHttpClient client = new OkHttpClient.Builder()
@@ -28,6 +28,7 @@ public class StreamedZipUploader {
             .build();
     private final Gson gson = new Gson();
     private final String uploadUrl;
+    // TODO: Total Size 上应该要额外增加一点空白字节，防止两次计算出的压缩文件大小有偏差。每次失败，增加的空白字节数会自动计算。
     private long totalSize = 0; // 压缩文件总大小
 
     public StreamedZipUploader(String uploadUrl) {
