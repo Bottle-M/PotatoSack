@@ -216,7 +216,7 @@ public class BackupMaker {
      * @return 是否成功
      * @apiNote 本方法会进行: <p>1. 压缩相应文件</p><p>2. 上传压缩后的文件</p><p>3. 检查是否有需要删除的备份组（只保留几组）</p>
      */
-    public boolean makeFullBackup() throws IOException {
+    public boolean makeFullBackup() throws IOException, InterruptedException {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
@@ -262,6 +262,10 @@ public class BackupMaker {
             List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
+                // 开始前先等待 30s，即使关闭了自动保存，可能还有正在进行的保存工作
+                // 尽量等待这些工作完成
+                ConsoleSender.toConsole("Waiting for 30s before backup start...");
+                Thread.sleep(30000);
                 if (!odClient.zipPipingUpload(worldPaths.toArray(new String[0]), remotePath, true))
                     return false;
             } finally {
@@ -327,7 +331,7 @@ public class BackupMaker {
      *
      * @return 是否成功
      */
-    public boolean makeIncreBackup() throws IOException {
+    public boolean makeIncreBackup() throws IOException, InterruptedException {
         ConsoleSender.toConsole("Making incremental backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
@@ -410,6 +414,10 @@ public class BackupMaker {
             List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
+                // 开始前先等待 30s，即使关闭了自动保存，可能还有正在进行的保存工作
+                // 尽量等待这些工作完成
+                ConsoleSender.toConsole("Waiting for 30s before backup start...");
+                Thread.sleep(30000);
                 if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
                     return false;
             } finally {

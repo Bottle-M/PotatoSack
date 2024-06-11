@@ -23,6 +23,8 @@ import java.util.zip.ZipOutputStream;
  * 这个模块的思路是时间换空间，先模拟压缩一遍，计算出压缩文件的总大小，然后再压缩一遍，边压缩边上传，即可避免磁盘剩余空间不够的情况
  */
 public class StreamedZipUploader {
+    // TODO： 文件末尾填充的空白字节数，最初是 5 KiB
+    // private static long paddingSize = 5 * 1024L;
     private final OkHttpClient client = new OkHttpClient.Builder()
             .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
             .build();
