@@ -305,7 +305,7 @@ public class Utils {
      * 记录插件出错信息（方便追溯）
      *
      * @param msg 错误信息字符串
-     * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台
+     * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台，本方法首先会在本线程打印到控制台一次，再在主线程打印一次
      */
     public static void logError(String msg) {
         String finalMsg = "[" + Constants.PLUGIN_PREFIX + "] Fatal: " + msg;

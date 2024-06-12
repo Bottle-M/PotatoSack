@@ -211,6 +211,12 @@ public class StreamedZipUploader {
         ) {
             Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
         } catch (Exception e) {
+            // 20240611 如果这里 uos 抛出了异常，会被捕捉
+            // 但是捕捉后，会关闭 zout 资源和 uos 资源
+            // 关闭 zout 时会尝试 flush 剩余数据到 uos 中，会调用 uos 的 write 方法
+            // 如果此时已经有 writePos==buffer.length，那么就会导致越界异常，但是 writePos 仍会 +1
+            // 因为是关闭资源时再次发生的异常，这个异常会被抑制，不会被抛出，在日志中不会体现出来
+            // 在这之后会关闭 uos 资源，但是关闭 uos 时又会调用 uos 的 close 方法，在 writePos 不为 0 的情况下触发一次 uploadBuf，因此可能导致再次上传失败，再次抛出异常，这个异常也会被抑制
             Utils.logError("Compression / upload failed: " + e.getMessage());
             return false;
         }
@@ -267,5 +273,11 @@ public class StreamedZipUploader {
         }
         System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
+    }
+
+    /**
+     * 当上传的文件大小超出了先前模拟压缩计算出的大小时抛出此异常
+     */
+    public class DataSizeOverflowException extends Exception {
     }
 }

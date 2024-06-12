@@ -285,7 +285,8 @@ public class Client {
                 UpSessionCreateResp crResp = gson.fromJson(respBody.string(), UpSessionCreateResp.class);
                 return crResp.getUploadUrl();
             } else {
-                String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
+                // 20240611 修改此处的错误信息
+                String errMsg = "Upload session creation failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 throw new IOException(errMsg);

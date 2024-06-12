@@ -16,7 +16,10 @@ import org.bukkit.World;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -418,8 +421,14 @@ public class BackupMaker {
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
-                    return false;
+                //try {
+                    if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
+                        return false;
+                //}catch(StreamedZipUploader.DataSizeOverflowException e){
+                    // 异常：实际上传的文件大小大于模拟压缩计算出的文件大小
+                    // 在文件末尾附加空白字符，立即重试
+
+                //}
             } finally {
                 // 恢复世界自动保存
                 Utils.setWorldsSave(saveStoppedWorlds, true);
