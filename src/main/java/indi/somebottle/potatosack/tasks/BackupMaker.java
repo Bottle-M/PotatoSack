@@ -108,10 +108,10 @@ public class BackupMaker {
      * 写入本地的 世界名.json
      *
      * @param worldName 世界名
-     * @param recList   世界记录WorldRecord
+     * @param recList   Map<文件相对服务器根目录的路径, 文件哈希>
      * @throws IOException IO异常
      */
-    public void writeWorldRecord(String worldName, Map<String, String[]> recList) throws IOException {
+    public void writeWorldRecord(String worldName, Map<String, String> recList) throws IOException {
         WorldRecord rec = new WorldRecord();
         rec.setFileUpdateTime(Utils.timeStamp());
         rec.setLastFileHashes(recList);
@@ -238,7 +238,7 @@ public class BackupMaker {
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             worldPaths.add(worldAbsPath);
             // 扫描世界目录下的所有文件，获得文件哈希（为增量备份做准备）
-            Map<String, String[]> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
+            Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
             // 世界名.json中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
         }
@@ -265,7 +265,7 @@ public class BackupMaker {
             List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
-                // 开始前先等待 30s，即使关闭了自动保存，可能还有正在进行的保存工作
+                // 202406 开始前先等待 30s，即使关闭了自动保存，之前自动保存可能还有正在异步进行的保存工作
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
@@ -360,10 +360,10 @@ public class BackupMaker {
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             // 扫描世界目录下的所有文件，获得哈希值（为增量备份做准备）
-            Map<String, String[]> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
+            Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
             // 获得上一次增量备份时的文件哈希值
             WorldRecord prevWorldRec = getWorldRecord(worldName);
-            Map<String, String[]> prevLastFileHashes = prevWorldRec.getLastFileHashes();
+            Map<String, String> prevLastFileHashes = prevWorldRec.getLastFileHashes();
             // 找到被删除的文件的路径
             deletedPaths.addAll(
                     Utils.getDeletedFilePaths(prevLastFileHashes, lastFileHashes)
@@ -371,13 +371,15 @@ public class BackupMaker {
             // 找到发生变动的文件的绝对路径
             for (String key : lastFileHashes.keySet()) {
                 // 新记录中新出现的文件 or 新记录中的文件最后修改时间相比旧记录有变动
-                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key)[1].equals(lastFileHashes.get(key)[1]))
+                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(lastFileHashes.get(key)))
                     increFilePaths.add( // 添加到增量文件列表
                             new ZipFilePath(Utils.pathAbsToServer( // 获得文件绝对路径以便Zip打包
-                                    lastFileHashes.get(key)[0]
+                                    // key 就是文件相对于服务端根目录的相对路径
+                                    key
                             ))
                     );
             }
+            // TODO：待测试：修改了 世界名.json 的 lastFileHashes 存储结构
             // 更新 世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
         }
@@ -417,18 +419,12 @@ public class BackupMaker {
             List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
-                // 开始前先等待 30s，即使关闭了自动保存，可能还有正在进行的保存工作
+                // 202406 开始前先等待 30s，即使关闭了自动保存，之前自动保存可能还有正在异步进行的保存工作
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                //try {
-                    if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
-                        return false;
-                //}catch(StreamedZipUploader.DataSizeOverflowException e){
-                    // 异常：实际上传的文件大小大于模拟压缩计算出的文件大小
-                    // 在文件末尾附加空白字符，立即重试
-
-                //}
+                if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
+                    return false;
             } finally {
                 // 恢复世界自动保存
                 Utils.setWorldsSave(saveStoppedWorlds, true);

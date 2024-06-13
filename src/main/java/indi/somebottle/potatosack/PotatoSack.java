@@ -23,7 +23,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class PotatoSack extends JavaPlugin {
-    public static Plugin plugin = null;
+    public static Plugin plugin = null; // 插件对象
+    public static File worldContainerDir = null; // 服务端根目录 File 对象
     private final Config config = new Config(); // 配置文件对象
     private TokenFetcher tokenFetcher; // TokenFetcher对象
     private Client odClient; // OneDrive客户端
@@ -38,6 +39,8 @@ public final class PotatoSack extends JavaPlugin {
     @Override
     public void onEnable() {
         plugin = this; // 暴露插件对象
+        // 20240613 配置服务端根目录
+        worldContainerDir = this.getServer().getWorldContainer();
         Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE); // 设置OkHttpClient日志级别
         System.out.println("[DEBUG]" +
                 "Server root dir: " + new File(System.getProperty("user.dir")));

@@ -210,6 +210,9 @@ public class StreamedZipUploader {
                 ZipOutputStream zout = new ZipOutputStream(uos)
         ) {
             Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+
+            // TODO：如果是 400 错误，附加空白字符并立即重试一次，如果重试失败，推迟 10 分钟
+            // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
         } catch (Exception e) {
             // 20240611 如果这里 uos 抛出了异常，会被捕捉
             // 但是捕捉后，会关闭 zout 资源和 uos 资源
@@ -233,6 +236,7 @@ public class StreamedZipUploader {
      * @return 是否打包上传成功
      */
     public boolean zipAndUpload(String[] srcDirPath, boolean quiet) {
+        // TODO：这个函数是不是可以转换为对 zipSpecifiedAndUpload 的调用？
         // 先统计一次文件大小
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 初始化计数器
         try (

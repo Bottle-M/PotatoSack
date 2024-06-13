@@ -7,6 +7,7 @@ import org.bukkit.World;
 
 import java.io.*;
 import java.math.BigInteger;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -18,6 +19,11 @@ public class Utils {
     // 防止备份任务并发
     public final static BackupMutex BACKUP_MUTEX = new BackupMutex();
 
+    /**
+     * 获得当前的秒级时间戳
+     *
+     * @return 秒级时间戳
+     */
     public static long timeStamp() {
         return System.currentTimeMillis() / 1000;
     }
@@ -89,12 +95,13 @@ public class Utils {
      * @apiNote 比如<p>/root/server/world/region</p><p>转换为</p><p>world/region</p>
      */
     public static String pathRelativeToServer(File file) {
-        String serverPath = new File(System.getProperty("user.dir")).getAbsolutePath();
-        // 这里替换时加上末尾的“/”再替换
-        String replaced = file.getAbsolutePath().replace(serverPath + File.separator, "");
-        if (replaced.startsWith("./")) // 有的时候替换后是./开头，很奇妙，这里也考虑进去
-            replaced = replaced.substring(2);
-        return replaced;
+        // toURI 转换为 绝对路径 构成的标准 URI 形式
+        Path serverRootPath = Path.of(PotatoSack.worldContainerDir.toURI());
+        Path filePath = Path.of(file.toURI());
+        // 获得相对路径
+        String relativePathStr = serverRootPath.relativize(filePath).toString();
+        // 统一为 Unix 格式
+        return relativePathStr.replace('\\', '/');
     }
 
     /**
@@ -105,9 +112,11 @@ public class Utils {
      * @apiNote 比如<p>world/region</p><p>转换为</p><p>/root/server/world/region</p>
      */
     public static String pathAbsToServer(String relativePath) {
-        String serverPath = new File(System.getProperty("user.dir")).getAbsolutePath();
-        // 这里替换时加上末尾的“/”
-        return serverPath + File.separator + relativePath;
+        // TODO： 用 getWorldContainer API 重新实现
+        // 把绝对路径和相对路径拼接起来
+        File absoluteFile = new File(PotatoSack.worldContainerDir, relativePath);
+        // 返回拼接好的路径字符串
+        return absoluteFile.getPath();
     }
 
     /**
@@ -115,9 +124,9 @@ public class Utils {
      *
      * @param srcDir 待扫描目录（File对象）
      * @param res    （递归用） 调用时传入null即可
-     * @return Map(String - > [文件路径, 文件最后哈希值])对象
+     * @return Map(String - > 文件最后哈希值)对象
      */
-    public static Map<String, String[]> getLastFileHashes(File srcDir, Map<String, String[]> res) {
+    public static Map<String, String> getLastFileHashes(File srcDir, Map<String, String> res) {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -130,10 +139,7 @@ public class Utils {
                 // 是文件则加入
                 res.put(
                         relativePath,
-                        new String[]{
-                                relativePath,
-                                Utils.fileMD5(file) // 计算文件哈希
-                        }
+                        Utils.fileMD5(file) // 计算文件哈希
                 );
             } else if (file.isDirectory()) {
                 // 是目录则继续
@@ -146,12 +152,12 @@ public class Utils {
     /**
      * 获得两个lastFileHashes Map的差集
      *
-     * @param oldMap 旧记录Map
-     * @param newMap 新记录Map
-     * @return 被删除的文件路径列表String List
+     * @param oldMap 旧记录Map<文件相对服务器根目录的路径, 文件哈希>
+     * @param newMap 新记录Map<文件相对服务器根目录的路径, 文件哈希>
+     * @return 被删除的文件路径列表 String List
      * @apiNote 用于找出两个增量备份间被删除的文件
      */
-    public static List<String> getDeletedFilePaths(Map<String, String[]> oldMap, Map<String, String[]> newMap) {
+    public static List<String> getDeletedFilePaths(Map<String, String> oldMap, Map<String, String> newMap) {
         List<String> res = new ArrayList<>();
         for (String key : oldMap.keySet()) {
             if (!newMap.containsKey(key)) {

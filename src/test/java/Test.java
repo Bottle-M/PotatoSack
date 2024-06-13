@@ -171,10 +171,10 @@ public class Test {
     @org.junit.Test
     public void getLastModifyTimesTest() {
         File testF = new File("E:\\Projects\\TestArea\\test\\plugins");
-        Map<String, String[]> lastModifyTimes = Utils.getLastFileHashes(testF, null);
+        Map<String, String> lastFileHashes = Utils.getLastFileHashes(testF, null);
         System.out.println("Parent dir: " + testF.getParentFile().getAbsolutePath() + File.separator);
-        for (String key : lastModifyTimes.keySet())
-            System.out.println(lastModifyTimes.get(key)[0] + " - " + lastModifyTimes.get(key)[1]);
+        for (String key : lastFileHashes.keySet())
+            System.out.println(key + " - " + lastFileHashes.get(key));
     }
 
     @org.junit.Test

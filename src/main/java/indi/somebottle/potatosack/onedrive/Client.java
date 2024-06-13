@@ -327,6 +327,7 @@ public class Client {
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      */
     public boolean zipPipingUpload(String[] srcDirPath, String remotePath, boolean quiet) throws IOException {
+        // TODO：这个函数是不是可以转换为对 zipPipingUpload(ZipFilePath[] zipFilePaths, ... 的调用？
         if (srcDirPath.length == 0 || remotePath.equals(""))
             return false;
         String uploadUrl = createUploadSession(remotePath); // 建立上传会话
