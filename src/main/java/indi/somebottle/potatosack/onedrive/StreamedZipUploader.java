@@ -1,6 +1,7 @@
 package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
+import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.onedrive.PutSessionResp;
 import indi.somebottle.potatosack.utils.Constants;
@@ -28,6 +29,7 @@ public class StreamedZipUploader {
     private final Gson gson = new Gson();
     private final String uploadUrl;
     // TODO: Total Size 上应该要额外增加一点空白字节，防止两次计算出的压缩文件大小有偏差。每次失败，增加的空白字节数会自动计算。
+    private long paddingSize = 0; // 在计算出 totalSize 后，在末尾填充的空白字节数
     private long totalSize = 0; // 压缩文件总大小
 
     public StreamedZipUploader(String uploadUrl) {
@@ -103,6 +105,23 @@ public class StreamedZipUploader {
                     chunkOffset += writePos; // 更新下一块相对于文件起点的偏移量
                     writePos = 0; // 从缓冲区头部重新开始写
                 } else {
+                    // 请求未成功，先把 writePos 归零
+                    // 避免 try-with-resource 关闭时再次触发 uploadBuf
+                    writePos = 0;
+                    // 请求未成功，可能有 400 和 416 状态码
+                    switch (resp.code()) {
+                        case 400:
+                            // 400 可能是因为 Range 的问题
+                            if (currRangeEnd > totalSize - 1) {
+                                // 如果确实是实际上传大小比计算出的大小更大
+                                // 抛出异常时携带信息：溢出的字节数
+                                throw new DataSizeOverflowException("Data size overflow.", currRangeEnd - totalSize + 1);
+                            }
+                            break;
+                        case 416:
+                            // TODO: 对 416 问题的处理
+                            break;
+                    }
                     String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
                     respBody = resp.body();
                     if (respBody != null)
@@ -124,8 +143,8 @@ public class StreamedZipUploader {
          */
         @Override
         public void write(int b) throws IOException {
-            // 服务端提前关闭了上传会话，则失败
-            if (uploadSessionClosed)
+            // 上传会话已经关闭则无法继续传输
+            if(uploadSessionClosed)
                 throw new IOException("Unexpected: Upload session closed.");
             // 先往缓冲区写
             buffer[writePos++] = (byte) b;
@@ -151,8 +170,14 @@ public class StreamedZipUploader {
                 uploadBuf(); // 上传缓冲区并冲刷掉
             } else {
                 // 上传会话未关闭且缓冲区没有剩余内容
-                // 这是异常情况！
-                throw new IOException("Unexpected: Upload session not closed although there's no more data to upload.");
+                // TODO：待测试: 输出空白字符以填充剩余部分， zip 末尾的空白字符可以被忽略
+                // 一般来说误差字节数不会大于一块的大小
+                // 更新 writePos 为剩余需要填充的字节数
+                writePos = (int) (totalSize - chunkOffset);
+                // 将 buffer [0, writePos-1] 填充为 0
+                Arrays.fill(buffer, 0, writePos, (byte) 0);
+                // 把剩余的空白字节进行上传
+                uploadBuf();
             }
         }
     }
@@ -175,7 +200,6 @@ public class StreamedZipUploader {
 
     }
 
-
     /**
      * 将指定的文件打包成Zip并上传
      *
@@ -184,6 +208,18 @@ public class StreamedZipUploader {
      * @return 是否打包上传成功
      */
     public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) {
+        return zipSpecifiedAndUpload(zipFilePaths, quiet, false);
+    }
+
+    /**
+     * 将指定的文件打包成Zip并上传
+     *
+     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param quiet        是否静默打包（不显示 Adding... 信息)
+     * @param retry        是否是重试
+     * @return 是否打包上传成功
+     */
+    private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         System.out.println("Calculating file size... ");
         // 先统计文件大小
@@ -198,7 +234,8 @@ public class StreamedZipUploader {
             return false;
         }
         // 注意，要在流关闭后再取出结果
-        totalSize = fileSizeCounter.get();
+        // 末尾还要加上填充的空白字符
+        totalSize = fileSizeCounter.get() + paddingSize;
         System.out.println("Calculation success. Total size: " + totalSize);
         // 再进行文件压缩和上传
         System.out.println("Compressing and uploading... ");
@@ -209,7 +246,19 @@ public class StreamedZipUploader {
             Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
 
             // TODO：如果是 400 错误，附加空白字符并立即重试一次，如果重试失败，推迟 10 分钟
+        } catch (DataSizeOverflowException e) {
             // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
+            if (retry) {
+                // 重试过了，但还是溢出了，回避
+                Utils.logError("Compression / upload failed after retrying: " + e.getMessage());
+                return false;
+            }
+            // 获得溢出的字节数，更新平均溢出的字节数
+            PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
+            // 末尾填充的空白字节数 = 2 × 平均溢出的字节数
+            paddingSize = 2 * PotatoSack.streamedOverflowBytesTracker.getAvg();
+            // 立即重试一次
+            return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
         } catch (Exception e) {
             // 20240611 如果这里 uos 抛出了异常，会被捕捉
             // 但是捕捉后，会关闭 zout 资源和 uos 资源
@@ -218,6 +267,15 @@ public class StreamedZipUploader {
             // 因为是关闭资源时再次发生的异常，这个异常会被抑制，不会被抛出，在日志中不会体现出来
             // 在这之后会关闭 uos 资源，但是关闭 uos 时又会调用 uos 的 close 方法，在 writePos 不为 0 的情况下触发一次 uploadBuf，因此可能导致再次上传失败，再次抛出异常，这个异常也会被抑制
             Utils.logError("Compression / upload failed: " + e.getMessage());
+            e.printStackTrace();
+            // try-with-resource 可能有异常被抑制，获取并打印所有被抑制的异常
+            Throwable[] suppressed = e.getSuppressed();
+            if (suppressed.length > 0) {
+                System.out.println("Suppressed exceptions:");
+                for (Throwable t : suppressed) {
+                    t.printStackTrace();
+                }
+            }
             return false;
         }
         System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");
@@ -227,7 +285,18 @@ public class StreamedZipUploader {
     /**
      * 当上传的文件大小超出了先前模拟压缩计算出的大小时抛出此异常
      */
-    public class DataSizeOverflowException extends Exception {
+    public class DataSizeOverflowException extends IOException {
+        private final long overflowSize;
+
+        public DataSizeOverflowException(String msg, long overflowSize) {
+            super(msg);
+            // 实际上传大小相较模拟压缩计算的大小溢出了多少字节
+            this.overflowSize = overflowSize;
+        }
+
+        public long getOverflowSize() {
+            return overflowSize;
+        }
     }
 
 

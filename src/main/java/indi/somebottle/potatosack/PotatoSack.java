@@ -6,10 +6,7 @@ import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.tasks.BackupChecker;
 import indi.somebottle.potatosack.tasks.TokenChecker;
-import indi.somebottle.potatosack.utils.Config;
-import indi.somebottle.potatosack.utils.ConsoleSender;
-import indi.somebottle.potatosack.utils.Constants;
-import indi.somebottle.potatosack.utils.Utils;
+import indi.somebottle.potatosack.utils.*;
 import okhttp3.OkHttpClient;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
@@ -25,6 +22,7 @@ import java.util.logging.Logger;
 public final class PotatoSack extends JavaPlugin {
     public static Plugin plugin = null; // 插件对象
     public static File worldContainerDir = null; // 服务端根目录 File 对象
+    public static ValueAvgTracker streamedOverflowBytesTracker = new ValueAvgTracker(); // 流式上传溢出字节数平均数统计
     private final Config config = new Config(); // 配置文件对象
     private TokenFetcher tokenFetcher; // TokenFetcher对象
     private Client odClient; // OneDrive客户端

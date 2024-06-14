@@ -7,6 +7,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 public final class ConsoleSender {
+    // TODO: 这个模块可以只保留 toPlayer, 输出到控制台直接用 System.out.print
     /**
      * 发送消息到控制台（仅限主线程）
      *

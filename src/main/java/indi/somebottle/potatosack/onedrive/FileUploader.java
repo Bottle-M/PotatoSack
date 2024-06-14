@@ -98,6 +98,7 @@ public class FileUploader {
                     // 读取服务端期待收到的range
                     List<String> nextRanges = respObj.getNextExpectedRanges();
                     if (nextRanges != null && nextRanges.size() > 0) {
+                        // TODO：需要处理 416 问题吗？
                         // 解析下一次要发送的字段
                         String[] nextRangeSp = nextRanges.get(0).split("-");
                         nextRange[0] = Long.parseLong(nextRangeSp[0]);

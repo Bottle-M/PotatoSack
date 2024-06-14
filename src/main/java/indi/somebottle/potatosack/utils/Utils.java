@@ -369,6 +369,7 @@ public class Utils {
      */
     public static void logError(String msg) {
         String finalMsg = "[" + Constants.PLUGIN_PREFIX + "] Fatal: " + msg;
+        // TODO: 没必要输出两次
         System.out.println(finalMsg);
         if (PotatoSack.plugin != null) {
             // 记录到服务端日志

@@ -93,6 +93,34 @@ public class BackupMaker {
     }
 
     /**
+     * 将下次全量备份延迟至当前时间的 sec 秒后
+     *
+     * @param rec BackupRecord 备份记录文件对象
+     * @param sec 推迟的秒数
+     * @throws IOException 文件读写异常
+     */
+    public void putOffFullBackup(BackupRecord rec, long sec) throws IOException {
+        long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
+        rec.setLastFullBackupTime(Utils.timeStamp() - fullBackupInterval * 60 + sec);
+        // 更新 backup.json
+        writeBackupRecord(rec);
+    }
+
+    /**
+     * 将下次增量备份延迟到当前时间的 sec 秒后
+     *
+     * @param rec BackupRecord 备份记录文件对象
+     * @param sec 推迟的秒数
+     * @throws IOException 文件读写异常
+     */
+    public void putOffIncreBackup(BackupRecord rec, long sec) throws IOException {
+        long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
+        rec.setLastIncreBackupTime(Utils.timeStamp() - increBackupInterval * 60 + sec);
+        // 更新 backup.json
+        writeBackupRecord(rec);
+    }
+
+    /**
      * 写入本地的 世界名.json
      *
      * @param worldName 世界名
@@ -269,10 +297,14 @@ public class BackupMaker {
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
+                // TODO: 待测试: 流式压缩上传时全量备份也采用 ZipFilePath
                 // 将 worldPaths 转换为 ZipFilePath 对象数组
                 ZipFilePath[] worldZipFiles = Utils.worldPathsToZipPaths(worldPaths.toArray(new String[0]));
-                if (!odClient.zipPipingUpload(worldZipFiles, remotePath, true))
+                if (!odClient.zipPipingUpload(worldZipFiles, remotePath, true)) {
+                    // 如果流式压缩上传失败了就退避 10 分钟
+                    putOffFullBackup(rec, 10 * 60L);
                     return false;
+                }
             } finally {
                 // 恢复世界自动保存
                 Utils.setWorldsSave(saveStoppedWorlds, true);
@@ -426,8 +458,11 @@ public class BackupMaker {
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true))
+                if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
+                    // 流式压缩上传如果失败就推迟 10 分钟
+                    putOffIncreBackup(rec, 10 * 60L);
                     return false;
+                }
             } finally {
                 // 恢复世界自动保存
                 Utils.setWorldsSave(saveStoppedWorlds, true);
