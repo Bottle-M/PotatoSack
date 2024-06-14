@@ -84,7 +84,7 @@ public class Test {
             System.out.println("fail");
     }
 
-    @org.junit.Test
+/*    @org.junit.Test
     public void zipPipingUploadTest_Dir() throws IOException {
         String[] testInput = {
                 "E:\\Projects\\TestArea\\test_video",
@@ -94,7 +94,7 @@ public class Test {
             System.out.println("success");
         else
             System.out.println("fail");
-    }
+    }*/
 
     @org.junit.Test
     public void zipPipingUploadTest_File() throws IOException {
@@ -109,14 +109,14 @@ public class Test {
             System.out.println("fail");
     }
 
-    @org.junit.Test
+    /*@org.junit.Test
     public void zipTest() {
         if (Utils.zip("E:\\Projects\\TestArea\\incre_test\\root-minecraft-world", "E:\\Projects\\TestArea\\compress_test.zip", false, false)) {
             System.out.println("success");
         } else {
             System.out.println("fail");
         }
-    }
+    }*/
 
     @org.junit.Test
     public void zipSpecificDirTest() {
@@ -129,6 +129,19 @@ public class Test {
             System.out.println("success");
         } else {
             System.out.println("fail");
+        }
+    }
+
+    @org.junit.Test
+    public void specificDirFilesToZipPathsTest(){
+        String[] testInput = {
+                "E:\\Projects\\TestArea\\test\\config",
+                "E:\\Projects\\TestArea\\test\\logs",
+                "E:\\Projects\\TestArea\\test\\plugins"
+        };
+        ZipFilePath[] zipFilePaths = Utils.worldPathsToZipPaths(testInput);
+        for(ZipFilePath zp:zipFilePaths){
+            System.out.println(zp);
         }
     }
 

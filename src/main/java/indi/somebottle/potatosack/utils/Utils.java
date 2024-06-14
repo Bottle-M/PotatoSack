@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -88,7 +89,7 @@ public class Utils {
     }
 
     /**
-     * 将指定路径转换为一个可以当作Map Key的字符串
+     * 将指定路径转换为一个可以当作Map Key的字符串，是一个相对于服务端根目录的相对路径
      *
      * @param file 文件File对象
      * @return 转换后的字符串
@@ -112,7 +113,6 @@ public class Utils {
      * @apiNote 比如<p>world/region</p><p>转换为</p><p>/root/server/world/region</p>
      */
     public static String pathAbsToServer(String relativePath) {
-        // TODO： 用 getWorldContainer API 重新实现
         // 把绝对路径和相对路径拼接起来
         File absoluteFile = new File(PotatoSack.worldContainerDir, relativePath);
         // 返回拼接好的路径字符串
@@ -214,7 +214,7 @@ public class Utils {
         return false;
     }
 
-    /**
+    /*
      * 把目录下所有文件打包成zip
      *
      * @param srcDirPath   源目录路径
@@ -224,7 +224,7 @@ public class Utils {
      * @return 是否打包成功
      * @apiNote 比如srcDirPath='./test/myfolder'，如果packAsSrcDir=true，那么打包后的zip包中根目录下是myfolder，其中是myfolder中的所有文件； 否则根目录下则是myfolder内的所有文件。
      */
-    public static boolean zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
+    /*public static boolean zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
@@ -239,29 +239,29 @@ public class Utils {
             Utils.logError("Compression failed: " + e.getMessage());
         }
         return false;
-    }
+    }*/
 
     /**
      * 指定多个目录打包成zip
      *
-     * @param srcDirPath  String[] ，指定要打包的目录路径（注意：路径需要是同一目录下的子目录）
-     * @param zipFilePath String 指定打包后的zip文件路径
-     * @param quiet       是否静默打包（不显示 Adding... 信息)
+     * @param srcDirPaths       String[] ，指定要打包的目录绝对路径（注意：需要是同一目录下的子目录）
+     * @param targetZipFilePath String 指定打包后的zip文件路径
+     * @param quiet             是否静默打包（不显示 Adding... 信息)
      * @return 是否打包成功
      */
-    public static boolean zip(String[] srcDirPath, String zipFilePath, boolean quiet) {
+    public static boolean zip(String[] srcDirPaths, String targetZipFilePath, boolean quiet) {
         try (
-                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
+                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(targetZipFilePath)))
         ) {
             System.out.println("Compressing... ");
-            for (String path : srcDirPath) {
+            for (String path : srcDirPaths) {
                 File srcDir = new File(path);
                 // 将指定目录内容加入包中
-                addItemsToZip(srcDir, srcDir.getName(), zout, quiet);
+                addDirFilesToZip(srcDir, srcDir.getName(), zout, quiet);
             }
             zout.closeEntry();
             zout.flush();
-            System.out.println("Compress success. File: " + zipFilePath);
+            System.out.println("Compress success. File: " + targetZipFilePath);
             return true;
         } catch (Exception e) {
             Utils.logError("Compression failed: " + e.getMessage());
@@ -272,29 +272,30 @@ public class Utils {
     /**
      * （递归方法） 扫描目录下所有文件并存入Zip Entries
      *
-     * @param srcDir    源目录File对象
-     * @param parentDir 父目录路径
-     * @param zout      Zip输出流（Buffered）
-     * @param quiet     是否静默打包
+     * @param srcDir        源目录File对象
+     * @param parentDirPath 父目录路径
+     * @param zout          Zip输出流（Buffered）
+     * @param quiet         是否静默打包
      * @throws Exception 打包失败抛出异常
      */
-    public static void addItemsToZip(File srcDir, String parentDir, ZipOutputStream zout, boolean quiet) throws Exception {
+    public static void addDirFilesToZip(File srcDir, String parentDirPath, ZipOutputStream zout, boolean quiet) throws Exception {
         File[] files = srcDir.listFiles();
         if (files == null) {
-            throw new Exception("Error: file list is null, this should not happen!");
+            throw new Exception("Error: " + srcDir + " is not a directory, this should not happen!");
         }
         for (File file : files) {
-            String currentDir = (parentDir.equals("") ? "" : (parentDir + "/")) + file.getName();
+            // 如果是目录，这就是当前扫描到的目录路径，否则就是文件的路径
+            String currentDirOrFilePath = (parentDirPath.equals("") ? "" : (parentDirPath + "/")) + file.getName();
             if (file.isDirectory()) {
                 // 如果是目录就递归扫描文件
-                addItemsToZip(file, currentDir, zout, quiet);
+                addDirFilesToZip(file, currentDirOrFilePath, zout, quiet);
             } else {
                 // 如果是文件就写入Zip
                 try (FileInputStream fis = new FileInputStream(file)) {
                     if (!quiet)
-                        System.out.println("Add file: " + currentDir);
+                        System.out.println("Add file: " + currentDirOrFilePath);
                     // 将条目（文件）加入zip包
-                    ZipEntry zipEntry = new ZipEntry(currentDir);
+                    ZipEntry zipEntry = new ZipEntry(currentDirOrFilePath);
                     zout.putNextEntry(zipEntry);
                     // 写入文件
                     int len;
@@ -305,6 +306,59 @@ public class Utils {
                 }
             }
         }
+    }
+
+    /**
+     * （递归方法） 扫描目录下所有文件，转换为 ZipFilePath
+     *
+     * @param srcDir        源目录 File 对象
+     * @param parentDirPath 父目录路径
+     * @return List<ZipFilePath>
+     */
+    public static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, String parentDirPath) throws Exception {
+        List<ZipFilePath> resPaths = new ArrayList<>();
+        // 列出 srcDir 目录下的文件
+        File[] files = srcDir.listFiles();
+        if (files == null) {
+            throw new Exception("Error: " + srcDir + " is not a directory, this should not happen!");
+        }
+        for (File file : files) {
+            // 如果是目录，这就是当前扫描到的目录路径，否则就是文件的路径
+            String currentDirOrFilePath = (parentDirPath.equals("") ? "" : (parentDirPath + "/")) + file.getName();
+            if (file.isDirectory()) {
+                // 如果是目录就递归扫描文件
+                resPaths.addAll(dirFilesToZipFilePaths(file, currentDirOrFilePath));
+            } else {
+                // 如果是文件就转换为 ZipFilePath
+                resPaths.add(new ZipFilePath(
+                        Utils.pathAbsToServer(currentDirOrFilePath),
+                        currentDirOrFilePath
+                ));
+            }
+        }
+        return resPaths;
+    }
+
+
+    /**
+     * 指定多个目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
+     *
+     * @param srcDirPaths String[] ，指定要打包的目录绝对路径（注意：是同一目录下的子目录）
+     * @return ZipFilePath[]
+     */
+    public static ZipFilePath[] worldPathsToZipPaths(String[] srcDirPaths) {
+        List<ZipFilePath> res = new ArrayList<>();
+        try {
+            // 遍历每个目录
+            for (String path : srcDirPaths) {
+                File srcDir = new File(path);
+                // 扫描这个目录内的文件，形成 ZipFilePath 列表
+                res.addAll(dirFilesToZipFilePaths(srcDir, srcDir.getName()));
+            }
+        } catch (Exception e) {
+            Utils.logError("Transformation of world file paths to zip file paths failed: " + e.getMessage());
+        }
+        return res.toArray(new ZipFilePath[0]);
     }
 
     /**
@@ -346,6 +400,8 @@ public class Utils {
         // 这样写是因为，有的插件（比如一些需要地图还原的小游戏插件）依赖于将 world 设置为非自动保存
         // 这里我会将受到影响的世界返回，下次设置时可以作为 worlds 参数传入，以免影响到一些世界原有的状态
         List<String> affectedWorlds = new ArrayList<>(); // 受影响的世界
+        // 等待主线程任务完成的 CountdownLatch
+        CountDownLatch cdl = new CountDownLatch(1);
         if (PotatoSack.plugin != null) {
             List<World> worldList;
             if (worlds == null) {
@@ -359,16 +415,28 @@ public class Utils {
                         worldList.add(world);
                 }
             }
+            // TODO: 待测试: 等待主线程关闭世界保存任务完成
             // 在主线程中，设置全部世界的保存情况
             Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
                 // 停止世界自动保存
-                worldList.forEach(world -> {
-                    if (world.isAutoSave() != value) // 和要设定的值不一样，说明有变更
-                        affectedWorlds.add(world.getName());
-                    world.setAutoSave(value);
-                });
+                try {
+                    worldList.forEach(world -> {
+                        if (world.isAutoSave() != value) // 和要设定的值不一样，说明有变更
+                            affectedWorlds.add(world.getName());
+                        world.setAutoSave(value);
+                    });
+                } finally {
+                    // 主线程任务完成，通知调用线程
+                    cdl.countDown();
+                }
             });
+            try {
+                cdl.await();
+            } catch (InterruptedException e) {
+                System.out.println("Wait for world auto save stop interrupted:" + e);
+            }
         }
+        System.out.println("[DEBUG] Affected Worlds:" + String.join(",", affectedWorlds));
         return affectedWorlds;
     }
 

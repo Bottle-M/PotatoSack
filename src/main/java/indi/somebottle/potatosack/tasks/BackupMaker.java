@@ -269,7 +269,9 @@ public class BackupMaker {
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                if (!odClient.zipPipingUpload(worldPaths.toArray(new String[0]), remotePath, true))
+                // 将 worldPaths 转换为 ZipFilePath 对象数组
+                ZipFilePath[] worldZipFiles = Utils.worldPathsToZipPaths(worldPaths.toArray(new String[0]));
+                if (!odClient.zipPipingUpload(worldZipFiles, remotePath, true))
                     return false;
             } finally {
                 // 恢复世界自动保存
@@ -373,10 +375,11 @@ public class BackupMaker {
                 // 新记录中新出现的文件 or 新记录中的文件最后修改时间相比旧记录有变动
                 if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(lastFileHashes.get(key)))
                     increFilePaths.add( // 添加到增量文件列表
-                            new ZipFilePath(Utils.pathAbsToServer( // 获得文件绝对路径以便Zip打包
-                                    // key 就是文件相对于服务端根目录的相对路径
+                            new ZipFilePath(
+                                    // 获得文件绝对路径以便Zip打包, key 就是文件相对于服务端根目录的相对路径
+                                    Utils.pathAbsToServer(key),
                                     key
-                            ))
+                            )
                     );
             }
             // TODO：待测试：修改了 世界名.json 的 lastFileHashes 存储结构

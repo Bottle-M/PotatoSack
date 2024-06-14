@@ -8,7 +8,6 @@ import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
@@ -23,8 +22,6 @@ import java.util.zip.ZipOutputStream;
  * 这个模块的思路是时间换空间，先模拟压缩一遍，计算出压缩文件的总大小，然后再压缩一遍，边压缩边上传，即可避免磁盘剩余空间不够的情况
  */
 public class StreamedZipUploader {
-    // TODO： 文件末尾填充的空白字节数，最初是 5 KiB
-    // private static long paddingSize = 5 * 1024L;
     private final OkHttpClient client = new OkHttpClient.Builder()
             .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
             .build();
@@ -227,16 +224,21 @@ public class StreamedZipUploader {
         return true;
     }
 
-
     /**
+     * 当上传的文件大小超出了先前模拟压缩计算出的大小时抛出此异常
+     */
+    public class DataSizeOverflowException extends Exception {
+    }
+
+
+    /*
      * 指定多个目录打包成zip，然后进行上传
      *
      * @param srcDirPath String[] ，指定要打包的目录路径（注意：路径需要是同一层目录下的子目录）
      * @param quiet      是否静默打包（不显示 Adding... 信息)
      * @return 是否打包上传成功
      */
-    public boolean zipAndUpload(String[] srcDirPath, boolean quiet) {
-        // TODO：这个函数是不是可以转换为对 zipSpecifiedAndUpload 的调用？
+    /*public boolean zipAndUpload(String[] srcDirPath, boolean quiet) {
         // 先统计一次文件大小
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 初始化计数器
         try (
@@ -247,7 +249,7 @@ public class StreamedZipUploader {
             for (String path : srcDirPath) {
                 File srcDir = new File(path);
                 // 将指定目录内容加入包中
-                Utils.addItemsToZip(srcDir, srcDir.getName(), zout, quiet);
+                Utils.addDirFilesToZip(srcDir, srcDir.getName(), zout, quiet);
             }
             zout.closeEntry();
             zout.flush();
@@ -267,7 +269,7 @@ public class StreamedZipUploader {
             for (String path : srcDirPath) {
                 File srcDir = new File(path);
                 // 将指定目录内容加入包中
-                Utils.addItemsToZip(srcDir, srcDir.getName(), zout, quiet);
+                Utils.addDirFilesToZip(srcDir, srcDir.getName(), zout, quiet);
             }
             zout.closeEntry();
             zout.flush();
@@ -277,11 +279,5 @@ public class StreamedZipUploader {
         }
         System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
-    }
-
-    /**
-     * 当上传的文件大小超出了先前模拟压缩计算出的大小时抛出此异常
-     */
-    public class DataSizeOverflowException extends Exception {
-    }
+    }*/
 }

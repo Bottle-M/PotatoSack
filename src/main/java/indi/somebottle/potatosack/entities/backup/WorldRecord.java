@@ -8,7 +8,7 @@ import java.util.Map;
 public class WorldRecord {
     private long fileUpdateTime; // 世界名.json文件更新时间戳
 
-    // TODO: 世界名.json 中的 lastFileHashes 应该存储 <相对服务器根目录的路径, 文件哈希> 这样的键值对
+    // TODO: 待测试: 世界名.json 中的 lastFileHashes 应该存储 <相对服务器根目录的路径, 文件哈希> 这样的键值对
     private Map<String, String> lastFileHashes; // 存放世界数据目录中所有文件的最后哈希值
 
     public long getFileUpdateTime() {
