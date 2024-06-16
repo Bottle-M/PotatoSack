@@ -61,6 +61,7 @@ public final class PotatoSack extends JavaPlugin {
         odClient = new Client(tokenFetcher);
         try {
             // 输出Onedrive AppFolder
+            // 20240614 这一步还有个作用，就是让 OneDrive 自动创建应用目录
             System.out.println("Onedrive AppFolder URL: " + odClient.getAppFolderUrl());
             // 检查OneDrive上插件数据目录是否建立
             if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {

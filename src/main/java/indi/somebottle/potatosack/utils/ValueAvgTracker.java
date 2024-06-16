@@ -28,6 +28,7 @@ public class ValueAvgTracker {
      */
     public long getAvg() {
         if (count == 0) {
+            // 防止除 0
             return 0L;
         }
         return Math.round(sum / count);

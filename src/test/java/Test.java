@@ -97,13 +97,23 @@ public class Test {
     }*/
 
     @org.junit.Test
-    public void zipPipingUploadTest_File() throws IOException {
+    public void zipPipingUploadTest_File() throws Exception {
+        System.out.println("Onedrive AppFolder URL: " + client.getAppFolderUrl());
         ZipFilePath[] testInput = {
                 new ZipFilePath("E:\\Projects\\TestArea\\1.19.json", "1.19.test.json"),
-                new ZipFilePath("E:\\Projects\\TestArea\\coscli.log", "coscli.test.json"),
-                new ZipFilePath("E:\\Projects\\TestArea\\filelist.txt", "filelist.txt"),
+                new ZipFilePath("E:\\Projects\\TestArea\\nichijou.mp4", "nichijou.mp4"),
+                new ZipFilePath("E:\\Projects\\TestArea\\filelist.txt", "filelist.txt")
         };
-        if (client.zipPipingUpload(testInput, "test/compressed.zip", true))
+        ZipFilePath[] worldFilePaths = Utils.worldPathsToZipPaths(new String[]{
+                "E:\\Projects\\TestArea\\unlz4\\server\\world_nether"
+        });
+        for (int i = 0; i < worldFilePaths.length; i++) {
+            worldFilePaths[i].filePath = "E:\\Projects\\TestArea\\unlz4\\server\\" + worldFilePaths[i].filePath;
+        }
+        ZipFilePath[] allFiles = new ZipFilePath[testInput.length + worldFilePaths.length];
+        System.arraycopy(testInput, 0, allFiles, 0, testInput.length);
+        System.arraycopy(worldFilePaths, 0, allFiles, testInput.length, worldFilePaths.length);
+        if (client.zipPipingUpload(allFiles, "test/compressed.zip", true))
             System.out.println("success");
         else
             System.out.println("fail");
@@ -133,14 +143,14 @@ public class Test {
     }
 
     @org.junit.Test
-    public void specificDirFilesToZipPathsTest(){
+    public void specificDirFilesToZipPathsTest() {
         String[] testInput = {
                 "E:\\Projects\\TestArea\\test\\config",
                 "E:\\Projects\\TestArea\\test\\logs",
                 "E:\\Projects\\TestArea\\test\\plugins"
         };
         ZipFilePath[] zipFilePaths = Utils.worldPathsToZipPaths(testInput);
-        for(ZipFilePath zp:zipFilePaths){
+        for (ZipFilePath zp : zipFilePaths) {
             System.out.println(zp);
         }
     }

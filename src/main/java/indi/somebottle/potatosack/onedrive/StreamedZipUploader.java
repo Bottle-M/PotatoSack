@@ -41,7 +41,7 @@ public class StreamedZipUploader {
      */
     private class UploadOutputStream extends OutputStream {
         // 缓冲区的大小就是一块文件的大小
-        private final byte[] buffer = new byte[Constants.CHUNK_SIZE];
+        private byte[] buffer = new byte[Constants.CHUNK_SIZE];
         private int writePos = 0; // 写入位置
         private long chunkOffset = 0L; // 当前块对应的 range 的起始字节编号
         private long expectRangeStart = 0L; // 服务端期待下次收到的 range 的起始字节编号（服务端返回，用来判断上传是否缺失了字节）
@@ -144,7 +144,7 @@ public class StreamedZipUploader {
         @Override
         public void write(int b) throws IOException {
             // 上传会话已经关闭则无法继续传输
-            if(uploadSessionClosed)
+            if (uploadSessionClosed)
                 throw new IOException("Unexpected: Upload session closed.");
             // 先往缓冲区写
             buffer[writePos++] = (byte) b;
@@ -170,10 +170,15 @@ public class StreamedZipUploader {
                 uploadBuf(); // 上传缓冲区并冲刷掉
             } else {
                 // 上传会话未关闭且缓冲区没有剩余内容
+                // 出现了文件大小上的误差
                 // TODO：待测试: 输出空白字符以填充剩余部分， zip 末尾的空白字符可以被忽略
                 // 一般来说误差字节数不会大于一块的大小
                 // 更新 writePos 为剩余需要填充的字节数
                 writePos = (int) (totalSize - chunkOffset);
+                // 健壮性考虑: 如果误差字节数大于一块的大小，则重设缓冲区
+                if (writePos > buffer.length) {
+                    buffer = new byte[writePos];
+                }
                 // 将 buffer [0, writePos-1] 填充为 0
                 Arrays.fill(buffer, 0, writePos, (byte) 0);
                 // 把剩余的空白字节进行上传
@@ -234,9 +239,14 @@ public class StreamedZipUploader {
             return false;
         }
         // 注意，要在流关闭后再取出结果
+        long filesSize = fileSizeCounter.get();
         // 末尾还要加上填充的空白字符
-        totalSize = fileSizeCounter.get() + paddingSize;
-        System.out.println("Calculation success. Total size: " + totalSize);
+        totalSize = filesSize + paddingSize;
+        System.out.println("Calculation success. Files size in total: " + filesSize);
+        if (paddingSize > 0) {
+            System.out.println("Padding size: " + paddingSize);
+        }
+        System.out.println("Total size: " + totalSize);
         // 再进行文件压缩和上传
         System.out.println("Compressing and uploading... ");
         try (
@@ -247,14 +257,16 @@ public class StreamedZipUploader {
 
             // TODO：如果是 400 错误，附加空白字符并立即重试一次，如果重试失败，推迟 10 分钟
         } catch (DataSizeOverflowException e) {
+            // 异常的多态
             // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
+            // 获得溢出的字节数，更新平均溢出的字节数
+            PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
             if (retry) {
                 // 重试过了，但还是溢出了，回避
                 Utils.logError("Compression / upload failed after retrying: " + e.getMessage());
                 return false;
             }
-            // 获得溢出的字节数，更新平均溢出的字节数
-            PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
+            // 没有重试过则进行重试
             // 末尾填充的空白字节数 = 2 × 平均溢出的字节数
             paddingSize = 2 * PotatoSack.streamedOverflowBytesTracker.getAvg();
             // 立即重试一次
@@ -285,7 +297,7 @@ public class StreamedZipUploader {
     /**
      * 当上传的文件大小超出了先前模拟压缩计算出的大小时抛出此异常
      */
-    public class DataSizeOverflowException extends IOException {
+    public static class DataSizeOverflowException extends IOException {
         private final long overflowSize;
 
         public DataSizeOverflowException(String msg, long overflowSize) {
