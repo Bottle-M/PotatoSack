@@ -3,7 +3,7 @@ package indi.somebottle.potatosack.onedrive;
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
-import indi.somebottle.potatosack.entities.onedrive.PutSessionResp;
+import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
@@ -28,7 +28,6 @@ public class StreamedZipUploader {
             .build();
     private final Gson gson = new Gson();
     private final String uploadUrl;
-    // TODO: Total Size 上应该要额外增加一点空白字节，防止两次计算出的压缩文件大小有偏差。每次失败，增加的空白字节数会自动计算。
     private long paddingSize = 0; // 在计算出 totalSize 后，在末尾填充的空白字节数
     private long totalSize = 0; // 压缩文件总大小
 
@@ -85,7 +84,7 @@ public class StreamedZipUploader {
                         // 返回202说明还需要上传其他字节
                         if (respBody == null) throw new IOException("No response body.");
                         // 读取响应
-                        PutSessionResp respObj = gson.fromJson(respBody.string(), PutSessionResp.class);
+                        PutOrGetSessionResp respObj = gson.fromJson(respBody.string(), PutOrGetSessionResp.class);
                         // 读取服务端期待收到的range
                         List<String> nextRanges = respObj.getNextExpectedRanges();
                         if (nextRanges != null && nextRanges.size() > 0) {
@@ -94,7 +93,7 @@ public class StreamedZipUploader {
                             // 更新服务端期待下次收到的字节编号
                             expectRangeStart = Long.parseLong(nextRangeSp[0]);
                         } else {
-                            String errMsg = "Error: no next ranges, resp body: " + respBody;
+                            String errMsg = "Error: no next ranges, resp body: " + respBody.string();
                             throw new IOException(errMsg);
                         }
                     } else {
@@ -119,7 +118,17 @@ public class StreamedZipUploader {
                             }
                             break;
                         case 416:
-                            // TODO: 对 416 问题的处理
+                            // TODO: 待测试: 对 416 问题的处理, 使用 getNextExpectedRange
+                            // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
+                            System.out.println("Fragment overlap, querying server to determine whether the transfer can proceed.");
+                            long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
+                            if (nextExpectedRange[0] == currRangeEnd + 1) {
+                                // 当前分片 range 的末尾字节编号 +1 就是服务端期待接收到的下一个字节，说明当前分片服务端已经成功收到
+                                // 接着上传下一个分片即可，这个异常可忽略
+                                expectRangeStart = nextExpectedRange[0];
+                                chunkOffset = currRangeEnd + 1;
+                                return;
+                            }
                             break;
                     }
                     String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
@@ -254,18 +263,18 @@ public class StreamedZipUploader {
                 ZipOutputStream zout = new ZipOutputStream(uos)
         ) {
             Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
-
-            // TODO：如果是 400 错误，附加空白字符并立即重试一次，如果重试失败，推迟 10 分钟
         } catch (DataSizeOverflowException e) {
             // 异常的多态
             // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
             // 获得溢出的字节数，更新平均溢出的字节数
             PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
+            // TODO: 待测试: 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
             if (retry) {
                 // 重试过了，但还是溢出了，回避
                 Utils.logError("Compression / upload failed after retrying: " + e.getMessage());
                 return false;
             }
+            System.out.println("Data size overflowed the previous agreed size. Retrying... ");
             // 没有重试过则进行重试
             // 末尾填充的空白字节数 = 2 × 平均溢出的字节数
             paddingSize = 2 * PotatoSack.streamedOverflowBytesTracker.getAvg();

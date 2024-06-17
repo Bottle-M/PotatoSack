@@ -94,3 +94,4 @@
 2. [大文件上传](https://learn.microsoft.com/en-us/onedrive/developer/rest-api/api/driveitem_createuploadsession?view=odsp-graph-online)
 3. [Minecraft Anvil文件(.mca)格式](https://wiki.biligame.com/mc/%E5%8C%BA%E5%9D%97%E6%A0%BC%E5%BC%8F)
 4. [Minecraft Region文件格式](https://wiki.biligame.com/mc/%E5%8C%BA%E5%9F%9F%E6%96%87%E4%BB%B6%E6%A0%BC%E5%BC%8F)
+5. [获得未上传的分片列表](https://learn.microsoft.com/zh-cn/onedrive/developer/rest-api/api/driveitem_createuploadsession?view=odsp-graph-online#resuming-an-in-progress-upload)

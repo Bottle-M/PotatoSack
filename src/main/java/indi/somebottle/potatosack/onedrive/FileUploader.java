@@ -1,7 +1,7 @@
 package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.entities.onedrive.PutSessionResp;
+import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
@@ -42,7 +42,7 @@ public class FileUploader {
             // 如果超过切片大小，就进行切片
             if (nextRange[1] == -1) // 服务端没指定下一段的endPos
                 endPos = Math.min(fileSize, startPos + Constants.CHUNK_SIZE) - 1;
-            else // 服务端指定了下一段的endPos，注意服务端给出的就是字节位置，不需要-1
+            else // 服务端指定了下一段的endPos，注意服务端给出的就是字节位置，不需要减去 1
                 endPos = Math.min(nextRange[1], startPos + Constants.CHUNK_SIZE - 1);
             int status = uploadChunk(startPos, endPos);
             switch (status) {
@@ -94,11 +94,10 @@ public class FileUploader {
                     // 返回202说明还需要上传其他字节
                     if (respBody == null) return -1;
                     // 读取响应
-                    PutSessionResp respObj = gson.fromJson(respBody.string(), PutSessionResp.class);
+                    PutOrGetSessionResp respObj = gson.fromJson(respBody.string(), PutOrGetSessionResp.class);
                     // 读取服务端期待收到的range
                     List<String> nextRanges = respObj.getNextExpectedRanges();
                     if (nextRanges != null && nextRanges.size() > 0) {
-                        // TODO：需要处理 416 问题吗？
                         // 解析下一次要发送的字段
                         String[] nextRangeSp = nextRanges.get(0).split("-");
                         nextRange[0] = Long.parseLong(nextRangeSp[0]);
@@ -114,6 +113,20 @@ public class FileUploader {
                 }
                 return respCode;
             } else {
+                // TODO：待测试: 需要处理 416 问题吗？需要！
+                // 检查是不是 416 错误
+                if (resp.code() == 416) {
+                    System.out.println("Fragment overlap, querying server to determine whether the transfer can proceed.");
+                    // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
+                    long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
+                    if (nextExpectedRange[0] == end + 1) {
+                        // 当前分片 range 的末尾字节编号 +1 就是服务端期待接收到的下一个字节，说明当前分片服务端已经成功收到
+                        nextRange[0] = nextExpectedRange[0];
+                        nextRange[1] = nextExpectedRange[1];
+                        // 更新 range 后接着上传下一个分片即可，这个异常可忽略
+                        return 202;
+                    }
+                }
                 String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
                 respBody = resp.body();
                 if (respBody != null)

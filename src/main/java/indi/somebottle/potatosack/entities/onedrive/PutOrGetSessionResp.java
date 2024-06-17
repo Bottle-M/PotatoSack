@@ -3,9 +3,9 @@ package indi.somebottle.potatosack.entities.onedrive;
 import java.util.List;
 
 /**
- * PUT请求uploadUrl的响应
+ * PUT/GET 请求 uploadUrl 的响应
  */
-public class PutSessionResp {
+public class PutOrGetSessionResp {
     private String expirationDateTime;
     private List<String> nextExpectedRanges;
 

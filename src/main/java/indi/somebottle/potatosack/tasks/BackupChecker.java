@@ -81,7 +81,6 @@ public class BackupChecker implements Runnable {
                 backupMaker.cleanTempDir(); // 请理临时目录
                 Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
                 if (!bkRes)
-                    // TODO: 备份失败时增加填充块大小
                     throw new IOException("Failed to make full backup");
                 else
                     return; // 执行了全量备份，就不检查增量备份了
@@ -99,7 +98,6 @@ public class BackupChecker implements Runnable {
                 backupMaker.cleanTempDir(); // 请理临时目录
                 Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
                 if (!bkRes)
-                    // TODO: 备份失败时增加填充块大小
                     throw new IOException("Failed to make incremental backup");
             }
         } catch (Exception e) {

@@ -301,6 +301,7 @@ public class BackupMaker {
                 // 将 worldPaths 转换为 ZipFilePath 对象数组
                 ZipFilePath[] worldZipFiles = Utils.worldPathsToZipPaths(worldPaths.toArray(new String[0]));
                 if (!odClient.zipPipingUpload(worldZipFiles, remotePath, true)) {
+                    // TODO: 待测试: 流式压缩上传重试还失败了就退避 10 分钟
                     // 如果流式压缩上传失败了就退避 10 分钟
                     putOffFullBackup(rec, 10 * 60L);
                     return false;
