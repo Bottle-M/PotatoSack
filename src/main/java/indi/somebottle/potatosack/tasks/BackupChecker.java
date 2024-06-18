@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.tasks;
 import indi.somebottle.potatosack.entities.backup.BackupRecord;
 import indi.somebottle.potatosack.onedrive.Client;
 import indi.somebottle.potatosack.utils.Config;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 import org.bukkit.Bukkit;
 
@@ -101,7 +102,7 @@ public class BackupChecker implements Runnable {
                     throw new IOException("Failed to make incremental backup");
             }
         } catch (Exception e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             backupMaker.cleanTempDir(); // 请理临时目录
         }

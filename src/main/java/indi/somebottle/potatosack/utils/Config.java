@@ -36,7 +36,7 @@ public class Config {
         try {
             config.save(file);
         } catch (IOException e) {
-            Utils.logError("Failed to save configs.yml: " + e.getMessage());
+            ConsoleSender.logError("Failed to save configs.yml: " + e.getMessage());
         }
     }
 
@@ -87,7 +87,7 @@ public class Config {
             inspectConfig(); // 检查配置
             return true;
         } catch (Exception e) {
-            Utils.logError("Failed to load configs.yml: " + e.getMessage());
+            ConsoleSender.logError("Failed to load configs.yml: " + e.getMessage());
         }
         return false;
     }

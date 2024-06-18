@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
@@ -62,7 +63,7 @@ public class StreamedZipUploader {
             ResponseBody respBody = null;
             // 生成Range头
             String range = "bytes " + chunkOffset + "-" + currRangeEnd + "/" + totalSize;
-            System.out.println("Compressing + Uploading chunk: " + range + " Byte(s)");
+            ConsoleSender.toConsole("Compressing + Uploading chunk: " + range + " Byte(s)");
             try {
                 // 建立文件内容请求体
                 // 用Arrays.copyOfRange复制缓冲区切片，防止多余数据被上传
@@ -77,7 +78,7 @@ public class StreamedZipUploader {
                 // 发送请求
                 Response resp = client.newCall(req).execute();
                 if (resp.isSuccessful()) {
-                    System.out.println(" --> Chunk successfully uploaded.");
+                    ConsoleSender.toConsole(" --> Chunk successfully uploaded.");
                     int respCode = resp.code();
                     respBody = resp.body(); // 放在这里才能保证ResponseBody不会泄露
                     if (respCode == 202) {
@@ -120,7 +121,7 @@ public class StreamedZipUploader {
                         case 416:
                             // TODO: 待测试: 对 416 问题的处理, 使用 getNextExpectedRange
                             // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
-                            System.out.println("Fragment overlap, querying server to determine whether the transfer can proceed.");
+                            ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");
                             long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
                             if (nextExpectedRange[0] == currRangeEnd + 1) {
                                 // 当前分片 range 的末尾字节编号 +1 就是服务端期待接收到的下一个字节，说明当前分片服务端已经成功收到
@@ -235,7 +236,7 @@ public class StreamedZipUploader {
      */
     private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
-        System.out.println("Calculating file size... ");
+        ConsoleSender.toConsole("Calculating file size... ");
         // 先统计文件大小
         try (
                 CounterOutputStream cos = new CounterOutputStream(fileSizeCounter);
@@ -244,20 +245,20 @@ public class StreamedZipUploader {
             // 进行文件压缩
             Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
         } catch (Exception e) {
-            Utils.logError("Calculation failed: " + e.getMessage());
+            ConsoleSender.logError("Calculation failed: " + e.getMessage());
             return false;
         }
         // 注意，要在流关闭后再取出结果
         long filesSize = fileSizeCounter.get();
         // 末尾还要加上填充的空白字符
         totalSize = filesSize + paddingSize;
-        System.out.println("Calculation success. Files size in total: " + filesSize);
+        ConsoleSender.toConsole("Calculation success. Files size in total: " + filesSize);
         if (paddingSize > 0) {
-            System.out.println("Padding size: " + paddingSize);
+            ConsoleSender.toConsole("Padding size: " + paddingSize);
         }
-        System.out.println("Total size: " + totalSize);
+        ConsoleSender.toConsole("Total size: " + totalSize);
         // 再进行文件压缩和上传
-        System.out.println("Compressing and uploading... ");
+        ConsoleSender.toConsole("Compressing and uploading... ");
         try (
                 UploadOutputStream uos = new UploadOutputStream();
                 ZipOutputStream zout = new ZipOutputStream(uos)
@@ -271,10 +272,10 @@ public class StreamedZipUploader {
             // TODO: 待测试: 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
             if (retry) {
                 // 重试过了，但还是溢出了，回避
-                Utils.logError("Compression / upload failed after retrying: " + e.getMessage());
+                ConsoleSender.logError("Compression / upload failed after retrying: " + e.getMessage());
                 return false;
             }
-            System.out.println("Data size overflowed the previous agreed size. Retrying... ");
+            ConsoleSender.toConsole("Data size overflowed the previous agreed size. Retrying... ");
             // 没有重试过则进行重试
             // 末尾填充的空白字节数 = 2 × 平均溢出的字节数
             paddingSize = 2 * PotatoSack.streamedOverflowBytesTracker.getAvg();
@@ -287,7 +288,7 @@ public class StreamedZipUploader {
             // 如果此时已经有 writePos==buffer.length，那么就会导致越界异常，但是 writePos 仍会 +1
             // 因为是关闭资源时再次发生的异常，这个异常会被抑制，不会被抛出，在日志中不会体现出来
             // 在这之后会关闭 uos 资源，但是关闭 uos 时又会调用 uos 的 close 方法，在 writePos 不为 0 的情况下触发一次 uploadBuf，因此可能导致再次上传失败，再次抛出异常，这个异常也会被抑制
-            Utils.logError("Compression / upload failed: " + e.getMessage());
+            ConsoleSender.logError("Compression / upload failed: " + e.getMessage());
             e.printStackTrace();
             // try-with-resource 可能有异常被抑制，获取并打印所有被抑制的异常
             Throwable[] suppressed = e.getSuppressed();
@@ -299,7 +300,7 @@ public class StreamedZipUploader {
             }
             return false;
         }
-        System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");
+        ConsoleSender.toConsole("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
     }
 
@@ -344,7 +345,7 @@ public class StreamedZipUploader {
             zout.closeEntry();
             zout.flush();
         } catch (Exception e) {
-            Utils.logError("Calculation failed: " + e.getMessage());
+            ConsoleSender.logError("Calculation failed: " + e.getMessage());
             return false;
         }
         // 注意，要在流关闭后再取出结果
@@ -364,7 +365,7 @@ public class StreamedZipUploader {
             zout.closeEntry();
             zout.flush();
         } catch (Exception e) {
-            Utils.logError("Compression / upload failed: " + e.getMessage());
+            ConsoleSender.logError("Compression / upload failed: " + e.getMessage());
             return false;
         }
         System.out.println("Compression / upload success. Total size: " + totalSize + " Byte(s)");

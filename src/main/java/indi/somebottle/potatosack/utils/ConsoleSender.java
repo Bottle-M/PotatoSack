@@ -7,7 +7,24 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 public final class ConsoleSender {
-    // TODO: 这个模块可以只保留 toPlayer, 输出到控制台直接用 System.out.print
+    /**
+     * 记录插件出错信息（方便追溯）
+     *
+     * @param msg 错误信息字符串
+     * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台，本方法首先会在本线程打印到控制台一次，再在主线程打印一次
+     */
+    public static void logError(String msg) {
+        String finalMsg = "Fatal: " + msg;
+        System.out.println("[Println] " + finalMsg);
+        if (PotatoSack.plugin != null) {
+            // 记录到服务端日志
+            // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
+            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
+                PotatoSack.plugin.getLogger().severe("[Logger] " + finalMsg);
+            });
+        }
+    }
+
     /**
      * 发送消息到控制台（仅限主线程）
      *
@@ -15,23 +32,22 @@ public final class ConsoleSender {
      */
     public static void toConsoleSync(String text) {
         // 通过CommandSender对象的方法发送信息到控制台
-        String msg = ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "] " + ChatColor.RESET + " " + text;
         CommandSender sender = Bukkit.getConsoleSender();
-        sender.sendMessage(msg);
+        sender.sendMessage(text);
     }
 
     /**
-     * 发送消息到控制台（可在异步方法中调用）
+     * 通过调度消息到主线程实现发送消息到控制台（可在异步方法中调用）
      *
      * @param text 待发送的消息内容
-     * @apiNote 请勿在插件disable后调用此方法，可以调用toConsoleSync
+     * @apiNote 请勿在插件disable后调用此方法。如果主线程阻塞，该方法发送的消息可能会延迟输出到控制台
      */
     public static void toConsole(String text) {
         // 通过CommandSender对象的方法发送信息到控制台
-        String msg = ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "]" + ChatColor.RESET + " " + text;
+        // System.out.println(text);
         Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
             // 放到主线程中执行
-            PotatoSack.plugin.getLogger().info(msg);
+            PotatoSack.plugin.getLogger().info(text);
         });
     }
 

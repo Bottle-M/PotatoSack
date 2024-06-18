@@ -188,7 +188,7 @@ pressing + Uploading chunk: bytes 163840000-180223999/1161420096 Byte(s)
 ```
 
 排查出来了原因，在这里特地解释一下。
-* 之所以出现两个“Compression / upload failed:”，是因为 Utils.logError 方法会重复输出两次  
+* 之所以出现两个“Compression / upload failed:”，是因为 ConsoleSender.logError 方法会重复输出两次  
 * 这里 416 可能是因为在第一次/重试上传时服务器已经拿到分片了，但是因为网络原因客户端没有成功得到响应。
 * 因此对于 416 的情况，可以 GET 请求 uploadUrl，获得 nextExpectedRanges，如果服务端需要的下一个 range 开头字节是下一块的首个字节，则可以从这里开始继续上传。
 

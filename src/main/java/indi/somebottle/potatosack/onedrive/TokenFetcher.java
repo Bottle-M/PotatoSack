@@ -58,13 +58,13 @@ public class TokenFetcher {
                     setAccessToken(respObj.accessToken);
                     // 更新下次更新时间（提前60秒）
                     nextRefreshTime = Utils.timeStamp() + Integer.parseInt(respObj.expiresIn) - 60;
-                    System.out.println("Token Req Success");
+                    System.out.println("Onedrive token refreshed");
                     // 更新配置文件中的refreshToken
                     if (config != null)
                         config.setConfig("onedrive.refresh-token", respObj.refreshToken);
                     return true;
                 } else {
-                    System.out.println("Token Req Failed: Response body is null");
+                    System.out.println("OneDrive Token Req Failed: Response body is null");
                 }
             } else {
                 String errMsg = "Token Req Failed, code:" + response.code() + ", msg:" + response.message();
@@ -72,10 +72,10 @@ public class TokenFetcher {
                 setAccessToken("");
                 if (responseBody != null)
                     errMsg += ", body:" + responseBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (IOException e) {
-            Utils.logError("Token Req Failed" + e.getMessage());
+            ConsoleSender.logError("Token Req Failed" + e.getMessage());
             setRefreshToken("");
             setAccessToken("");
         } finally {

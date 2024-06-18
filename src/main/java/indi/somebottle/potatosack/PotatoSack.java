@@ -40,8 +40,7 @@ public final class PotatoSack extends JavaPlugin {
         // 20240613 配置服务端根目录
         worldContainerDir = this.getServer().getWorldContainer();
         Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE); // 设置OkHttpClient日志级别
-        System.out.println("[DEBUG]" +
-                "Server root dir: " + new File(System.getProperty("user.dir")));
+        System.out.println("Server root dir: " + worldContainerDir.getPath());
         BackupChecker backupChecker;
         // 开始初始化插件
         System.out.println("Potato Sack Initializing...");
@@ -65,10 +64,10 @@ public final class PotatoSack extends JavaPlugin {
             System.out.println("Onedrive AppFolder URL: " + odClient.getAppFolderUrl());
             // 检查OneDrive上插件数据目录是否建立
             if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {
-                ConsoleSender.toConsole("Creating data folder in OneDrive.");
+                System.out.println("Creating data folder in OneDrive.");
                 // 如果没有建立则建立数据目录
                 if (odClient.createFolder(Constants.OD_APP_DATA_FOLDER)) {
-                    ConsoleSender.toConsole("Successfully created data folder in OneDrive.");
+                    System.out.println("Successfully created data folder in OneDrive.");
                 } else {
                     throw new IOException("Failed to create data folder in OneDrive.");
                 }
@@ -93,7 +92,7 @@ public final class PotatoSack extends JavaPlugin {
             mainCommand.setTabCompleter(new PotatoSackTabCompleter());
         } catch (Exception e) {
             // 因为网络原因(比如连接超时)导致目录建立失败
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;

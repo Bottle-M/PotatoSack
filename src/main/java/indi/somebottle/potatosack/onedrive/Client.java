@@ -3,12 +3,15 @@ package indi.somebottle.potatosack.onedrive;
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.backup.ZipFilePath;
 import indi.somebottle.potatosack.entities.onedrive.*;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
-import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -94,10 +97,10 @@ public class Client {
                 String errMsg = "Children req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (Exception e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             throw e;
         } finally {
@@ -139,7 +142,7 @@ public class Client {
                 String errMsg = "Download failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             } else {
                 try (InputStream inputStream = respBody.byteStream();
                      FileOutputStream fos = new FileOutputStream(localFile)) {
@@ -155,7 +158,7 @@ public class Client {
                 return true;
             }
         } catch (Exception e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             throw e;
         } finally {
@@ -196,10 +199,10 @@ public class Client {
                 String errMsg = "Item req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (IOException e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             throw e;
         } finally {
@@ -244,10 +247,10 @@ public class Client {
                 String errMsg = "File upload failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (IOException e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             throw e;
         } finally {
@@ -376,15 +379,12 @@ public class Client {
                 return true;
             } else {
                 String errMsg = "Delete req failed, code: " + resp.code() + ", message: " + resp.message();
-                System.out.println("Delete req failed");
-                System.out.println(resp.code());
-                System.out.println(resp.message());
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (IOException e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             throw e;
         } finally {
@@ -439,10 +439,10 @@ public class Client {
                 String errMsg = "Folder req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (Exception e) {
-            Utils.logError(e.getMessage());
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
             throw e;
         } finally {

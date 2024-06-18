@@ -178,7 +178,7 @@ public class Utils {
     public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
         for (ZipFilePath zipFilePath : zipFilePaths) {
             if (!quiet)
-                System.out.println("Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
+                System.out.println("[Verbose] Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
             zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
             File file = new File(zipFilePath.filePath);
             FileInputStream in = new FileInputStream(file);
@@ -209,7 +209,7 @@ public class Utils {
             zipSpecificFilesUtil(zout, zipFilePaths, quiet);
             return true;
         } catch (IOException e) {
-            Utils.logError("Zip specific files failed: " + e.getMessage());
+            ConsoleSender.logError("Zip specific files failed: " + e.getMessage());
         }
         return false;
     }
@@ -236,7 +236,7 @@ public class Utils {
             System.out.println("Compress success. File: " + zipFilePath);
             return true;
         } catch (Exception e) {
-            Utils.logError("Compression failed: " + e.getMessage());
+            ConsoleSender.logError("Compression failed: " + e.getMessage());
         }
         return false;
     }*/
@@ -264,7 +264,7 @@ public class Utils {
             System.out.println("Compress success. File: " + targetZipFilePath);
             return true;
         } catch (Exception e) {
-            Utils.logError("Compression failed: " + e.getMessage());
+            ConsoleSender.logError("Compression failed: " + e.getMessage());
         }
         return false;
     }
@@ -293,7 +293,7 @@ public class Utils {
                 // 如果是文件就写入Zip
                 try (FileInputStream fis = new FileInputStream(file)) {
                     if (!quiet)
-                        System.out.println("Add file: " + currentDirOrFilePath);
+                        System.out.println("[Verbose] Add file: " + currentDirOrFilePath);
                     // 将条目（文件）加入zip包
                     ZipEntry zipEntry = new ZipEntry(currentDirOrFilePath);
                     zout.putNextEntry(zipEntry);
@@ -356,29 +356,11 @@ public class Utils {
                 res.addAll(dirFilesToZipFilePaths(srcDir, srcDir.getName()));
             }
         } catch (Exception e) {
-            Utils.logError("Transformation of world file paths to zip file paths failed: " + e.getMessage());
+            ConsoleSender.logError("Transformation of world file paths to zip file paths failed: " + e.getMessage());
         }
         return res.toArray(new ZipFilePath[0]);
     }
 
-    /**
-     * 记录插件出错信息（方便追溯）
-     *
-     * @param msg 错误信息字符串
-     * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台，本方法首先会在本线程打印到控制台一次，再在主线程打印一次
-     */
-    public static void logError(String msg) {
-        String finalMsg = "[" + Constants.PLUGIN_PREFIX + "] Fatal: " + msg;
-        // TODO: 没必要输出两次
-        System.out.println(finalMsg);
-        if (PotatoSack.plugin != null) {
-            // 记录到服务端日志
-            // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
-            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-                PotatoSack.plugin.getLogger().severe(finalMsg);
-            });
-        }
-    }
 
     /**
      * 设置**所有**世界：是否启动自动保存
@@ -434,10 +416,10 @@ public class Utils {
             try {
                 cdl.await();
             } catch (InterruptedException e) {
-                System.out.println("Wait for world auto save stop interrupted:" + e);
+                System.out.println("Waiting for world auto save stop interrupted:" + e);
             }
         }
-        System.out.println("[DEBUG] Affected Worlds:" + String.join(",", affectedWorlds));
+        System.out.println("[DEBUG] Auto-save stopped, affected Worlds:" + String.join(",", affectedWorlds));
         return affectedWorlds;
     }
 

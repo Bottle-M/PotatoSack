@@ -2,6 +2,7 @@ package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
@@ -26,7 +27,7 @@ public class FileUploader {
     private final long[] nextRange = {0, -1}; // 接下来要上传的字节范围[start, end]，end=-1代表end=start+CHUNK_SIZE
 
     public FileUploader(File localFile, String uploadUrl) {
-        System.out.println("File upload task: " + localFile.getName() + " to " + uploadUrl);
+        ConsoleSender.toConsole("File upload task: " + localFile.getName() + " to " + uploadUrl);
         this.localFile = localFile;
         this.uploadUrl = uploadUrl;
         this.fileSize = localFile.length();
@@ -48,10 +49,10 @@ public class FileUploader {
             switch (status) {
                 case 200: // 上传完毕
                 case 201:
-                    System.out.println("Upload success! File size: " + fileSize + " bytes");
+                    ConsoleSender.toConsole("Upload success! File size: " + fileSize + " bytes");
                     return true;
                 case 202:
-                    System.out.println("Upload in progress...(Range: " + startPos + "-" + endPos + ") Chunk size: " + (endPos - startPos + 1) + " bytes");
+                    ConsoleSender.toConsole("Upload in progress...(Range: " + startPos + "-" + endPos + ") Chunk size: " + (endPos - startPos + 1) + " bytes");
                     break;
                 case -1: // 上传失败
                     keepUploading = false;
@@ -87,7 +88,7 @@ public class FileUploader {
             // 发送请求
             Response resp = client.newCall(req).execute();
             if (resp.isSuccessful()) {
-                System.out.println(" --> Chunk successfully uploaded.");
+                ConsoleSender.toConsole(" --> Chunk successfully uploaded.");
                 int respCode = resp.code();
                 respBody = resp.body(); // 放在这里才能保证ResponseBody不会泄露
                 if (respCode == 202) {
@@ -107,7 +108,7 @@ public class FileUploader {
                             nextRange[1] = -1; // -1代表end=start+CHUNK_SIZE
                     } else {
                         String errMsg = "Error: no next ranges, resp body: " + respBody;
-                        Utils.logError(errMsg);
+                        ConsoleSender.logError(errMsg);
                         return -1;
                     }
                 }
@@ -116,7 +117,7 @@ public class FileUploader {
                 // TODO：待测试: 需要处理 416 问题吗？需要！
                 // 检查是不是 416 错误
                 if (resp.code() == 416) {
-                    System.out.println("Fragment overlap, querying server to determine whether the transfer can proceed.");
+                    ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");
                     // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
                     long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
                     if (nextExpectedRange[0] == end + 1) {
@@ -131,11 +132,11 @@ public class FileUploader {
                 respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                Utils.logError(errMsg);
+                ConsoleSender.logError(errMsg);
             }
         } catch (IOException e) {
-            System.out.println("File upload failed due to IO Error");
-            Utils.logError(e.getMessage());
+            ConsoleSender.toConsole("File upload failed due to IO Error");
+            ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
         } finally {
             // 关闭responseBody

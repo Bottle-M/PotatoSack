@@ -2,6 +2,7 @@ package indi.somebottle.potatosack.onedrive;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -39,7 +40,7 @@ public class RequestUtils {
             respBody = resp.body();
             if (resp.isSuccessful() && respBody != null) {
                 // 成功拿到
-                System.out.println("Get next expected range successfully.");
+                ConsoleSender.toConsole("Get next expected range successfully.");
                 // 解析响应
                 PutOrGetSessionResp respObj = gson.fromJson(respBody.string(), PutOrGetSessionResp.class);
                 List<String> nextRanges = respObj.getNextExpectedRanges();

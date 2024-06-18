@@ -1,6 +1,7 @@
 package indi.somebottle.potatosack.tasks;
 
 import indi.somebottle.potatosack.onedrive.TokenFetcher;
+import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 
 public class TokenChecker implements Runnable {
@@ -17,7 +18,7 @@ public class TokenChecker implements Runnable {
             // 尝试更新token
             if (!tokenFetcher.fetch()) {
                 // 更新失败
-                Utils.logError("Fatal: Token Refresh Failed!");
+                ConsoleSender.logError("Fatal: Token Refresh Failed!");
             }
         }
     }
