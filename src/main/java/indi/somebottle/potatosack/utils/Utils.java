@@ -429,7 +429,7 @@ public class Utils {
                 System.out.println("Waiting for world auto save stop interrupted:" + e);
             }
         }
-        System.out.println("[DEBUG] Auto-save stopped, affected Worlds: " + String.join(", ", affectedWorlds));
+        System.out.println("[DEBUG] Auto-save " + (value ? "started" : "stopped") + ", affected Worlds: " + String.join(", ", affectedWorlds));
         return affectedWorlds;
     }
 

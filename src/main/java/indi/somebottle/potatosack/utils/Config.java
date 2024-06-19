@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Config {
-    private File file; // configs.yml文件对象
+    private File configFile; // configs.yml文件对象
     private YamlConfiguration config; // configs.yml配置内容
 
     /**
@@ -21,11 +21,11 @@ public class Config {
         if (!dataDir.exists())
             dataDir.mkdirs();
         // 配置文件
-        file = new File(dataDir, "configs.yml");
-        if (!file.exists())
+        configFile = new File(dataDir, "configs.yml");
+        if (!configFile.exists())
             // 创建默认配置文件（resources/configs.yml）
             PotatoSack.plugin.saveResource("configs.yml", false);
-        config = YamlConfiguration.loadConfiguration(file);
+        config = YamlConfiguration.loadConfiguration(configFile);
         inspectConfig();
     }
 
@@ -34,7 +34,7 @@ public class Config {
      */
     private void saveConfig() {
         try {
-            config.save(file);
+            config.save(configFile);
         } catch (IOException e) {
             ConsoleSender.logError("Failed to save configs.yml: " + e.getMessage());
         }
@@ -83,7 +83,7 @@ public class Config {
      */
     public boolean reload() {
         try {
-            config.load(file);
+            config.load(configFile);
             inspectConfig(); // 检查配置
             return true;
         } catch (Exception e) {

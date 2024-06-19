@@ -7,6 +7,7 @@ import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 public class TokenFetcher {
     private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
@@ -34,6 +35,10 @@ public class TokenFetcher {
      */
     public boolean fetch() {
         OkHttpClient client = new OkHttpClient.Builder()
+                .connectTimeout(Constants.OKHTTP_CONNECT_TIMEOUT, TimeUnit.SECONDS)
+                .writeTimeout(Constants.OKHTTP_WRITE_TIMEOUT, TimeUnit.SECONDS)
+                .readTimeout(Constants.OKHTTP_READ_TIMEOUT, TimeUnit.SECONDS)
+                .callTimeout(Constants.OKHTTP_CALL_TIMEOUT, TimeUnit.SECONDS)
                 .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
                 .build();
         RequestBody body = new FormBody.Builder()

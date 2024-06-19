@@ -11,6 +11,7 @@ import okhttp3.*;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 注：在向uploadUrl发PUT请求上传文件时不需要传传递AccessToken验证头，否则会返回401
@@ -18,6 +19,10 @@ import java.util.List;
  */
 public class FileUploader {
     private final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(Constants.OKHTTP_CONNECT_TIMEOUT, TimeUnit.SECONDS)
+            .writeTimeout(Constants.OKHTTP_WRITE_TIMEOUT, TimeUnit.SECONDS)
+            .readTimeout(Constants.OKHTTP_READ_TIMEOUT, TimeUnit.SECONDS)
+            .callTimeout(Constants.OKHTTP_CALL_TIMEOUT, TimeUnit.SECONDS)
             .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
             .build();
     private final Gson gson = new Gson();
@@ -114,12 +119,19 @@ public class FileUploader {
                 }
                 return respCode;
             } else {
+                /*
+                 * OKHttp 的一个坑，只要拿到了 Response，如果没有用 try-with-resource，则必须显式关闭
+                 * 如果 respBody = resp.body() 放在下方，可能因为 throw 或者 return 执行不到这一句，导致 Response 没有正常关闭
+                 * 关闭 respBody 等同于关闭 Response，详见: https://square.github.io/okhttp/5.x/okhttp/okhttp3/-response/close.html?query=open%20override%20fun%20close()
+                 */
+                respBody = resp.body();
                 // TODO：待测试: 需要处理 416 问题吗？需要！
                 // 检查是不是 416 错误
                 if (resp.code() == 416) {
                     ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");
                     // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
                     long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
+                    ConsoleSender.toConsole("Next expect range start: " + nextExpectedRange[0] + ", current rangeEnd: " + end);
                     if (nextExpectedRange[0] == end + 1) {
                         // 当前分片 range 的末尾字节编号 +1 就是服务端期待接收到的下一个字节，说明当前分片服务端已经成功收到
                         nextRange[0] = nextExpectedRange[0];
@@ -129,7 +141,6 @@ public class FileUploader {
                     }
                 }
                 String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
-                respBody = resp.body();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
                 ConsoleSender.logError(errMsg);

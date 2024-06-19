@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipOutputStream;
 
@@ -25,15 +26,31 @@ import java.util.zip.ZipOutputStream;
  */
 public class StreamedZipUploader {
     private final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(Constants.OKHTTP_CONNECT_TIMEOUT, TimeUnit.SECONDS)
+            .writeTimeout(Constants.OKHTTP_WRITE_TIMEOUT, TimeUnit.SECONDS)
+            .readTimeout(Constants.OKHTTP_READ_TIMEOUT, TimeUnit.SECONDS)
+            .callTimeout(Constants.OKHTTP_CALL_TIMEOUT, TimeUnit.SECONDS)
             .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
             .build();
     private final Gson gson = new Gson();
-    private final String uploadUrl;
+    private String uploadUrl; // 文件上传时请求的 URL
+    private final Client odClient; // OneDrive 模块
+    private final String targetUploadPath; // 文件在 OneDrive 中的路径
     private long paddingSize = 0; // 在计算出 totalSize 后，在末尾填充的空白字节数
     private long totalSize = 0; // 压缩文件总大小
 
-    public StreamedZipUploader(String uploadUrl) {
-        this.uploadUrl = uploadUrl;
+    /**
+     * 构建 StreamedZipUploader
+     *
+     * @param odClient   OneDrive Client 对象
+     * @param remotePath 文件在 OneDrive 中的远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
+     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
+     */
+    public StreamedZipUploader(Client odClient, String remotePath) throws IOException {
+        this.targetUploadPath = remotePath;
+        this.odClient = odClient;
+        // 生成 uploadURL
+        this.uploadUrl = odClient.createUploadSession(remotePath);
     }
 
     /**
@@ -46,6 +63,7 @@ public class StreamedZipUploader {
         private long chunkOffset = 0L; // 当前块对应的 range 的起始字节编号
         private long expectRangeStart = 0L; // 服务端期待下次收到的 range 的起始字节编号（服务端返回，用来判断上传是否缺失了字节）
         private boolean uploadSessionClosed = false; // 是否已经关闭上传会话（通常是服务端认为上传完毕了）
+        private boolean streamClosed = false; // 本流是否已经被关闭
 
         /**
          * 将缓冲区中的块上传，并清空缓冲区
@@ -53,6 +71,19 @@ public class StreamedZipUploader {
          * @throws IOException 上传失败时抛出 IO异常
          */
         private void uploadBuf() throws IOException {
+            uploadBuf(0, 0, writePos);
+        }
+
+        /**
+         * 将缓冲区中的块上传，并清空缓冲区
+         *
+         * @param retry       该块的上传重试次数
+         * @param bufStartPos 当前块在 buffer 中的起始字节下标（默认是 0 ）
+         * @param bufEndPos   当前块在 buffer 中的终止字节下标的后一个下标（默认是 writePos）
+         * @throws IOException 上传失败时抛出 IO异常
+         * @apiNote 本方法会上传 buffer[bufStartPos, bufEndPos) 这一段数据。
+         */
+        private void uploadBuf(int retry, int bufStartPos, int bufEndPos) throws IOException {
             // 将缓冲区中的块上传，并清空缓冲区
             // 检查上传数据是否有缺失
             if (expectRangeStart != chunkOffset) {
@@ -67,7 +98,7 @@ public class StreamedZipUploader {
             try {
                 // 建立文件内容请求体
                 // 用Arrays.copyOfRange复制缓冲区切片，防止多余数据被上传
-                RequestBody fileReqBody = RequestBody.create(Arrays.copyOfRange(buffer, 0, writePos), MediaType.parse("application/octet-stream"));
+                RequestBody fileReqBody = RequestBody.create(Arrays.copyOfRange(buffer, bufStartPos, bufEndPos), MediaType.parse("application/octet-stream"));
                 // 构造请求
                 Request req = new Request.Builder()
                         .url(uploadUrl)
@@ -76,7 +107,28 @@ public class StreamedZipUploader {
                         .put(fileReqBody)
                         .build();
                 // 发送请求
-                Response resp = client.newCall(req).execute();
+                Response resp;
+                try {
+                    resp = client.newCall(req).execute();
+                } catch (IOException e) {
+                    // 虽然 OKHttp 请求我已经写了拦截器进行重试
+                    // 但有时候拦截器重试后还是没能成功（拿不到响应）
+                    // 对于流式压缩上传来说最好是不要中断，因此这里还需进行一次完整的重试，递归调用 uploadBuf
+                    if (retry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
+                        // 如果已经重试多次了，抛出错误
+                        throw e;
+                    } else {
+                        try {
+                            System.out.println("Failed to request, retrying to upload in 10 seconds...");
+                            Thread.sleep(10000);
+                        } catch (InterruptedException e1) {
+                            System.out.println(e1.getMessage());
+                        }
+                        // 否则重试 uploadBuf
+                        uploadBuf(retry + 1, bufStartPos, bufEndPos);
+                        return;
+                    }
+                }
                 if (resp.isSuccessful()) {
                     ConsoleSender.toConsole(" --> Chunk successfully uploaded.");
                     int respCode = resp.code();
@@ -105,9 +157,12 @@ public class StreamedZipUploader {
                     chunkOffset += writePos; // 更新下一块相对于文件起点的偏移量
                     writePos = 0; // 从缓冲区头部重新开始写
                 } else {
-                    // 请求未成功，先把 writePos 归零
-                    // 避免 try-with-resource 关闭时再次触发 uploadBuf
-                    writePos = 0;
+                    /*
+                     * OKHttp 的一个坑，只要拿到了 Response，如果没有用 try-with-resource，则必须显式关闭
+                     * 如果 respBody = resp.body() 放在下方，可能因为 throw 或者 return 执行不到这一句，导致 Response 没有正常关闭
+                     * 关闭 respBody 等同于关闭 Response，详见: https://square.github.io/okhttp/5.x/okhttp/okhttp3/-response/close.html?query=open%20override%20fun%20close()
+                     */
+                    respBody = resp.body();
                     // 请求未成功，可能有 400 和 416 状态码
                     switch (resp.code()) {
                         case 400:
@@ -123,21 +178,44 @@ public class StreamedZipUploader {
                             // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
                             ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");
                             long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
+                            ConsoleSender.toConsole("Next expect range start: " + nextExpectedRange[0] + ", current rangeEnd: " + currRangeEnd);
                             if (nextExpectedRange[0] == currRangeEnd + 1) {
                                 // 当前分片 range 的末尾字节编号 +1 就是服务端期待接收到的下一个字节，说明当前分片服务端已经成功收到
                                 // 接着上传下一个分片即可，这个异常可忽略
                                 expectRangeStart = nextExpectedRange[0];
                                 chunkOffset = currRangeEnd + 1;
+                                // writePos 归零，从下一块的 0 字节处重新开始
+                                writePos = 0;
+                                ConsoleSender.toConsole("Resuming upload...");
+                                return;
+                            } else if (nextExpectedRange[0] >= chunkOffset && nextExpectedRange[0] <= currRangeEnd) {
+                                // 还有一种就是当前分片服务端只收到了一部分
+                                // 期待的下一个字节位于当前分片的字节范围内
+                                // 那么就从期待的字节开始继续传输完这个分片
+                                // 计算出距离当前分片起始字节的偏移
+                                int offset = (int) (nextExpectedRange[0] - chunkOffset);
+                                // 调整 chunkOffset 和 writePos（其实就是在调整上传的 range）
+                                expectRangeStart = nextExpectedRange[0];
+                                chunkOffset = nextExpectedRange[0];
+                                // 这里 writePos 并不需要归零，而是要调整
+                                writePos -= offset;
+                                // 上传 buffer[offset, bufEndPos) 这一部分的数据
+                                uploadBuf(0, offset, bufEndPos);
                                 return;
                             }
                             break;
                     }
                     String errMsg = "Upload req failed, code: " + resp.code() + ", message: " + resp.message();
-                    respBody = resp.body();
                     if (respBody != null)
                         errMsg += "\n Resp body: " + respBody.string();
                     throw new IOException(errMsg);
                 }
+            } catch (IOException e) {
+                // 如果有 IO 异常，先把 writePos 置 0
+                // 避免 try-with-resource 关闭（close）时再次触发 uploadBuf
+                writePos = 0;
+                // 再把异常抛出去
+                throw e;
             } finally {
                 // 关闭responseBody
                 if (respBody != null)
@@ -156,12 +234,42 @@ public class StreamedZipUploader {
             // 上传会话已经关闭则无法继续传输
             if (uploadSessionClosed)
                 throw new IOException("Unexpected: Upload session closed.");
+            // 20240619 防越界处理: 如果已经有 writePos >= buffer.length，则 writePos 归零
+            if (writePos >= buffer.length) {
+                writePos = 0;
+            }
             // 先往缓冲区写
             buffer[writePos++] = (byte) b;
-            // 如果写满一块
+            // 如果正好写满一块
             if (writePos == buffer.length) {
                 uploadBuf(); // 上传缓冲区并冲刷掉
             }
+        }
+
+        /**
+         * 填充空白字符以完成上传
+         *
+         * @throws IOException IO异常
+         */
+        private void padBlanks() throws IOException {
+            // 出现了文件大小上的误差
+            // TODO：待测试: 输出空白字符以填充剩余部分， zip 末尾的空白字符可以被忽略
+            // 一般来说误差字节数不会大于一块的大小
+            // 更新 writePos 为剩余需要填充的字节数
+            writePos = (int) (totalSize - chunkOffset);
+            // 健壮性考虑: 如果误差字节数大于一块的大小，则重设缓冲区
+            if (writePos > buffer.length) {
+                if (writePos > 10L * Constants.CHUNK_SIZE) {
+                    // 但是误差字节数不允许过大，至多为 10 块的大小
+                    ConsoleSender.logWarn("Failed to pad. File size error is too large!!!");
+                    throw new IOException("Unexpected: File size error is too large!!!");
+                }
+                buffer = new byte[writePos];
+            }
+            // 将 buffer [0, writePos-1] 填充为 0
+            Arrays.fill(buffer, 0, writePos, (byte) 0);
+            // 把剩余的空白字节进行上传
+            uploadBuf();
         }
 
         /**
@@ -171,29 +279,29 @@ public class StreamedZipUploader {
          */
         @Override
         public void close() throws IOException {
+            // 这个 close 方法可能被调用两次，利用 streamClosed 变量防止该方法被重复调用
+            if (streamClosed)
+                return;
+            streamClosed = true;
+            System.out.println("Closing upload stream.");
             if (uploadSessionClosed) {
                 if (writePos > 0) // 虽然关闭了上传会话，但内存还有数据没有上传
-                    throw new IOException("Unexpected: Upload session closed.");
+                    throw new IOException("Unexpected: Upload session closed but there's still more data to be uploaded.");
                 // 如果上传会话已经正常关闭，无需再次执行 close
             } else if (writePos > 0) {
                 // 如果上传会话未关闭，且缓冲区有剩余内容
+                // 因为最后一块往往写不满缓冲区
                 uploadBuf(); // 上传缓冲区并冲刷掉
+                // 上传完最后一块后，可能因为末尾有 paddingSize 填充的空白字符还需要填充，上传会话尚未关闭
+                if (!uploadSessionClosed) {
+                    padBlanks();
+                }
             } else {
                 // 上传会话未关闭且缓冲区没有剩余内容
-                // 出现了文件大小上的误差
-                // TODO：待测试: 输出空白字符以填充剩余部分， zip 末尾的空白字符可以被忽略
-                // 一般来说误差字节数不会大于一块的大小
-                // 更新 writePos 为剩余需要填充的字节数
-                writePos = (int) (totalSize - chunkOffset);
-                // 健壮性考虑: 如果误差字节数大于一块的大小，则重设缓冲区
-                if (writePos > buffer.length) {
-                    buffer = new byte[writePos];
-                }
-                // 将 buffer [0, writePos-1] 填充为 0
-                Arrays.fill(buffer, 0, writePos, (byte) 0);
-                // 把剩余的空白字节进行上传
-                uploadBuf();
+                padBlanks();
             }
+            // 关闭流后尝试释放 buffer 资源
+            buffer = null;
         }
     }
 
@@ -222,7 +330,7 @@ public class StreamedZipUploader {
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 是否打包上传成功
      */
-    public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) {
+    public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
         return zipSpecifiedAndUpload(zipFilePaths, quiet, false);
     }
 
@@ -234,7 +342,7 @@ public class StreamedZipUploader {
      * @param retry        是否是重试
      * @return 是否打包上传成功
      */
-    private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) {
+    private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) throws IOException {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         ConsoleSender.toConsole("Calculating file size... ");
         // 先统计文件大小
@@ -277,6 +385,8 @@ public class StreamedZipUploader {
             }
             ConsoleSender.toConsole("Data size overflowed the previous agreed size. Retrying... ");
             // 没有重试过则进行重试
+            // 生成新的 uploadURL，之前的没法用了
+            uploadUrl = odClient.createUploadSession(targetUploadPath);
             // 末尾填充的空白字节数 = 2 × 平均溢出的字节数
             paddingSize = 2 * PotatoSack.streamedOverflowBytesTracker.getAvg();
             // 立即重试一次

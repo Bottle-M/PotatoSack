@@ -62,11 +62,7 @@ public final class ConsoleSender {
      */
     public static void toConsole(String text) {
         // 通过CommandSender对象的方法发送信息到控制台
-        // System.out.println(text);
-        Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-            // 放到主线程中执行
-            PotatoSack.plugin.getLogger().info(text);
-        });
+        System.out.println(text);
     }
 
     /**

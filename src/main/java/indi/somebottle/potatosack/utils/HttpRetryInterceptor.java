@@ -31,7 +31,15 @@ public class HttpRetryInterceptor implements Interceptor {
             } catch (IOException e) {
                 // 因为网络问题(比如Connect timeout)而导致的请求失败，重试
                 exception = e;
-                System.out.println("Retrying to request due to network issues...(" + (i + 1) + "/" + MAX_RETRY_COUNT + ")");
+                if (i != MAX_RETRY_COUNT) {
+                    System.out.println("Retrying to request due to network issues...(" + (i + 1) + "/" + MAX_RETRY_COUNT + ")");
+                    try {
+                        // 等待 5 秒后重试
+                        Thread.sleep(5000);
+                    } catch (InterruptedException e1) {
+                        e1.printStackTrace();
+                    }
+                }
             }
         }
         // 网络原因下的重试结束，但没有请求成功，则抛出异常

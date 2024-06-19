@@ -14,11 +14,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class Client {
     private final TokenFetcher fetcher;
     private final Gson gson = new Gson();
     private final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(Constants.OKHTTP_CONNECT_TIMEOUT, TimeUnit.SECONDS)
+            .writeTimeout(Constants.OKHTTP_WRITE_TIMEOUT, TimeUnit.SECONDS)
+            .readTimeout(Constants.OKHTTP_READ_TIMEOUT, TimeUnit.SECONDS)
+            .callTimeout(Constants.OKHTTP_CALL_TIMEOUT, TimeUnit.SECONDS)
             .addInterceptor(new HttpRetryInterceptor()) // 添加拦截器，实现请求失败重试
             .build();
 
@@ -269,7 +274,7 @@ public class Client {
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 请保证remotePath不为空
      */
-    private String createUploadSession(String remotePath) throws IOException {
+    public String createUploadSession(String remotePath) throws IOException {
         String remoteName = new File(remotePath).getName(); // 获取在远程目录的文件名
         String url = Constants.MS_GRAPH_ENDPOINT + Constants.OD_API_ROOT_PATH + ":/" + remotePath + ":/createUploadSession";
         UploadRequest upReq = new UploadRequest(remoteName); // 构建请求表单
@@ -314,8 +319,7 @@ public class Client {
     public boolean zipPipingUpload(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException {
         if (zipFilePaths.length == 0 || remotePath.equals(""))
             return false;
-        String uploadUrl = createUploadSession(remotePath); // 建立上传会话
-        StreamedZipUploader uploader = new StreamedZipUploader(uploadUrl);
+        StreamedZipUploader uploader = new StreamedZipUploader(this, remotePath);
         return uploader.zipSpecifiedAndUpload(zipFilePaths, quiet);
     }
 
