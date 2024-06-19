@@ -97,7 +97,7 @@ public class Client {
                 String errMsg = "Children req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                ConsoleSender.logError(errMsg);
+                ConsoleSender.logWarn(errMsg);
             }
         } catch (Exception e) {
             ConsoleSender.logError(e.getMessage());
@@ -142,7 +142,7 @@ public class Client {
                 String errMsg = "Download failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                ConsoleSender.logError(errMsg);
+                ConsoleSender.logWarn(errMsg);
             } else {
                 try (InputStream inputStream = respBody.byteStream();
                      FileOutputStream fos = new FileOutputStream(localFile)) {
@@ -199,7 +199,7 @@ public class Client {
                 String errMsg = "Item req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                ConsoleSender.logError(errMsg);
+                ConsoleSender.logWarn(errMsg);
             }
         } catch (IOException e) {
             ConsoleSender.logError(e.getMessage());
@@ -247,7 +247,7 @@ public class Client {
                 String errMsg = "File upload failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                ConsoleSender.logError(errMsg);
+                ConsoleSender.logWarn(errMsg);
             }
         } catch (IOException e) {
             ConsoleSender.logError(e.getMessage());
@@ -381,7 +381,7 @@ public class Client {
                 String errMsg = "Delete req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                ConsoleSender.logError(errMsg);
+                ConsoleSender.logWarn(errMsg);
             }
         } catch (IOException e) {
             ConsoleSender.logError(e.getMessage());
@@ -439,7 +439,7 @@ public class Client {
                 String errMsg = "Folder req failed, code: " + resp.code() + ", message: " + resp.message();
                 if (respBody != null)
                     errMsg += "\n Resp body: " + respBody.string();
-                ConsoleSender.logError(errMsg);
+                ConsoleSender.logWarn(errMsg);
             }
         } catch (Exception e) {
             ConsoleSender.logError(e.getMessage());

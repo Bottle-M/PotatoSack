@@ -89,6 +89,16 @@ public class Utils {
     }
 
     /**
+     * 用于在插件启动时检查 pathRelativeToServer 是否能正常运作
+     */
+    public static void testRelativePathToServer() {
+        // 拿 server.properties 测试相对服务端根目录路径
+        File serverProperties = new File(System.getProperty("user.dir"), "server.properties");
+        System.out.println("Absolute path of server.properties: " + serverProperties.getAbsolutePath());
+        System.out.println("server.properties path relative to server root: " + pathRelativeToServer(serverProperties));
+    }
+
+    /**
      * 将指定路径转换为一个可以当作Map Key的字符串，是一个相对于服务端根目录的相对路径
      *
      * @param file 文件File对象
@@ -419,7 +429,7 @@ public class Utils {
                 System.out.println("Waiting for world auto save stop interrupted:" + e);
             }
         }
-        System.out.println("[DEBUG] Auto-save stopped, affected Worlds:" + String.join(",", affectedWorlds));
+        System.out.println("[DEBUG] Auto-save stopped, affected Worlds: " + String.join(", ", affectedWorlds));
         return affectedWorlds;
     }
 

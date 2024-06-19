@@ -260,7 +260,7 @@ public class BackupMaker {
             // 获得各个世界的配置文件;
             World world = PotatoSack.plugin.getServer().getWorld(worldName);
             if (world == null) {
-                ConsoleSender.logError("World " + worldName + " not found, ignored.");
+                ConsoleSender.logWarn("World " + worldName + " not found, ignored.");
                 continue;
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
@@ -376,7 +376,7 @@ public class BackupMaker {
         String lastFullBackupId = rec.getLastFullBackupId();
         if (lastFullBackupId.equals("")) {
             // 如果还没有全量备份则进行全量备份
-            ConsoleSender.logError("No full backup found, trying to make full backup first.");
+            ConsoleSender.logWarn("No full backup found, trying to make full backup first.");
             return makeFullBackup();
         }
         // 获得世界名
@@ -390,7 +390,7 @@ public class BackupMaker {
             // 获得各个世界的配置文件;
             World world = PotatoSack.plugin.getServer().getWorld(worldName);
             if (world == null) {
-                ConsoleSender.logError("World " + worldName + " not found, ignored.");
+                ConsoleSender.logWarn("World " + worldName + " not found, ignored.");
                 continue;
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();

@@ -40,7 +40,11 @@ public final class PotatoSack extends JavaPlugin {
         // 20240613 配置服务端根目录
         worldContainerDir = this.getServer().getWorldContainer();
         Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE); // 设置OkHttpClient日志级别
-        System.out.println("Server root dir: " + worldContainerDir.getPath());
+        // 输出服务端根目录
+        System.out.println("Server root dir URI: " + worldContainerDir.toURI());
+        // 测试 pathRelativeToServer 是否正常运作
+        Utils.testRelativePathToServer();
+        // 备份任务定时检查模块
         BackupChecker backupChecker;
         // 开始初始化插件
         System.out.println("Potato Sack Initializing...");
@@ -64,7 +68,8 @@ public final class PotatoSack extends JavaPlugin {
             System.out.println("Onedrive AppFolder URL: " + odClient.getAppFolderUrl());
             // 检查OneDrive上插件数据目录是否建立
             if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {
-                System.out.println("Creating data folder in OneDrive.");
+                System.out.println("Take it easy, the 404 problem above is not a big deal.");
+                System.out.println("404 Detected, creating data folder in OneDrive.");
                 // 如果没有建立则建立数据目录
                 if (odClient.createFolder(Constants.OD_APP_DATA_FOLDER)) {
                     System.out.println("Successfully created data folder in OneDrive.");

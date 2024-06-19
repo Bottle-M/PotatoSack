@@ -26,6 +26,24 @@ public final class ConsoleSender {
     }
 
     /**
+     * 记录插件警告信息（方便追溯）
+     *
+     * @param msg 警告信息字符串
+     * @apiNote 本方法会将警告信息记入服务端日志，同时打印到控制台, 本方法首先会在本线程打印到控制台一次，再在主线程打印一次
+     */
+    public static void logWarn(String msg) {
+        String finalMsg = "Warning: " + msg;
+        System.out.println("[Println] " + finalMsg);
+        if (PotatoSack.plugin != null) {
+            // 记录到服务端日志
+            // 因为logWarn可能在异步方法中被调用，这里需要把getLogger.warning通过runTask放回主线程调用
+            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
+                PotatoSack.plugin.getLogger().warning("[Logger] " + finalMsg);
+            });
+        }
+    }
+
+    /**
      * 发送消息到控制台（仅限主线程）
      *
      * @param text 待发送的消息内容
