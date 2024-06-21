@@ -386,8 +386,8 @@ public class StreamedZipUploader {
             // 没有重试过则进行重试
             // 生成新的 uploadURL，之前的没法用了
             uploadUrl = odClient.createUploadSession(targetUploadPath);
-            // 末尾填充的空白字节数 = 2 × 平均溢出的字节数
-            paddingSize = 2 * PotatoSack.streamedOverflowBytesTracker.getAvg();
+            // 末尾填充的空白字节数 = 5 × 平均溢出的字节数
+            paddingSize = 5 * PotatoSack.streamedOverflowBytesTracker.getAvg();
             // 立即重试一次
             return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
         } catch (Exception e) {

@@ -9,6 +9,7 @@ import org.bukkit.Bukkit;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
@@ -38,7 +39,7 @@ public class BackupChecker implements Runnable {
                     backupRecordFile.getParentFile().mkdirs();
                 if (backupRecordFile.createNewFile()) {
                     // 初始化文件JSON内容
-                    backupMaker.writeBackupRecord(0, 0, "", "");
+                    backupMaker.writeBackupRecord(0, 0, "", "", new ArrayList<>());
                 } else {
                     return false;
                 }

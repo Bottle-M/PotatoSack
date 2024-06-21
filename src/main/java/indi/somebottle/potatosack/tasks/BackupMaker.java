@@ -80,15 +80,18 @@ public class BackupMaker {
      * @param lastFullBackupTime  最近一次全量备份时间戳
      * @param lastIncreBackupTime 最近一次增量备份时间戳
      * @param lastFullBackupId    最近一次备份组号
+     * @param lastIncreBackupId   最近一次增量备份 ID
+     * @param increBackupsHistory 增量备份的历史时间戳信息
      * @throws IOException IO异常
      */
-    public void writeBackupRecord(long lastFullBackupTime, long lastIncreBackupTime, String lastFullBackupId, String lastIncreBackupId) throws IOException {
+    public void writeBackupRecord(long lastFullBackupTime, long lastIncreBackupTime, String lastFullBackupId, String lastIncreBackupId, List<BackupRecord.IncreBackupHistoryItem> increBackupsHistory) throws IOException {
         BackupRecord rec = new BackupRecord();
         rec.setLastFullBackupTime(lastFullBackupTime);
         rec.setLastIncreBackupTime(lastIncreBackupTime);
         rec.setFileUpdateTime(Utils.timeStamp());
         rec.setLastFullBackupId(lastFullBackupId);
         rec.setLastIncreBackupId(lastIncreBackupId);
+        rec.setIncreBackupsHistory(increBackupsHistory);
         writeBackupRecord(rec);
     }
 
@@ -214,7 +217,7 @@ public class BackupMaker {
     }
 
     /**
-     * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/*.json
+     * 从云端拉取最新一组备份中的json文件 PotatoSack/备份组号/*.json
      *
      * @param fileNames 文件名数组String[]，指定要下载的一组json文件
      * @return 是否拉取成功
@@ -281,7 +284,7 @@ public class BackupMaker {
             int serial = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
             currFullBackupId = "0" + currDate + String.format("%06d", serial);
         }
-        // 文件在云端的路径
+        // 全量备份文件在云端的路径
         String remotePath = Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
         if ((boolean) config.getConfig("use-streaming-compression-upload")) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
@@ -331,6 +334,8 @@ public class BackupMaker {
         // 全量备份后也要修改增量备份时间记录
         rec.setLastIncreBackupTime(Utils.timeStamp());
         rec.setLastIncreBackupId(""); // 同时重置增量备份ID，让其从000001重新开始
+        // 重置增量备份历史
+        rec.clearIncreBackupsHistory();
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
@@ -482,7 +487,10 @@ public class BackupMaker {
         }
         // 4. 更新备份记录
         rec.setLastIncreBackupId(increBackupId);
-        rec.setLastIncreBackupTime(Utils.timeStamp());
+        long currentTimestamp = Utils.timeStamp();
+        rec.setLastIncreBackupTime(currentTimestamp);
+        // 把增量备份记录加入历史
+        rec.addIncreBackupHistoryItem(increBackupId, currentTimestamp);
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
