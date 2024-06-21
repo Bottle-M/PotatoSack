@@ -297,11 +297,10 @@ public class BackupMaker {
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                // TODO: 待测试: 流式压缩上传时全量备份也采用 ZipFilePath
+                // 流式压缩上传时全量备份也采用 ZipFilePath
                 // 将 worldPaths 转换为 ZipFilePath 对象数组
                 ZipFilePath[] worldZipFiles = Utils.worldPathsToZipPaths(worldPaths.toArray(new String[0]));
                 if (!odClient.zipPipingUpload(worldZipFiles, remotePath, true)) {
-                    // TODO: 待测试: 流式压缩上传重试还失败了就退避 10 分钟
                     // 如果流式压缩上传失败了就退避 10 分钟
                     putOffFullBackup(rec, 10 * 60L);
                     return false;
@@ -415,7 +414,6 @@ public class BackupMaker {
                             )
                     );
             }
-            // TODO：待测试：修改了 世界名.json 的 lastFileHashes 存储结构
             // 更新 世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
         }

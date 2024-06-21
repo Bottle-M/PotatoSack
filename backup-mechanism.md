@@ -37,19 +37,19 @@ AppFolder
 
 ### 世界名.json
 
-1. 记录各个世界数据目录中的所有文件的最后哈希值。
+1. 记录某个世界数据目录中的所有文件的最后哈希值。
    * 键值对: `<相对于服务端根目录的路径, MD5 哈希值>`
 2. 记录此文件的更新时间戳。
 
-文件示例如下:  
+文件 `world.json` 示例如下:  
 
 ```json
 {
     "fileUpdateTime": 1718853394,
     "lastFileHashes": {
-        "world/playerdata/900cb843-480f-4c4c-80e2-1d4b1814ac68.dat_old":"8e61dc5109912780912f8f1f73c050ba",
-        "world/entities/r.-7.3.mca":"ded5a6b1fc42287e4b05836a686c6e11",
-        ...
+        "world/playerdata/911cb843-480d-4c4c-80e2-1d4b1234ab68.dat_old": "8e61dc5106573480912f8f1f73c050ba",
+        "world/entities/r.-7.3.mca": "ded5a6b1fa64387e4b05836a686c6e11",
+        "...": "..."
     }
 }
 ```

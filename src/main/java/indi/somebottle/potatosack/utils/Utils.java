@@ -408,7 +408,6 @@ public class Utils {
                         worldList.add(world);
                 }
             }
-            // TODO: 待测试: 等待主线程关闭世界保存任务完成
             // 在主线程中，设置全部世界的保存情况
             Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
                 // 停止世界自动保存

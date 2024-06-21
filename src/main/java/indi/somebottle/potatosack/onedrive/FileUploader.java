@@ -125,7 +125,6 @@ public class FileUploader {
                  * 关闭 respBody 等同于关闭 Response，详见: https://square.github.io/okhttp/5.x/okhttp/okhttp3/-response/close.html?query=open%20override%20fun%20close()
                  */
                 respBody = resp.body();
-                // TODO：待测试: 需要处理 416 问题吗？需要！
                 // 检查是不是 416 错误
                 if (resp.code() == 416) {
                     ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");

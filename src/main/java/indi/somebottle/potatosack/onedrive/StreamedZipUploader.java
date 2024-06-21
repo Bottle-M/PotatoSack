@@ -174,7 +174,6 @@ public class StreamedZipUploader {
                             }
                             break;
                         case 416:
-                            // TODO: 待测试: 对 416 问题的处理, 使用 getNextExpectedRange
                             // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
                             ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");
                             long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
@@ -253,9 +252,9 @@ public class StreamedZipUploader {
          */
         private void padBlanks() throws IOException {
             // 出现了文件大小上的误差
-            // TODO：待测试: 输出空白字符以填充剩余部分， zip 末尾的空白字符可以被忽略
             // 一般来说误差字节数不会大于一块的大小
             // 更新 writePos 为剩余需要填充的字节数
+            ConsoleSender.toConsole("Padding blanks to fit the calculated size...");
             writePos = (int) (totalSize - chunkOffset);
             // 健壮性考虑: 如果误差字节数大于一块的大小，则重设缓冲区
             if (writePos > buffer.length) {
@@ -377,7 +376,7 @@ public class StreamedZipUploader {
             // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
             // 获得溢出的字节数，更新平均溢出的字节数
             PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
-            // TODO: 待测试: 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
+            // 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
             if (retry) {
                 // 重试过了，但还是溢出了，回避
                 ConsoleSender.logError("Compression / upload failed after retrying: " + e.getMessage());
