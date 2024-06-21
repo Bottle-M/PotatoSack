@@ -192,7 +192,8 @@ public class Utils {
             zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
             File file = new File(zipFilePath.filePath);
             FileInputStream in = new FileInputStream(file);
-            byte[] buffer = new byte[8192]; // 写入文件
+            // 1 MiB 大小的读取缓冲区
+            byte[] buffer = new byte[1048576]; // 写入文件
             int len;
             while ((len = in.read(buffer)) > 0) {
                 zos.write(buffer, 0, len);
