@@ -1,6 +1,7 @@
 package indi.somebottle;
 
 import javax.swing.*;
+import java.io.File;
 import java.util.Scanner;
 
 public class Main {
@@ -18,11 +19,21 @@ public class Main {
         dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         dirChooser.setMultiSelectionEnabled(false);
         int result = dirChooser.showOpenDialog(null);
+        File selectedFile = null;
         if (result == JFileChooser.APPROVE_OPTION) {
-            System.out.println("Selected directory: " + dirChooser.getSelectedFile().getAbsolutePath());
+            selectedFile = dirChooser.getSelectedFile();
+            System.out.println("Selected directory: " + selectedFile.getAbsolutePath());
         } else {
             System.out.println("No directory selected, exit.");
             System.exit(0);
         }
+        if (!selectedFile.isDirectory()) {
+            // 非目录
+            System.out.println("You're not choosing a directory, exit.");
+            System.exit(0);
+        }
+        // 检查必要的文件是否存在
+        String[] necessaryFiles = {"config.json", "data.db", "data.db-shm", "data.db-wal"};
+
     }
 }

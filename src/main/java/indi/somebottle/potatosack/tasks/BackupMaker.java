@@ -121,7 +121,7 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的 世界名.json
+     * 写入本地的 _世界名.json
      *
      * @param worldName 世界名
      * @param rec       世界记录WorldRecord
@@ -133,7 +133,7 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的 世界名.json
+     * 写入本地的 _世界名.json
      *
      * @param worldName 世界名
      * @param recList   Map<文件相对服务器根目录的路径, 文件哈希>
@@ -164,7 +164,7 @@ public class BackupMaker {
     }
 
     /**
-     * 获得世界数据记录（世界名.json）
+     * 获得世界数据记录（_世界名.json）
      *
      * @param worldName 世界名
      * @return WorldRecord对象
@@ -173,7 +173,7 @@ public class BackupMaker {
     public WorldRecord getWorldRecord(String worldName) throws IOException {
         File worldRecordFile = getWorldRecordsFile(worldName);
         if (!worldRecordFile.exists())
-            if (!pullRecordsFile(worldName))
+            if (!pullRecordsFile("_" + worldName))
                 return null; // 获取失败
         // 读入backup.json
         String worldJson = new String(Files.readAllBytes(worldRecordFile.toPath()));
@@ -191,14 +191,14 @@ public class BackupMaker {
     }
 
     /**
-     * 根据世界名获取 世界名.json 记录文件
+     * 根据世界名获取 _世界名.json 记录文件
      *
      * @param worldName 世界名
      * @return File对象
-     * @apiNote 世界名.json中存放世界数据目录中所有文件的最后哈希值
+     * @apiNote _世界名.json中存放世界数据目录中所有文件的最后哈希值
      */
     public File getWorldRecordsFile(String worldName) {
-        return new File(pluginDataPath + worldName + ".json");
+        return new File(pluginDataPath + "_" + worldName + ".json");
     }
 
     /**
@@ -255,7 +255,7 @@ public class BackupMaker {
         List<String> worlds = (List<String>) config.getConfig("worlds");
         // 各个世界的目录路径
         List<String> worldPaths = new ArrayList<>();
-        // 1. 扫描世界目录生成包含每个文件最后哈希值的 世界名.json
+        // 1. 扫描世界目录生成包含每个文件最后哈希值的 _世界名.json
         for (String worldName : worlds) {
             // 获得各个世界的配置文件;
             World world = PotatoSack.plugin.getServer().getWorld(worldName);
@@ -267,7 +267,7 @@ public class BackupMaker {
             worldPaths.add(worldAbsPath);
             // 扫描世界目录下的所有文件，获得文件哈希（为增量备份做准备）
             Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
-            // 世界名.json中存放世界数据目录中所有文件的最后哈希值
+            // _世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
         }
         String currFullBackupId; // 备份组号
@@ -337,7 +337,7 @@ public class BackupMaker {
         if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
             return false;
         for (String worldName : worlds) {
-            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/" + worldName + ".json"))
+            if (!odClient.uploadFile(pluginDataPath + "_" + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/_" + worldName + ".json"))
                 return false;
         }
         // 6. 删除过时备份
@@ -414,7 +414,7 @@ public class BackupMaker {
                             )
                     );
             }
-            // 更新 世界名.json 中存放世界数据目录中所有文件的最后哈希值
+            // 更新 _世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
         }
         // 若没有文件变更则不进行本次增量备份
@@ -489,7 +489,7 @@ public class BackupMaker {
         if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
             return false;
         for (String worldName : worlds) {
-            if (!odClient.uploadFile(pluginDataPath + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + worldName + ".json"))
+            if (!odClient.uploadFile(pluginDataPath + "_" + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/_" + worldName + ".json"))
                 return false;
         }
         ConsoleSender.toConsole("Successfully made incremental backup: " + increBackupId + " in backup group " + lastFullBackupId);

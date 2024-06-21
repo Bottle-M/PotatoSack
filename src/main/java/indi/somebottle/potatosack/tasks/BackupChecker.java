@@ -51,7 +51,7 @@ public class BackupChecker implements Runnable {
             System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
             if (!worldRecordFile.exists())
                 // 从云端抓取
-                if (!backupMaker.pullRecordsFile(worldName)) {
+                if (!backupMaker.pullRecordsFile("_" + worldName)) {
                     if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
                         worldRecordFile.getParentFile().mkdirs();
                     // 如果抓取失败就直接在本地新建文件
