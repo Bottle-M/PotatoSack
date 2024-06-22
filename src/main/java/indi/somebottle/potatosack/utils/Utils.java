@@ -235,7 +235,8 @@ public class Utils {
      * @return 是否打包成功
      * @apiNote 比如srcDirPath='./test/myfolder'，如果packAsSrcDir=true，那么打包后的zip包中根目录下是myfolder，其中是myfolder中的所有文件； 否则根目录下则是myfolder内的所有文件。
      */
-    /*public static boolean zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
+    /*
+    public static boolean zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
         ) {
@@ -252,7 +253,7 @@ public class Utils {
         return false;
     }*/
 
-    /**
+    /*
      * 指定多个目录打包成zip
      *
      * @param srcDirPaths       String[] ，指定要打包的目录绝对路径（注意：需要是同一目录下的子目录）
@@ -260,6 +261,7 @@ public class Utils {
      * @param quiet             是否静默打包（不显示 Adding... 信息)
      * @return 是否打包成功
      */
+    /*
     public static boolean zip(String[] srcDirPaths, String targetZipFilePath, boolean quiet) {
         try (
                 ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(targetZipFilePath)))
@@ -280,7 +282,9 @@ public class Utils {
         return false;
     }
 
-    /**
+     */
+
+    /*
      * （递归方法） 扫描目录下所有文件并存入Zip Entries
      *
      * @param srcDir        源目录File对象
@@ -289,7 +293,7 @@ public class Utils {
      * @param quiet         是否静默打包
      * @throws Exception 打包失败抛出异常
      */
-    public static void addDirFilesToZip(File srcDir, String parentDirPath, ZipOutputStream zout, boolean quiet) throws Exception {
+    /*public static void addDirFilesToZip(File srcDir, String parentDirPath, ZipOutputStream zout, boolean quiet) throws Exception {
         File[] files = srcDir.listFiles();
         if (files == null) {
             throw new Exception("Error: " + srcDir + " is not a directory, this should not happen!");
@@ -317,16 +321,16 @@ public class Utils {
                 }
             }
         }
-    }
+    }*/
 
     /**
-     * （递归方法） 扫描目录下所有文件，转换为 ZipFilePath
+     * （递归方法） 扫描某个目录下所有文件，转换为 ZipFilePath
      *
      * @param srcDir        源目录 File 对象
      * @param parentDirPath 父目录路径
      * @return List<ZipFilePath>
      */
-    public static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, String parentDirPath) throws Exception {
+    private static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, String parentDirPath) throws Exception {
         List<ZipFilePath> resPaths = new ArrayList<>();
         // 列出 srcDir 目录下的文件
         File[] files = srcDir.listFiles();
@@ -352,12 +356,12 @@ public class Utils {
 
 
     /**
-     * 指定多个目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
+     * 指定多个同级目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
      *
      * @param srcDirPaths String[] ，指定要打包的目录绝对路径（注意：是同一目录下的子目录）
      * @return ZipFilePath[]
      */
-    public static ZipFilePath[] worldPathsToZipPaths(String[] srcDirPaths) {
+    public static ZipFilePath[] scanPeerDirsToZipPaths(String[] srcDirPaths) {
         List<ZipFilePath> res = new ArrayList<>();
         try {
             // 遍历每个目录

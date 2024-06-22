@@ -286,6 +286,8 @@ public class BackupMaker {
         }
         // 全量备份文件在云端的路径
         String remotePath = Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
+        // 扫描 worldPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
+        ZipFilePath[] worldZipFilePaths = Utils.scanPeerDirsToZipPaths(worldPaths.toArray(new String[0]));
         if ((boolean) config.getConfig("use-streaming-compression-upload")) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
@@ -300,10 +302,7 @@ public class BackupMaker {
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                // 流式压缩上传时全量备份也采用 ZipFilePath
-                // 将 worldPaths 转换为 ZipFilePath 对象数组
-                ZipFilePath[] worldZipFiles = Utils.worldPathsToZipPaths(worldPaths.toArray(new String[0]));
-                if (!odClient.zipPipingUpload(worldZipFiles, remotePath, true)) {
+                if (!odClient.zipPipingUpload(worldZipFilePaths, remotePath, true)) {
                     // 如果流式压缩上传失败了就退避 10 分钟
                     putOffFullBackup(rec, 10 * 60L);
                     return false;
@@ -318,13 +317,14 @@ public class BackupMaker {
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
             ConsoleSender.toConsole("Compressing...");
             // 临时文件路径
-            String tempFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
+            String tempOutputFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
             // 2. 开始压缩
-            if (!Utils.zip(worldPaths.toArray(new String[0]), tempFilePath, true))
+            // TODO: 待测试，抛弃 Utils.zip 方法
+            if (!Utils.zipSpecificFiles(worldZipFilePaths, tempOutputFilePath, true))
                 return false;
             // 3. 上传压缩好的文件
             ConsoleSender.toConsole("Uploading Full Backup...");
-            if (!odClient.uploadLargeFile(tempFilePath, remotePath))
+            if (!odClient.uploadLargeFile(tempOutputFilePath, remotePath))
                 return false;
         }
         // 4. 更新备份记录
@@ -476,13 +476,13 @@ public class BackupMaker {
             // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
             // 输出文件路径
-            String outputPath = pluginTempPath + "incre" + increBackupId + ".zip";
+            String tempOutputFilePath = pluginTempPath + "incre" + increBackupId + ".zip";
             // 执行压缩
-            if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), outputPath, true))
+            if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), tempOutputFilePath, true))
                 return false;
             // 3. 上传
             ConsoleSender.toConsole("Uploading Incremental Backup...");
-            if (!odClient.uploadFile(outputPath, remotePath))
+            if (!odClient.uploadFile(tempOutputFilePath, remotePath))
                 return false;
         }
         // 4. 更新备份记录

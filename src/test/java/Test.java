@@ -104,7 +104,7 @@ public class Test {
                 new ZipFilePath("E:\\Projects\\TestArea\\nichijou.mp4", "nichijou.mp4"),
                 new ZipFilePath("E:\\Projects\\TestArea\\filelist.txt", "filelist.txt")
         };
-        ZipFilePath[] worldFilePaths = Utils.worldPathsToZipPaths(new String[]{
+        ZipFilePath[] worldFilePaths = Utils.scanPeerDirsToZipPaths(new String[]{
                 "E:\\Projects\\TestArea\\unlz4\\server\\world_nether"
         });
         for (int i = 0; i < worldFilePaths.length; i++) {
@@ -128,7 +128,7 @@ public class Test {
         }
     }*/
 
-    @org.junit.Test
+    /*@org.junit.Test
     public void zipSpecificDirTest() {
         String[] testInput = {
                 "E:\\Projects\\TestArea\\test\\config",
@@ -140,7 +140,7 @@ public class Test {
         } else {
             System.out.println("fail");
         }
-    }
+    }*/
 
     @org.junit.Test
     public void specificDirFilesToZipPathsTest() {
@@ -149,7 +149,7 @@ public class Test {
                 "E:\\Projects\\TestArea\\test\\logs",
                 "E:\\Projects\\TestArea\\test\\plugins"
         };
-        ZipFilePath[] zipFilePaths = Utils.worldPathsToZipPaths(testInput);
+        ZipFilePath[] zipFilePaths = Utils.scanPeerDirsToZipPaths(testInput);
         for (ZipFilePath zp : zipFilePaths) {
             System.out.println(zp);
         }
