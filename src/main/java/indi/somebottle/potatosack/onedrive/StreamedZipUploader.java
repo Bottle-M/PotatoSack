@@ -44,13 +44,10 @@ public class StreamedZipUploader {
      *
      * @param odClient   OneDrive Client 对象
      * @param remotePath 文件在 OneDrive 中的远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
-     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      */
-    public StreamedZipUploader(Client odClient, String remotePath) throws IOException {
+    public StreamedZipUploader(Client odClient, String remotePath) {
         this.targetUploadPath = remotePath;
         this.odClient = odClient;
-        // 生成 uploadURL
-        this.uploadUrl = odClient.createUploadSession(remotePath);
     }
 
     /**
@@ -223,6 +220,14 @@ public class StreamedZipUploader {
         }
 
         /**
+         * 中止流，直接将流标记为关闭，让 write 和 close 方法无效。
+         */
+        public void terminate() {
+            streamClosed = true;
+            buffer = null;
+        }
+
+        /**
          * 写入字节到缓冲区，直至缓冲区满，则阻塞，进行块上传
          *
          * @param b the {@code byte}.
@@ -230,6 +235,9 @@ public class StreamedZipUploader {
          */
         @Override
         public void write(int b) throws IOException {
+            // 如果流已经关闭，写入无效
+            if (streamClosed)
+                return;
             // 上传会话已经关闭则无法继续传输
             if (uploadSessionClosed)
                 throw new IOException("Unexpected: Upload session closed.");
@@ -344,16 +352,28 @@ public class StreamedZipUploader {
     private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) throws IOException {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         ConsoleSender.toConsole("Calculating file size... ");
-        // 先统计文件大小
-        try (
-                CounterOutputStream cos = new CounterOutputStream(fileSizeCounter);
-                ZipOutputStream zout = new ZipOutputStream(cos)
-        ) {
-            // 进行文件压缩
-            Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
-        } catch (Exception e) {
-            ConsoleSender.logError("Calculation failed: " + e.getMessage());
-            return false;
+        for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
+            // 重置计数器数值
+            fileSizeCounter.set(0L);
+            // 先统计文件大小
+            try (
+                    CounterOutputStream cos = new CounterOutputStream(fileSizeCounter);
+                    ZipOutputStream zout = new ZipOutputStream(cos)
+            ) {
+                // 进行模拟文件压缩，计算文件大小
+                Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                // 成功了就跳出重试循环继续后续流程
+                break;
+            } catch (Utils.ZipRWConflictException e) {
+                // 发生了数据混乱问题，重试
+                ConsoleSender.logWarn(e.getMessage());
+                if (zipRetryCnt < Constants.ZIP_MAX_RETRY_COUNT) {
+                    ConsoleSender.toConsole("Retrying to calculate...(" + (zipRetryCnt + 1) + "/" + Constants.ZIP_MAX_RETRY_COUNT + ")");
+                }
+            } catch (Exception e) {
+                ConsoleSender.logError("Calculation failed: " + e.getMessage());
+                return false;
+            }
         }
         // 注意，要在流关闭后再取出结果
         long filesSize = fileSizeCounter.get();
@@ -366,48 +386,61 @@ public class StreamedZipUploader {
         ConsoleSender.toConsole("Total size: " + totalSize);
         // 再进行文件压缩和上传
         ConsoleSender.toConsole("Compressing and uploading... ");
-        try (
-                UploadOutputStream uos = new UploadOutputStream();
-                ZipOutputStream zout = new ZipOutputStream(uos)
-        ) {
-            Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
-        } catch (DataSizeOverflowException e) {
-            // 异常的多态
-            // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
-            // 获得溢出的字节数，更新平均溢出的字节数
-            PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
-            // 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
-            if (retry) {
-                // 重试过了，但还是溢出了，回避
-                ConsoleSender.logError("Compression / upload failed after retrying: " + e.getMessage());
+        for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
+            // 生成新的 uploadUrl
+            uploadUrl = odClient.createUploadSession(targetUploadPath);
+            try (
+                    UploadOutputStream uos = new UploadOutputStream();
+                    ZipOutputStream zout = new ZipOutputStream(uos)
+            ) {
+                try {
+                    Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                    // 成功压缩上传后跳出重试循环
+                    break;
+                } catch (Utils.ZipRWConflictException e) {
+                    // 出现数据混乱问题时先直接中止流，阻止 close 时的上传，然后重试
+                    uos.terminate();
+                    ConsoleSender.logWarn(e.getMessage());
+                    if (zipRetryCnt < Constants.ZIP_MAX_RETRY_COUNT) {
+                        ConsoleSender.toConsole("Retrying to compress and upload the files anew...(" + (zipRetryCnt + 1) + "/" + Constants.ZIP_MAX_RETRY_COUNT + ")");
+                    }
+                }
+            } catch (DataSizeOverflowException e) {
+                // 异常的多态
+                // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
+                // 获得溢出的字节数，更新平均溢出的字节数
+                PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
+                // 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
+                if (retry) {
+                    // 重试过了，但还是溢出了，回避
+                    ConsoleSender.logError("Compression / upload failed after retrying: " + e.getMessage());
+                    return false;
+                }
+                ConsoleSender.toConsole("Data size overflowed the previous agreed size. Retrying... ");
+                // 没有重试过则进行重试
+                // 末尾填充的空白字节数 = 5 × 平均溢出的字节数
+                paddingSize = 5 * PotatoSack.streamedOverflowBytesTracker.getAvg();
+                // 立即重试一次
+                return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
+            } catch (Exception e) {
+                // 20240611 如果这里 uos 抛出了异常，会被捕捉
+                // 但是捕捉后，会关闭 zout 资源和 uos 资源
+                // 关闭 zout 时会尝试 flush 剩余数据到 uos 中，会调用 uos 的 write 方法
+                // 如果此时已经有 writePos==buffer.length，那么就会导致越界异常，但是 writePos 仍会 +1
+                // 因为是关闭资源时再次发生的异常，这个异常会被抑制，不会被抛出，在日志中不会体现出来
+                // 在这之后会关闭 uos 资源，但是关闭 uos 时又会调用 uos 的 close 方法，在 writePos 不为 0 的情况下触发一次 uploadBuf，因此可能导致再次上传失败，再次抛出异常，这个异常也会被抑制
+                ConsoleSender.logError("Compression / upload failed: " + e.getMessage());
+                e.printStackTrace();
+                // try-with-resource 可能有异常被抑制，获取并打印所有被抑制的异常
+                Throwable[] suppressed = e.getSuppressed();
+                if (suppressed.length > 0) {
+                    System.out.println("Suppressed exceptions:");
+                    for (Throwable t : suppressed) {
+                        t.printStackTrace();
+                    }
+                }
                 return false;
             }
-            ConsoleSender.toConsole("Data size overflowed the previous agreed size. Retrying... ");
-            // 没有重试过则进行重试
-            // 生成新的 uploadURL，之前的没法用了
-            uploadUrl = odClient.createUploadSession(targetUploadPath);
-            // 末尾填充的空白字节数 = 5 × 平均溢出的字节数
-            paddingSize = 5 * PotatoSack.streamedOverflowBytesTracker.getAvg();
-            // 立即重试一次
-            return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
-        } catch (Exception e) {
-            // 20240611 如果这里 uos 抛出了异常，会被捕捉
-            // 但是捕捉后，会关闭 zout 资源和 uos 资源
-            // 关闭 zout 时会尝试 flush 剩余数据到 uos 中，会调用 uos 的 write 方法
-            // 如果此时已经有 writePos==buffer.length，那么就会导致越界异常，但是 writePos 仍会 +1
-            // 因为是关闭资源时再次发生的异常，这个异常会被抑制，不会被抛出，在日志中不会体现出来
-            // 在这之后会关闭 uos 资源，但是关闭 uos 时又会调用 uos 的 close 方法，在 writePos 不为 0 的情况下触发一次 uploadBuf，因此可能导致再次上传失败，再次抛出异常，这个异常也会被抑制
-            ConsoleSender.logError("Compression / upload failed: " + e.getMessage());
-            e.printStackTrace();
-            // try-with-resource 可能有异常被抑制，获取并打印所有被抑制的异常
-            Throwable[] suppressed = e.getSuppressed();
-            if (suppressed.length > 0) {
-                System.out.println("Suppressed exceptions:");
-                for (Throwable t : suppressed) {
-                    t.printStackTrace();
-                }
-            }
-            return false;
         }
         ConsoleSender.toConsole("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;

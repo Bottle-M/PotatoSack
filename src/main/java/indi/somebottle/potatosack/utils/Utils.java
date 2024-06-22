@@ -12,6 +12,7 @@ import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -50,6 +51,28 @@ public class Utils {
             e.printStackTrace();
         }
         return "";
+    }
+
+    /**
+     * 计算文件的 CRC32 校验和
+     *
+     * @param file 文件
+     * @return 校验和
+     */
+    public static long fileCRC32(File file) {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            CRC32 crc32 = new CRC32();
+            byte[] buffer = new byte[16384]; // 16K的数据缓冲区
+            int readLen;
+            // 流式读入文件计算哈希
+            while ((readLen = fis.read(buffer)) != -1) {
+                crc32.update(buffer, 0, readLen);
+            }
+            return crc32.getValue();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return -1;
     }
 
     /**
@@ -185,20 +208,38 @@ public class Utils {
      * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      */
-    public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
+    public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipFilePath[] zipFilePaths, boolean quiet) throws IOException, ZipRWConflictException {
+        // CRC 校验和计算器
+        CRC32 crc32 = new CRC32();
         for (ZipFilePath zipFilePath : zipFilePaths) {
+            // 重置 CRC
+            crc32.reset();
             if (!quiet)
                 System.out.println("[Verbose] Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
             zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
             File file = new File(zipFilePath.filePath);
-            FileInputStream in = new FileInputStream(file);
-            // 1 MiB 大小的读取缓冲区
-            byte[] buffer = new byte[1048576]; // 写入文件
-            int len;
-            while ((len = in.read(buffer)) > 0) {
-                zos.write(buffer, 0, len);
+            // 先记录在读取文件前的时间戳
+            long fileModifiedTimeBefore = file.lastModified();
+            try (FileInputStream in = new FileInputStream(file)) {
+                // 1 MiB 大小的读取缓冲区
+                byte[] buffer = new byte[1048576]; // 读出文件
+                int len;
+                while ((len = in.read(buffer)) > 0) {
+                    // 计算 CRC
+                    crc32.update(buffer, 0, len);
+                    // 写入
+                    zos.write(buffer, 0, len);
+                }
             }
-            in.close();
+            // 文件读取写入完毕后取出这个期间计算的校验和
+            long checksumBefore = crc32.getValue();
+            // 文件读取，并压缩写入 Zip 后，再次检查文件时间戳
+            // 同时再读取文件一遍，重新计算校验和，检查校验和是否一致
+            if (file.lastModified() != fileModifiedTimeBefore || checksumBefore != fileCRC32(file)) {
+                // 如果文件更新时间戳发生变更，或校验和发生变化，说明在读取过程中此文件同时进行了写入
+                // 可能造成数据混乱，因此要抛出异常
+                throw new ZipRWConflictException("Conflict: File modified while being added to zip - " + zipFilePath.filePath);
+            }
         }
         zos.closeEntry();
         zos.flush();
@@ -214,13 +255,30 @@ public class Utils {
      */
     public static boolean zipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath, boolean quiet) {
         System.out.println("Compressing...");
-        try (
-                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputPath)))
-        ) {
-            zipSpecificFilesUtil(zout, zipFilePaths, quiet);
-            return true;
-        } catch (IOException e) {
-            ConsoleSender.logError("Zip specific files failed: " + e.getMessage());
+        File outputFile = new File(outputPath);
+        int zipRetryCnt = 0; // 已经重试的次数
+        // 用 <= 是因为首次运行不算重试
+        for (; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
+            // 如果文件已经存在，则删除
+            if (outputFile.exists() && !outputFile.delete()) {
+                ConsoleSender.logError("Delete existing file failed: " + outputPath);
+                return false;
+            }
+            try (
+                    ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputFile)))
+            ) {
+                zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                return true;
+            } catch (ZipRWConflictException e) {
+                // 添加文件时发生冲突，重试压缩
+                ConsoleSender.logWarn(e.getMessage());
+                if (zipRetryCnt < Constants.ZIP_MAX_RETRY_COUNT) {
+                    ConsoleSender.toConsole("Retrying to compress files...(" + (zipRetryCnt + 1) + "/" + Constants.ZIP_MAX_RETRY_COUNT + ")");
+                }
+            } catch (IOException e) {
+                ConsoleSender.logError("Zip specific files failed: " + e.getMessage());
+                break;
+            }
         }
         return false;
     }
@@ -444,5 +502,14 @@ public class Utils {
      */
     public static String getDateStr() {
         return new SimpleDateFormat("yyyyMMdd").format(new Date());
+    }
+
+    /**
+     * 读写冲突异常。在将文件加入 Zip 压缩包时，可能服务端还在异步写入这个文件，同时读写可能导致读出的数据混乱。
+     */
+    public static class ZipRWConflictException extends Exception {
+        public ZipRWConflictException(String message) {
+            super(message);
+        }
     }
 }

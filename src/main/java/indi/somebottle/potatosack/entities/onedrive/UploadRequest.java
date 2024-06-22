@@ -11,6 +11,7 @@ public class UploadRequest {
     public UploadRequest(String name) {
         item = new ItemRequest();
         item.setName(name);
+        // 同名冲突时重命名文件
         item.setConflictBehavior("rename");
     }
 
