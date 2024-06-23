@@ -218,8 +218,9 @@ public class Utils {
                 System.out.println("[Verbose] Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
             zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
             File file = new File(zipFilePath.filePath);
-            // 先记录在读取文件前的时间戳
+            // 先记录在读取文件前的时间戳，以及文件大小
             long fileModifiedTimeBefore = file.lastModified();
+            long fileSizeBefore = file.length();
             try (FileInputStream in = new FileInputStream(file)) {
                 // 1 MiB 大小的读取缓冲区
                 byte[] buffer = new byte[1048576]; // 读出文件
@@ -233,10 +234,10 @@ public class Utils {
             }
             // 文件读取写入完毕后取出这个期间计算的校验和
             long checksumBefore = crc32.getValue();
-            // 文件读取，并压缩写入 Zip 后，再次检查文件时间戳
+            // 文件读取，并压缩写入 Zip 后，再次检查文件时间戳、文件大小
             // 同时再读取文件一遍，重新计算校验和，检查校验和是否一致
-            if (file.lastModified() != fileModifiedTimeBefore || checksumBefore != fileCRC32(file)) {
-                // 如果文件更新时间戳发生变更，或校验和发生变化，说明在读取过程中此文件同时进行了写入
+            if (file.lastModified() != fileModifiedTimeBefore || file.length() != fileSizeBefore || checksumBefore != fileCRC32(file)) {
+                // 如果 文件更新时间戳发生变更 或 文件大小发生变化 或 校验和 发生变化，说明在读取过程中此文件同时进行了写入
                 // 可能造成数据混乱，因此要抛出异常
                 throw new ZipRWConflictException("Conflict: File modified while being added to zip - " + zipFilePath.filePath);
             }

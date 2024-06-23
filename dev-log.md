@@ -7,11 +7,14 @@
 1. 重写 `BackupChecker` 采用的互斥锁 `BackupMutex`，改为了一个简单的可重入互斥锁。
 2. 传统备份上传时，把输出 `Chunk size` 改为输出 `Total size`。
 3. 去除注释的代码。
+4. `zipSpecificFilesUtil` 方法添加对文件大小（`.length()`）的检查。目前，每将一个文件读取出来压缩入压缩包内，都会对**文件的修改时间
+   **、**大小**以及 **CRC32 校验和**进行检查，保证文件的完整性。
 
 ## 2024.6.22
 
 1. 传统全量备份方式（先在本地临时产生压缩包再上传）改用压缩方法 `Utils.zipSpecificFiles`，抛弃 `Utils.zip`。
-2. 利用文件最后修改时间以及 **CRC32** 校验和来在压缩过程中对文件完整性进行检查。（在服务端异步写入文件的同时若本插件在读取该文件进行压缩，会导致读出的数据混乱，通过完整性检查起码可以保证压入压缩包的每个文件都是完整可解析的。）
+2. 利用文件最后修改时间以及 **CRC32**
+   校验和来在压缩过程中对文件完整性进行检查。（在服务端异步写入文件的同时若本插件在读取该文件进行压缩，会导致读出的数据混乱，通过完整性检查起码可以保证压入压缩包的每个文件都是完整可解析的。）
 
 ## 2024.6.21
 
@@ -36,7 +39,7 @@
    泄露问题。只要执行（execute）了请求，拿到了响应，且没有用 `try-with-resource`，必须显式关闭 Response。
     - 关闭 ResponseBody 等同于关闭 Response。
     -
-    文档: https://square.github.io/okhttp/5.x/okhttp/okhttp3/-response/close.html?query=open%20override%20fun%20close()
+   文档: https://square.github.io/okhttp/5.x/okhttp/okhttp3/-response/close.html?query=open%20override%20fun%20close()
 5. OkHttp 请求重试拦截器中，每次重试前先等待 5 秒。
 6. 流式压缩上传一块数据时，如果 OkHttp 请求（包括拦截器重试）失败，等待几秒再重试一次。
 7. 流式压缩上传 Stream 中 `write` 方法增加对内存缓冲区访问越界的处理。
