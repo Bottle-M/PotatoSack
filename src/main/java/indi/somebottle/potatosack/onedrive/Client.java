@@ -323,24 +323,6 @@ public class Client {
         return uploader.zipSpecifiedAndUpload(zipFilePaths, quiet);
     }
 
-    /*
-     * <p>压缩的同时进行文件上传（仅用于大文件）</p><bold>此处传入的是String[]。</bold>
-     * <p>srcDirPath指定要打包的目录路径（注意：这些目录必须在同一级）</p>
-     *
-     * @param srcDirPath 指定要打包的目录路径（注意：这些目录必须在同一级）
-     * @param remotePath 远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
-     * @param quiet      是否静默打包（不显示 Adding... 信息)
-     * @return 是否上传成功
-     * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
-     */
-    /*public boolean zipPipingUpload(String[] srcDirPath, String remotePath, boolean quiet) throws IOException {
-        if (srcDirPath.length == 0 || remotePath.equals(""))
-            return false;
-        String uploadUrl = createUploadSession(remotePath); // 建立上传会话
-        StreamedZipUploader uploader = new StreamedZipUploader(uploadUrl);
-        return uploader.zipAndUpload(srcDirPath, quiet);
-    }*/
-
     /**
      * 将本地大文件上传到Onedrive中
      *

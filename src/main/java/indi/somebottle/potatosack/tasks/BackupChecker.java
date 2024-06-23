@@ -68,9 +68,11 @@ public class BackupChecker implements Runnable {
 
     @Override
     public void run() {
+        // 本次运行是否启动了备份任务
+        boolean backupRun = false;
         try {
             // 如果已经有备份任务在执行，则不继续本次检查
-            if (Utils.BACKUP_MUTEX.isOnGoing())
+            if (!Utils.BACKUP_MUTEX.occupy())
                 return;
             // 先检查是不是该进行全量备份了
             BackupRecord bkRec = backupMaker.getBackupRecord();
@@ -78,10 +80,8 @@ public class BackupChecker implements Runnable {
             // 注意fullBackupInterval单位是分钟
             if (Utils.timeStamp() - bkRec.getLastFullBackupTime() > fullBackupInterval * 60) {
                 // 该进行全量备份了
-                Utils.BACKUP_MUTEX.setOnGoing(true); // 防止备份任务并发
+                backupRun = true;
                 boolean bkRes = backupMaker.makeFullBackup();
-                backupMaker.cleanTempDir(); // 请理临时目录
-                Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
                 if (!bkRes)
                     throw new IOException("Failed to make full backup");
                 else
@@ -95,17 +95,21 @@ public class BackupChecker implements Runnable {
             // 注意increBackupInterval单位是分钟
             if (Utils.timeStamp() - bkRec.getLastIncreBackupTime() > increBackupInterval * 60) {
                 // 该进行增量备份了
-                Utils.BACKUP_MUTEX.setOnGoing(true); // 防止备份任务并发
+                backupRun = true;
                 boolean bkRes = backupMaker.makeIncreBackup();
-                backupMaker.cleanTempDir(); // 请理临时目录
-                Utils.BACKUP_MUTEX.setOnGoing(false); // 防止备份任务并发
                 if (!bkRes)
                     throw new IOException("Failed to make incremental backup");
             }
         } catch (Exception e) {
             ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
-            backupMaker.cleanTempDir(); // 请理临时目录
+        } finally {
+            // 最终一定要释放锁
+            Utils.BACKUP_MUTEX.release();
+            if (backupRun) {
+                // 如果运行了备份任务，则在这里进行清理工作
+                backupMaker.cleanTempDir(); // 请理临时目录
+            }
         }
     }
 }

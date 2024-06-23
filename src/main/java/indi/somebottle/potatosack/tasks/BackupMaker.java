@@ -268,7 +268,7 @@ public class BackupMaker {
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             worldPaths.add(worldAbsPath);
-            // 扫描世界目录下的所有文件，获得文件哈希（为增量备份做准备）
+            // 扫描世界目录下的所有文件，计算文件哈希（为增量备份做准备）
             Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
             // _世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, lastFileHashes);
@@ -398,7 +398,7 @@ public class BackupMaker {
                 continue;
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
-            // 扫描世界目录下的所有文件，获得哈希值（为增量备份做准备）
+            // 扫描世界目录下的所有文件，计算哈希值（为增量备份做准备）
             Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
             // 获得上一次增量备份时的文件哈希值
             WorldRecord prevWorldRec = getWorldRecord(worldName);
@@ -434,8 +434,6 @@ public class BackupMaker {
         Files.write(new File(deletedRecordPath).toPath(), deletedFileContent.getBytes());
         // 把deleted.files文件也加入压缩包
         increFilePaths.add(new ZipFilePath(deletedRecordPath, "deleted.files"));
-        ConsoleSender.toConsole("Compressing...");
-        // 压缩
         // 增量备份序号
         String increBackupId = rec.getLastIncreBackupId();
         if (increBackupId.equals("")) {
@@ -475,6 +473,7 @@ public class BackupMaker {
         } else {
             // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
+            ConsoleSender.toConsole("Compressing...");
             // 输出文件路径
             String tempOutputFilePath = pluginTempPath + "incre" + increBackupId + ".zip";
             // 执行压缩

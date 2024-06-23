@@ -254,7 +254,6 @@ public class Utils {
      * @return 是否打包成功
      */
     public static boolean zipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath, boolean quiet) {
-        System.out.println("Compressing...");
         File outputFile = new File(outputPath);
         int zipRetryCnt = 0; // 已经重试的次数
         // 用 <= 是因为首次运行不算重试
@@ -283,103 +282,6 @@ public class Utils {
         return false;
     }
 
-    /*
-     * 把目录下所有文件打包成zip
-     *
-     * @param srcDirPath   源目录路径
-     * @param zipFilePath  目标zip文件路径
-     * @param packAsSrcDir 是否把srcDirPath下的所有文件都放在压缩包的【srcDirPath指向的目录名】的目录下
-     * @param quiet        是否静默打包
-     * @return 是否打包成功
-     * @apiNote 比如srcDirPath='./test/myfolder'，如果packAsSrcDir=true，那么打包后的zip包中根目录下是myfolder，其中是myfolder中的所有文件； 否则根目录下则是myfolder内的所有文件。
-     */
-    /*
-    public static boolean zip(String srcDirPath, String zipFilePath, boolean packAsSrcDir, boolean quiet) {
-        try (
-                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFilePath)))
-        ) {
-            File srcDir = new File(srcDirPath);
-            System.out.println("Compressing... ");
-            addItemsToZip(srcDir, packAsSrcDir ? srcDir.getName() : "", zout, quiet);
-            zout.closeEntry();
-            zout.flush();
-            System.out.println("Compress success. File: " + zipFilePath);
-            return true;
-        } catch (Exception e) {
-            ConsoleSender.logError("Compression failed: " + e.getMessage());
-        }
-        return false;
-    }*/
-
-    /*
-     * 指定多个目录打包成zip
-     *
-     * @param srcDirPaths       String[] ，指定要打包的目录绝对路径（注意：需要是同一目录下的子目录）
-     * @param targetZipFilePath String 指定打包后的zip文件路径
-     * @param quiet             是否静默打包（不显示 Adding... 信息)
-     * @return 是否打包成功
-     */
-    /*
-    public static boolean zip(String[] srcDirPaths, String targetZipFilePath, boolean quiet) {
-        try (
-                ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(targetZipFilePath)))
-        ) {
-            System.out.println("Compressing... ");
-            for (String path : srcDirPaths) {
-                File srcDir = new File(path);
-                // 将指定目录内容加入包中
-                addDirFilesToZip(srcDir, srcDir.getName(), zout, quiet);
-            }
-            zout.closeEntry();
-            zout.flush();
-            System.out.println("Compress success. File: " + targetZipFilePath);
-            return true;
-        } catch (Exception e) {
-            ConsoleSender.logError("Compression failed: " + e.getMessage());
-        }
-        return false;
-    }
-
-     */
-
-    /*
-     * （递归方法） 扫描目录下所有文件并存入Zip Entries
-     *
-     * @param srcDir        源目录File对象
-     * @param parentDirPath 父目录路径
-     * @param zout          Zip输出流（Buffered）
-     * @param quiet         是否静默打包
-     * @throws Exception 打包失败抛出异常
-     */
-    /*public static void addDirFilesToZip(File srcDir, String parentDirPath, ZipOutputStream zout, boolean quiet) throws Exception {
-        File[] files = srcDir.listFiles();
-        if (files == null) {
-            throw new Exception("Error: " + srcDir + " is not a directory, this should not happen!");
-        }
-        for (File file : files) {
-            // 如果是目录，这就是当前扫描到的目录路径，否则就是文件的路径
-            String currentDirOrFilePath = (parentDirPath.equals("") ? "" : (parentDirPath + "/")) + file.getName();
-            if (file.isDirectory()) {
-                // 如果是目录就递归扫描文件
-                addDirFilesToZip(file, currentDirOrFilePath, zout, quiet);
-            } else {
-                // 如果是文件就写入Zip
-                try (FileInputStream fis = new FileInputStream(file)) {
-                    if (!quiet)
-                        System.out.println("[Verbose] Add file: " + currentDirOrFilePath);
-                    // 将条目（文件）加入zip包
-                    ZipEntry zipEntry = new ZipEntry(currentDirOrFilePath);
-                    zout.putNextEntry(zipEntry);
-                    // 写入文件
-                    int len;
-                    byte[] buf = new byte[8192];
-                    while ((len = fis.read(buf)) != -1) {
-                        zout.write(buf, 0, len);
-                    }
-                }
-            }
-        }
-    }*/
 
     /**
      * （递归方法） 扫描某个目录下所有文件，转换为 ZipFilePath

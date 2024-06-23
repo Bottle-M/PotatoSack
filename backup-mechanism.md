@@ -362,3 +362,334 @@ incre*.zip # 压缩包内
 * 第一次因为网络原因传输中断时，分片只上传了一部分，程序在查询 OneDrive 接口后能恢复传输。
 * 第二次因为网络原因传输中断时，整个分片实际上已经上传完，程序在询问 OneDrive 接口后能恢复，从下一个分片继续开始传输。
 * 在最后数据传输完毕后，程序发现比预先模拟压缩计算出来的文件大小要小一点，通过填充空白字节进行了弥补，让文件成功完成传输。
+
+### 服务端异步写入导致的文件大小偏差问题
+
+<details>
+
+<summary>展开查看日志</summary>
+
+```log
+[21:27:14] [Craft Scheduler Thread - 126 - PotatoSack/INFO]: [PotatoSack] Onedrive token refreshed
+[21:29:12] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Making full backup...
+[21:29:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] ------>[ Using Streaming Compression Upload ]<------
+[21:29:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] [DEBUG] Auto-save stopped, affected Worlds: world, world_nether, world_the_end, explorationWorld
+[21:29:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Temporarily stopped world auto-save...
+[21:29:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Waiting for 30s before backup start...
+[21:29:47] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Calculating file size... 
+[21:30:35] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Calculation success. Files size in total: 1161452558
+[21:30:35] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Total size: 1161452558
+[21:30:35] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing and uploading... 
+[21:30:36] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 0-16383999/1161452558 Byte(s)
+[21:30:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 16384000-32767999/1161452558 Byte(s)
+[21:30:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 32768000-49151999/1161452558 Byte(s)
+[21:30:44] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:44] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 49152000-65535999/1161452558 Byte(s)
+[21:30:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 65536000-81919999/1161452558 Byte(s)
+[21:30:50] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:50] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 81920000-98303999/1161452558 Byte(s)
+[21:30:53] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:54] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 98304000-114687999/1161452558 Byte(s)
+[21:30:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:56] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 114688000-131071999/1161452558 Byte(s)
+[21:30:57] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:30:58] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 131072000-147455999/1161452558 Byte(s)
+[21:30:59] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:00] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 147456000-163839999/1161452558 Byte(s)
+[21:31:02] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:02] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 163840000-180223999/1161452558 Byte(s)
+[21:31:04] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:04] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 180224000-196607999/1161452558 Byte(s)
+[21:31:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:07] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 196608000-212991999/1161452558 Byte(s)
+[21:31:08] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:09] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 212992000-229375999/1161452558 Byte(s)
+[21:31:10] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:11] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 229376000-245759999/1161452558 Byte(s)
+[21:31:12] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:13] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 245760000-262143999/1161452558 Byte(s)
+[21:31:14] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 262144000-278527999/1161452558 Byte(s)
+[21:31:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:17] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 278528000-294911999/1161452558 Byte(s)
+[21:31:18] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:19] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 294912000-311295999/1161452558 Byte(s)
+[21:31:20] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:21] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 311296000-327679999/1161452558 Byte(s)
+[21:31:22] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:23] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 327680000-344063999/1161452558 Byte(s)
+[21:31:24] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:25] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 344064000-360447999/1161452558 Byte(s)
+[21:31:27] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:28] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 360448000-376831999/1161452558 Byte(s)
+[21:31:29] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:30] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 376832000-393215999/1161452558 Byte(s)
+[21:31:31] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:32] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 393216000-409599999/1161452558 Byte(s)
+[21:31:33] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:34] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 409600000-425983999/1161452558 Byte(s)
+[21:31:35] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:36] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 425984000-442367999/1161452558 Byte(s)
+[21:31:37] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:38] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 442368000-458751999/1161452558 Byte(s)
+[21:31:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 458752000-475135999/1161452558 Byte(s)
+[21:31:41] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 475136000-491519999/1161452558 Byte(s)
+[21:31:43] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:44] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 491520000-507903999/1161452558 Byte(s)
+[21:31:45] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 507904000-524287999/1161452558 Byte(s)
+[21:31:47] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:48] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 524288000-540671999/1161452558 Byte(s)
+[21:31:49] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:50] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 540672000-557055999/1161452558 Byte(s)
+[21:31:51] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:52] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 557056000-573439999/1161452558 Byte(s)
+[21:31:53] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:54] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 573440000-589823999/1161452558 Byte(s)
+[21:31:56] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:56] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 589824000-606207999/1161452558 Byte(s)
+[21:31:58] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:31:58] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 606208000-622591999/1161452558 Byte(s)
+[21:32:00] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:00] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 622592000-638975999/1161452558 Byte(s)
+[21:32:01] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:02] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 638976000-655359999/1161452558 Byte(s)
+[21:32:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:04] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 655360000-671743999/1161452558 Byte(s)
+[21:32:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 671744000-688127999/1161452558 Byte(s)
+[21:32:08] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:08] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 688128000-704511999/1161452558 Byte(s)
+[21:32:10] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:10] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 704512000-720895999/1161452558 Byte(s)
+[21:32:12] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:12] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 720896000-737279999/1161452558 Byte(s)
+[21:32:14] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 737280000-753663999/1161452558 Byte(s)
+[21:32:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:17] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 753664000-770047999/1161452558 Byte(s)
+[21:32:18] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:18] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 770048000-786431999/1161452558 Byte(s)
+[21:32:20] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:21] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 786432000-802815999/1161452558 Byte(s)
+[21:32:22] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:23] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 802816000-819199999/1161452558 Byte(s)
+[21:32:24] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:25] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 819200000-835583999/1161452558 Byte(s)
+[21:32:26] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:27] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 835584000-851967999/1161452558 Byte(s)
+[21:32:28] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:29] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 851968000-868351999/1161452558 Byte(s)
+[21:32:30] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:31] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 868352000-884735999/1161452558 Byte(s)
+[21:32:32] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:33] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 884736000-901119999/1161452558 Byte(s)
+[21:32:34] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:35] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 901120000-917503999/1161452558 Byte(s)
+[21:32:36] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:37] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 917504000-933887999/1161452558 Byte(s)
+[21:32:38] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 933888000-950271999/1161452558 Byte(s)
+[21:32:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:41] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 950272000-966655999/1161452558 Byte(s)
+[21:32:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:43] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 966656000-983039999/1161452558 Byte(s)
+[21:32:44] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:45] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 983040000-999423999/1161452558 Byte(s)
+[21:32:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:47] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 999424000-1015807999/1161452558 Byte(s)
+[21:32:48] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:49] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1015808000-1032191999/1161452558 Byte(s)
+[21:32:51] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:52] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1032192000-1048575999/1161452558 Byte(s)
+[21:32:53] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:54] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1048576000-1064959999/1161452558 Byte(s)
+[21:32:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:56] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1064960000-1081343999/1161452558 Byte(s)
+[21:32:57] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:32:58] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1081344000-1097727999/1161452558 Byte(s)
+[21:32:59] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:33:00] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1097728000-1114111999/1161452558 Byte(s)
+[21:33:01] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:33:02] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1114112000-1130495999/1161452558 Byte(s)
+[21:33:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:33:04] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1130496000-1146879999/1161452558 Byte(s)
+[21:33:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:33:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Closing upload stream.
+[21:33:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1146880000-1161452561/1161452558 Byte(s)
+[21:33:07] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Data size overflowed the previous agreed size. Retrying... 
+[21:33:07] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Calculating file size... 
+[21:33:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Calculation success. Files size in total: 1161452562
+[21:33:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Padding size: 20
+[21:33:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Total size: 1161452582
+[21:33:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing and uploading... 
+[21:33:56] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 0-16383999/1161452582 Byte(s)
+[21:33:57] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:33:58] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 16384000-32767999/1161452582 Byte(s)
+[21:33:59] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:00] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 32768000-49151999/1161452582 Byte(s)
+[21:34:01] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:02] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 49152000-65535999/1161452582 Byte(s)
+[21:34:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 65536000-81919999/1161452582 Byte(s)
+[21:34:05] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 81920000-98303999/1161452582 Byte(s)
+[21:34:07] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:08] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 98304000-114687999/1161452582 Byte(s)
+[21:34:09] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:10] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 114688000-131071999/1161452582 Byte(s)
+[21:34:11] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:12] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 131072000-147455999/1161452582 Byte(s)
+[21:34:14] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 147456000-163839999/1161452582 Byte(s)
+[21:34:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:16] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 163840000-180223999/1161452582 Byte(s)
+[21:34:18] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:18] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 180224000-196607999/1161452582 Byte(s)
+[21:34:20] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:20] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 196608000-212991999/1161452582 Byte(s)
+[21:34:22] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:22] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 212992000-229375999/1161452582 Byte(s)
+[21:34:24] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:24] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 229376000-245759999/1161452582 Byte(s)
+[21:34:26] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:26] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 245760000-262143999/1161452582 Byte(s)
+[21:34:28] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:28] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 262144000-278527999/1161452582 Byte(s)
+[21:34:30] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:30] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 278528000-294911999/1161452582 Byte(s)
+[21:34:32] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:32] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 294912000-311295999/1161452582 Byte(s)
+[21:34:34] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:34] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 311296000-327679999/1161452582 Byte(s)
+[21:34:36] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:36] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 327680000-344063999/1161452582 Byte(s)
+[21:34:38] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:38] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 344064000-360447999/1161452582 Byte(s)
+[21:34:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 360448000-376831999/1161452582 Byte(s)
+[21:34:41] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 376832000-393215999/1161452582 Byte(s)
+[21:34:43] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:44] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 393216000-409599999/1161452582 Byte(s)
+[21:34:45] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 409600000-425983999/1161452582 Byte(s)
+[21:34:47] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:48] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 425984000-442367999/1161452582 Byte(s)
+[21:34:49] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:50] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 442368000-458751999/1161452582 Byte(s)
+[21:34:51] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:53] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 458752000-475135999/1161452582 Byte(s)
+[21:34:54] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 475136000-491519999/1161452582 Byte(s)
+[21:34:56] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:57] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 491520000-507903999/1161452582 Byte(s)
+[21:34:58] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:34:59] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 507904000-524287999/1161452582 Byte(s)
+[21:35:01] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:01] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 524288000-540671999/1161452582 Byte(s)
+[21:35:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 540672000-557055999/1161452582 Byte(s)
+[21:35:05] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:05] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 557056000-573439999/1161452582 Byte(s)
+[21:35:07] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:07] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 573440000-589823999/1161452582 Byte(s)
+[21:35:09] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:09] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 589824000-606207999/1161452582 Byte(s)
+[21:35:11] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:11] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 606208000-622591999/1161452582 Byte(s)
+[21:35:13] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:13] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 622592000-638975999/1161452582 Byte(s)
+[21:35:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 638976000-655359999/1161452582 Byte(s)
+[21:35:17] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:17] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 655360000-671743999/1161452582 Byte(s)
+[21:35:19] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:19] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 671744000-688127999/1161452582 Byte(s)
+[21:35:21] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:22] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 688128000-704511999/1161452582 Byte(s)
+[21:35:23] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:24] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 704512000-720895999/1161452582 Byte(s)
+[21:35:34] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Retrying to request due to network issues...(1/3)
+[21:35:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Fragment overlap, querying server to determine whether the transfer can proceed.
+[21:35:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Get next expected range successfully.
+[21:35:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Next expect range start: 712867840, current rangeEnd: 720895999
+[21:35:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 712867840-720895999/1161452582 Byte(s)
+[21:35:41] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 720896000-737279999/1161452582 Byte(s)
+[21:35:43] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:44] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 737280000-753663999/1161452582 Byte(s)
+[21:35:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:46] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 753664000-770047999/1161452582 Byte(s)
+[21:35:48] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:48] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 770048000-786431999/1161452582 Byte(s)
+[21:35:50] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:51] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 786432000-802815999/1161452582 Byte(s)
+[21:35:52] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:53] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 802816000-819199999/1161452582 Byte(s)
+[21:35:54] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:55] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 819200000-835583999/1161452582 Byte(s)
+[21:35:57] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:57] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 835584000-851967999/1161452582 Byte(s)
+[21:35:59] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:35:59] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 851968000-868351999/1161452582 Byte(s)
+[21:36:01] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:02] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 868352000-884735999/1161452582 Byte(s)
+[21:36:03] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:04] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 884736000-901119999/1161452582 Byte(s)
+[21:36:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:06] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 901120000-917503999/1161452582 Byte(s)
+[21:36:08] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:08] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 917504000-933887999/1161452582 Byte(s)
+[21:36:10] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:11] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 933888000-950271999/1161452582 Byte(s)
+[21:36:12] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:13] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 950272000-966655999/1161452582 Byte(s)
+[21:36:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:15] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 966656000-983039999/1161452582 Byte(s)
+[21:36:17] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:17] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 983040000-999423999/1161452582 Byte(s)
+[21:36:19] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:20] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 999424000-1015807999/1161452582 Byte(s)
+[21:36:21] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:22] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1015808000-1032191999/1161452582 Byte(s)
+[21:36:23] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:24] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1032192000-1048575999/1161452582 Byte(s)
+[21:36:26] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:26] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1048576000-1064959999/1161452582 Byte(s)
+[21:36:28] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:28] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1064960000-1081343999/1161452582 Byte(s)
+[21:36:30] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:30] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1081344000-1097727999/1161452582 Byte(s)
+[21:36:32] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:32] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1097728000-1114111999/1161452582 Byte(s)
+[21:36:34] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:35] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1114112000-1130495999/1161452582 Byte(s)
+[21:36:36] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:37] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1130496000-1146879999/1161452582 Byte(s)
+[21:36:38] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Closing upload stream.
+[21:36:39] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1146880000-1161452561/1161452582 Byte(s)
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Padding blanks to fit the calculated size...
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compressing + Uploading chunk: bytes 1161452562-1161452581/1161452582 Byte(s)
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Compression / upload success. Total size: 1161452582 Byte(s)
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] [DEBUG] Auto-save started, affected Worlds: world, world_nether, world_the_end, explorationWorld
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Restarted world auto-save...
+[21:36:40] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Uploading Record Files...
+[21:36:42] [Craft Scheduler Thread - 125 - PotatoSack/INFO]: [PotatoSack] Successfully made backup: 020240622000001
+[22:26:44] [Craft Scheduler Thread - 132 - PotatoSack/INFO]: [PotatoSack] Onedrive token refreshed
+```
+
+因为服务端还在异步写入硬盘文件，模拟压缩计算出的文件大小和实际上传的文件大小有偏差。  
+
+* 第一次压缩上传时，模拟压缩计算出来的文件大小是 `1161452558` B，实际上传的文件大小是 `1161452562` B，多出了 `4` B。
+* 重试压缩上传时，在末尾填充了 `平均溢出字节数 × 5` B，因为这里只出现了一次错误，平均溢出字节数就是 `4` ，因此填充了 `4 × 5 = 20` B。  
+
+</details>

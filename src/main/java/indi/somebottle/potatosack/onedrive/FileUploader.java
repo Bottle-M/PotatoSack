@@ -54,10 +54,11 @@ public class FileUploader {
             switch (status) {
                 case 200: // 上传完毕
                 case 201:
+                    ConsoleSender.toConsole("Last chunk - (Range: " + startPos + "-" + endPos + ")");
                     ConsoleSender.toConsole("Upload success! File size: " + fileSize + " bytes");
                     return true;
                 case 202:
-                    ConsoleSender.toConsole("Upload in progress...(Range: " + startPos + "-" + endPos + ") Chunk size: " + (endPos - startPos + 1) + " bytes");
+                    ConsoleSender.toConsole("Upload in progress...(Range: " + startPos + "-" + endPos + ") Total size: " + fileSize + " bytes");
                     break;
                 case -1: // 上传失败
                     keepUploading = false;

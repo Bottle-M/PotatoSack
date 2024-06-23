@@ -2,6 +2,12 @@
 
 2024 年 6 月我才想起来写这玩意...
 
+## 2024.6.23
+
+1. 重写 `BackupChecker` 采用的互斥锁 `BackupMutex`，改为了一个简单的可重入互斥锁。
+2. 传统备份上传时，把输出 `Chunk size` 改为输出 `Total size`。
+3. 去除注释的代码。
+
 ## 2024.6.22
 
 1. 传统全量备份方式（先在本地临时产生压缩包再上传）改用压缩方法 `Utils.zipSpecificFiles`，抛弃 `Utils.zip`。
