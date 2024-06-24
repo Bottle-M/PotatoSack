@@ -46,14 +46,14 @@ AppFolder
     "last_full_backup_id": "020240621000001",
     "last_incre_backup_id": "000002",
     "incre_backups_history": [
-       {
-        "id": "000001",
-        "time": 1716932749
-       }, 
-       {
-        "id": "000002",
-        "time": 1716934020
-       }
+        {
+            "id": "000001",
+            "time": 1716932749
+        }, 
+        {
+            "id": "000002",
+            "time": 1716934020
+        }
     ]
 }
 ```
@@ -107,7 +107,7 @@ incre*.zip # 压缩包内
 
 为了将被删除的文件考虑在内，这里还设置了一个`deleted.files`来进行标记。
 
-`deleted.files` 文件中**每行记录一个**被删除的文件的相对路径（相对于服务端根目录）。
+`deleted.files` 文件中**每行记录一个**被删除的文件的相对路径（相对于服务端根目录，比如 `/opt/server/world/level.dat` 在这里记录为 "`world/level.dat`"）。
 
 ## 从云端拉取备份记录文件
 

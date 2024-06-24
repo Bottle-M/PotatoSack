@@ -51,6 +51,7 @@ class MyReaderTask implements Runnable {
             buffer = new byte[5];
             file.read(buffer);
             crc32.update(buffer);
+            System.out.println("File length after: " + mFile.length());
             stopWrite.set(true);
             System.out.print(new String(buffer));
             long previousCrc32 = crc32.getValue();
@@ -58,7 +59,6 @@ class MyReaderTask implements Runnable {
             // 再重新计算一次
             long newCrc32 = Utils.fileCRC32(new File(filePath));
             System.out.println("CRC32 AFTER READ: " + newCrc32);
-            System.out.println("File length after: " + mFile.length());
             if (newCrc32 != previousCrc32)
                 System.out.println("CRC32 does not match");
         } catch (Exception e) {

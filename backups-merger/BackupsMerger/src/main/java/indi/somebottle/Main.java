@@ -1,14 +1,21 @@
 package indi.somebottle;
 
+import com.google.gson.Gson;
+
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.io.File;
 import java.io.FilenameFilter;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) {
+        // JSON 解析器
+        Gson gson = new Gson();
         // 临时目录
         File tmpDir = new File(System.getProperty("user.dir"), "potato_sack_tmp");
         if (!tmpDir.exists() && !tmpDir.mkdirs()) {
@@ -26,18 +33,19 @@ public class Main {
                 System.exit(0);
             }
             JFileChooser dirChooser = new JFileChooser();
+            dirChooser.setDialogTitle("Choose a directory that contains a group of backups.");
             dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
             dirChooser.setMultiSelectionEnabled(false);
             int result = dirChooser.showOpenDialog(null);
-            File selectedFile = null;
+            File selectedDir = null;
             if (result == JFileChooser.APPROVE_OPTION) {
-                selectedFile = dirChooser.getSelectedFile();
-                System.out.println("Selected directory: " + selectedFile.getAbsolutePath());
+                selectedDir = dirChooser.getSelectedFile();
+                System.out.println("Selected directory: " + selectedDir.getAbsolutePath());
             } else {
                 System.out.println("No directory selected, exit.");
                 System.exit(1);
             }
-            if (!selectedFile.isDirectory()) {
+            if (!selectedDir.isDirectory()) {
                 // 非目录
                 System.out.println("You're not choosing a directory, exit.");
                 System.exit(1);
@@ -48,40 +56,119 @@ public class Main {
                 System.out.println("Failed to create temp directory for unzip: " + unzipDir.getAbsolutePath());
                 System.exit(1);
             }
+            // 检查是否有 backup.json
+            File backupRecordFile = new File(selectedDir, "backup.json");
+            if (!backupRecordFile.exists()) {
+                // 没有 backup.json
+                System.out.println("No backup.json found, exit.");
+                System.exit(1);
+            }
+            // 读出备份记录
+            BackupRecord backupRecord = null;
+            try {
+                String backupJson = Utils.readFile(backupRecordFile);
+                backupRecord = gson.fromJson(backupJson, BackupRecord.class);
+            } catch (IOException e) {
+                System.out.println("Failed to read backup.json.");
+                e.printStackTrace();
+                System.exit(1);
+            }
             // 检查这组备份有没有全量备份
-            File fullBackupFile = new File(selectedFile, "full.zip");
+            File fullBackupFile = new File(selectedDir, "full.zip");
             if (!fullBackupFile.exists()) {
                 // 没有全量备份
                 System.out.println("No full backup exists, exit.");
                 System.exit(1);
             }
-            // 再扫描有没有增量备份 incre*.zip
-            File[] incrementBackupFiles = selectedFile.listFiles(new IncrementBackupFilter());
-            if (incrementBackupFiles == null || incrementBackupFiles.length == 0) {
-                // 没有增量备份
-                System.out.println("No increment backup found.");
-            } else {
-                // 有增量备份，将文件名按字典升序排列
-                // TODO: 待测试
-                Arrays.sort(incrementBackupFiles, Comparator.comparing(File::getName));
-                // 询问用户要恢复到哪个备份版本
+            // 再扫描有没有缺失增量备份 incre*.zip
+            List<BackupRecord.IncreBackupHistoryItem> increHistory = backupRecord.getIncreBackupsHistory();
+            for (BackupRecord.IncreBackupHistoryItem item : increHistory) {
+                File increBackupFile = new File(selectedDir, "incre" + item.getId() + ".zip");
+                if (!increBackupFile.exists()) {
+                    // 有增量备份缺失了
+                    System.out.println("Incremental backup " + item.getId() + " is missing, unable to continue.");
+                    System.exit(1);
+                }
             }
+            int mergeIncreUntil = -1;
+            if (increHistory.size() == 0) {
+                // 没有增量备份
+                System.out.println("No incremental backup exists.");
+            } else {
+                // 有增量备份的话，让用户选择一直合并到哪份增量备份
+                System.out.println("Incremental backups: ");
+                for (int i = 0; i < increHistory.size(); i++) {
+                    System.out.println("\t" + (i + 1) + ". incre" + increHistory.get(i).getId() + " - Time: " + Utils.timestampToDate(increHistory.get(i).getTime()));
+                }
+                System.out.println("Up to which incremental backup do you want to merge? Type the number before the option and press enter: ");
+                int selected;
+                while (true) {
+                    selected = inputScanner.nextInt();
+                    if (selected > 0 && selected <= increHistory.size()) {
+                        break;
+                    }
+                    System.out.println("Please enter the number before the option: ");
+                }
+                // 合并直至下标 mergeIncreUntil
+                mergeIncreUntil = selected - 1;
+            }
+            System.out.println("Unzipping and merging backups...");
+            // 解压全量备份
+            if (!Utils.unzip(fullBackupFile, unzipDir)) {
+                System.out.println("Failed to unzip full backup.");
+                System.exit(1);
+            }
+            // 在全量备份的基础上覆盖解压增量备份
+            for (int i = 0; i <= mergeIncreUntil; i++) {
+                File increBackupFile = new File(selectedDir, "incre" + increHistory.get(i).getId() + ".zip");
+                if (!Utils.unzip(increBackupFile, unzipDir)) {
+                    System.out.println("Failed to unzip incremental backup " + increBackupFile.getAbsolutePath());
+                    System.exit(1);
+                }
+                // 解压完后根据 deleted.files 清单删除文件
+                File deletedFilesFile = new File(unzipDir, "deleted.files");
+                if (deletedFilesFile.exists()) {
+                    // 读出被删除的文件，进行删除
+                    String[] deletedFilePaths = Utils.readLines(deletedFilesFile);
+                    for (String deletedFilePath : deletedFilePaths) {
+                        File deletedFile = new File(unzipDir, deletedFilePath);
+                        if (deletedFile.exists()) {
+                            if (!deletedFile.delete()) {
+                                System.out.println("!!WARNING!! Failed to delete file " + deletedFile.getAbsolutePath());
+                            }
+                        }
+                    }
+                }
+            }
+            // 让用户选择把压缩包输出到哪里
+            System.out.println("Save the merged backup as...");
+            dirChooser.setDialogTitle("Save the merged backup as...");
+            dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            dirChooser.setFileFilter(new FileNameExtensionFilter("ZIP files", "zip"));
+            File zipOutputFile;
+            while (true) {
+                if (dirChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                    zipOutputFile = dirChooser.getSelectedFile();
+                    if (zipOutputFile.exists()) {
+                        System.out.println("The file " + zipOutputFile.getAbsolutePath() + " already exists! Please retry.");
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // 合并备份后再打包成一个压缩包
+            System.out.println("Zipping merged backups...");
+            if (!Utils.zip(unzipDir.listFiles(), zipOutputFile, unzipDir)) {
+                System.out.println("Failed to zip merged backups.");
+                System.exit(1);
+            }
+            System.out.println("Done! The merged backup has been saved as " + zipOutputFile.getAbsolutePath());
         } finally {
             // 删除临时目录
             if (!Utils.rmDir(tmpDir)) {
                 System.out.println("Failed to delete temp directory " + tmpDir.getAbsolutePath());
             }
         }
-
     }
 
-    /**
-     * 用于筛选出所有的增量备份 incre*.zip
-     */
-    private static class IncrementBackupFilter implements FilenameFilter {
-        @Override
-        public boolean accept(File dir, String name) {
-            return name.startsWith("incre") && name.endsWith(".zip");
-        }
-    }
 }
