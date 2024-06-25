@@ -265,4 +265,18 @@ public class Utils {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         return dtf.format(dateTime);
     }
+
+    public static class ExitException extends RuntimeException {
+        private final int exitCode;
+
+        public ExitException(int code) {
+            super();
+            exitCode = code;
+        }
+
+        public int getExitCode() {
+            return exitCode;
+        }
+
+    }
 }
