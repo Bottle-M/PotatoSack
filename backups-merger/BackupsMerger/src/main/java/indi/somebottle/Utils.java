@@ -39,9 +39,9 @@ public class Utils {
      *
      * @param zipFile   Zip 文件 File 对象
      * @param targetDir 解压后存放的目录 File 对象
-     * @return 是否解压成功@
-     * @throws IOException IO 异常
+     * @return 是否解压成功
      */
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public static boolean unzip(File zipFile, File targetDir) {
         try (ZipInputStream zipIn = new ZipInputStream(new FileInputStream(zipFile))) {
             ZipEntry zipEntry = zipIn.getNextEntry();
@@ -56,7 +56,7 @@ public class Utils {
                         return false;
                     }
                 } else {
-                    System.out.println("\tExtracting: " + currFile.getAbsolutePath());
+                    System.out.println("\tExtracting: " + fileName);
                     // 如果是文件则尝试解压
                     File parent = currFile.getParentFile();
                     if (!parent.exists() && !parent.mkdirs()) {
@@ -75,6 +75,8 @@ public class Utils {
                         while ((len = zipIn.read(buffer)) > 0) {
                             out.write(buffer, 0, len);
                         }
+                        // 冲刷缓冲区，写入文件（如果不冲刷，关闭流后文件可能仍然被占用）
+                        out.flush();
                     }
                 }
                 // 关闭当前的条目
@@ -98,12 +100,13 @@ public class Utils {
      * @return 是否成功
      */
     private static boolean zipDir(File srcDir, File rootDir, ZipOutputStream zos) {
+        boolean success = true;
         try {
             File[] files = srcDir.listFiles();
             if (files != null) {
                 for (File file : files) {
                     if (file.isDirectory()) {
-                        return zipDir(file, rootDir, zos);
+                        success = success && zipDir(file, rootDir, zos);
                     } else {
                         Path rootPath = Path.of(rootDir.toURI());
                         Path filePath = Path.of(file.toURI());
@@ -124,7 +127,7 @@ public class Utils {
             e.printStackTrace();
             return false;
         }
-        return true;
+        return success;
     }
 
     /**
@@ -160,6 +163,9 @@ public class Utils {
                     }
                 }
             }
+            // 冲刷缓冲区，写入文件（如果不冲刷，关闭流后文件可能仍然被占用）
+            zos.flush();
+            zos.closeEntry();
         } catch (Exception e) {
             e.printStackTrace();
             return false;
@@ -193,6 +199,7 @@ public class Utils {
      * @param dir 目录 File 对象
      * @return 是否成功
      */
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public static boolean rmDir(File dir) {
         if (!dir.exists() || !dir.isDirectory()) {
             System.out.println("Directory not exists or not a directory.");
@@ -203,9 +210,6 @@ public class Utils {
             for (File f : files) {
                 if (f.isDirectory()) {
                     if (!rmDir(f))
-                        return false;
-                    // 删除空白目录
-                    if (!f.delete())
                         return false;
                 } else {
                     if (!f.delete()) {
