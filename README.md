@@ -2,143 +2,145 @@
 
 ![Logo](./memos/potatosack-logo-transparent-smaller.png)  
 
-_Take it easy, let's carry a sack of potatoes!_
+_Take it easy, carrying a sack of potatoes isn't that hard!_
 
-Lang: 中文简体 | [English](#施工中)  
+Lang: [中文简体](README.zh-CN.md) | English 
 
-## 这是啥子哟
+## What's this?
 
-这是一个咱为自己 Minecraft 服务器写的一个简单的备份插件，可以对**世界数据**进行备份。支持**增量备份/全量备份**机制。  
+This is a simple backup plugin originally written for my Minecraft server to backup **world data**. It supports **incremental/full backup mechanism**.  
 
-备份的存档**不会留存在本地**，而是上传至 **OneDrive** 云端目录中。
+Backed-up archives are not stored locally, but are uploaded to the OneDrive cloud storage.  
 
-* ✨ 本插件在压缩上传文件时可以**几乎不占用**多余的本地硬盘空间，适用于服务提供商对硬盘空间进行了限制的场景。详见[概念介绍](#概念介绍)。
+* ✨ This plugin can compress and upload files **with little** local disk space usage, thus is suitable for scenarios where the service provider has imposed a limit on disk space. See the [Concepts](#concepts) for more details.
 
-> 本插件目前仅支持 OneDrive (**非世纪互联版**)。
+> Currently, the plugin only supports OneDrive (non-21Vianet version).
 
-## 概念介绍
+## Concepts
 
 <details>
 
-<summary>展开查看</summary>
+<summary>Expand / Collapse</summary>
 
-### 一组备份
+### A Group of Backups
 
-“一组备份”指的是【一个全量备份 + 其后的增量备份 (直至下一次全量备份前的)】。  
+"A Group of Backups" refers to "one full backup + subsequent incremental backups (before the next full backup)".   
 
-每新建立一次全量备份，就会新创建“一组备份”。随后直至下次全量备份前的增量备份都会算在这一组里。  
+Every time a new full backup is created, a new "group of backups" is created. Subsequent incremental backups before the next full backup will be stored in this group.  
 
-详见[备份目录结构](memos/backup-mechanism.md#云端备份存储结构)。
+For more details, see [Backup Directory Structure](memos/backup-mechanism.md#云端备份存储结构).  
 
-### 流式压缩上传
+### Streaming Compression Upload
 
-本插件的“流式压缩上传”指的是边压缩文件边上传到云端的备份方式，采用了时间换空间的思路，仅占用较少的内存空间（用作缓冲区），几乎不会占用多余的硬盘空间。  
+The "Streaming Compression Upload" of this plugin refers to the backup method of compressing files and uploading them to the cloud at the same time, which adopts the idea of exchanging time for space, and only takes up a small amount of memory space (used as a buffer), and hardly takes up any extra disk space.  
 
-> 时间换空间是因为 OneDrive API 要求大文件上传前必须知道确切的最终文件大小，因此需要额外进行一趟模拟压缩来对文件大小进行计算。
+> Time for space is due to the fact that the OneDrive API requires the exact final file size to be known before a large file can be uploaded, so an extra process to simulate compression is needed to calculate the file size.  
 
-传统的备份方式是将待备份文件先临时压缩为压缩包，再上传到云端，这种方式要求硬盘空间能容纳下待备份文件 + 产生的压缩包。  
+The traditional backup method temporarily compresses the files to be backed up into zip archives before uploading them to the cloud, which requires disk space enough to accommodate the files to be backed up and the resulting zip archives.  
 
-然而，很多服务提供商会限制硬盘的可用空间。假如可用空间只有 10 GiB，而存档数据就占用了 7 GiB，那么硬盘剩余的空间是不太能容纳下产生的压缩包的，也就会导致备份失败。
+However, many service providers limit the available space of disk. If the available space is only 10 GiB and the archived data takes up 7 GiB, the remaining space on the disk won't be able to accommodate the temporary zip archive and the backup will fail.
 
 </details>
 
 
-## 怎么安装此插件？
+## Installation
 
-1. 在[这里](https://github.com/Bottle-M/PotatoSack/releases/latest)下载插件。
-2. 把插件复制到你服务器目录下的 `plugins` 目录中。
-3. 启动服务器，插件会在 `plugins/PotatoSack` 目录下生成初始配置文件 `configs.yml`，你需要在此文件中对插件进行必要的[配置](#配置)。
-4. 修改配置后重启服务器即可。如果见到下面这样的日志内容，说明 PotatoSack 插件启动成功。  
+1. Download the plugin [here](https://github.com/Bottle-M/PotatoSack/releases/latest).  
+2. Put the plugin in the `plugins` directory of your server directory.  
+3. Launch the server, and the plugin will generate the initial configuration file `configs.yml`. You need to [configure](#configuration) it.  
+4. Restart server after you have configured the plugin. If you find the log below, it means the plugin has been successfully initialized.   
     ```log
     [12:52:32 INFO]: [PotatoSack] PotatoSack successfully initialized! Savor using it!
     ```
 
-## 配置文件
+## Configuration
 
-配置文件位于 `plugins/PotatoSack/configs.yml`。
+The configuration file is located at `plugins/PotatoSack/configs.yml`。  
 
 ```yaml
-# OneDrive API 配置 (支持 OneDrive Business(ODB)/Personal(ODC))
+# OneDrive API Configuration (Support OneDrive Business(ODB)/Personal(ODC))
 onedrive:
-  # 开发文档参考: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-  # 工具: https://github.com/Bottle-M/PotatoSack/tree/main/ms-graph-auth
+  # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
+  # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/ms-graph-auth
   client-id:
   client-secret:
   refresh-token:
 
-# 你想要保留的备份组数.
-# 注："一组备份 "包括一个全量备份和其后的增量备份（在下一个全量备份之前的）。
+# The number of full backups to keep, actually it refers to "groups of backups" to keep.
+# Note: "A group of backups" consists of a full backup and a set of incremental backups following it(before the next full backup).
+# Note: If a full backup is deleted, all incremental backups following it before the next full backup will be deleted as well.
 max-full-backups-retained: 3
 
-# 相邻两次全量备份之间的时间间隔 (以分钟为单位)
+# The interval of full backups (in minutes)
 full-backup-interval: 1440
 
-# 相邻两次增量备份之间的时间间隔 (以分钟为单位)
+# The interval of incremental backups (in minutes)
 incremental-backup-check-interval: 15
 
-# 当没有玩家在线时是否暂停进行增量备份
-# 注：全量备份将照常进行。
+# Whether to stop incremental backup when no player is online
+# Note: It may save you some data traffic expenses when nobody's there.
+# Note: Full backup won't be stopped, only incremental backups will be affected.
 stop-incremental-backup-when-no-player: true
 
-# 是否采用流式压缩上传
-# 注: 当服务器硬盘空间不够大时可以启用此选项。
-# 注: 这种方式下程序会将每块压缩文件数据暂时写入内存中的缓冲区，代价并不高。
+# Whether to upload files while compressing them. (Time-space trade-off)
+# Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
+# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
 use-streaming-compression-upload: false
 
-# 需要进行备份的世界名，示例如下: 
+# The worlds that you would like to backup, example:
 # worlds:
 #  - world
 #  - world_nether
 #  - world_the_end
-# 注: 如果这个选项留空了，则本插件不会工作。
+# Note: If you leave this blank, the plugin won't work.
 worlds: [ ]
 ```
 
-## 命令
+## Command
 
-这个插件目前只有一个命令:  
+There's only one command for the plugin:  
 
 ```text
 /potatosack reload
 ```
 
-用于热重载插件配置文件。
+Used for hot reloading plugin configuration file.  
 
-### 命令权限节点
+### Permission Node
 
 ```text
 potatosack.reload
 ```
 
-> 💡 服务器管理员（OP）默认有这个权限。
+> 💡 **Operators** will have this permission by default.
 
 ## 小工具
 
 ### BackupMerger  
 
-上文提到过，“一组备份”包括一个全量备份和一些增量备份。在恢复服务器数据的时候，BackupMerger 可以将这些备份合并成一个完整的备份。
+As mentioned above, a "group of backups" consists of a full backup and some incremental backups. BackupMerger can merge these backups into one full backup when we are to restore server data.
 
-详见 [BackupMerger](backups-merger/README.md)。  
+See [BackupMerger](backups-merger/README.md).    
 
 ### MSGraphAuth  
 
-通过这个工具你可以获取到编写配置时所需的 OneDrive 的 Refresh Token。  
+With this tool, you can get the OneDrive Refresh Token required for writing configurations.
 
-详见 [MS Graph Auth](ms-graph-auth/README.md)。
+See [MS Graph Auth](ms-graph-auth/README.md)。
 
 ## FAQ
 
-1. Q：启动时控制台怎么打印出了 404 ？
+1. Q: Why does the console print out 404 at startup? 
 
-    A：这往往是因为云端的文件缺失或相应目录未建立，不过不用担心，程序在遇到 404 响应后会自动建立相应文件和目录。
+    A：This is often due to missing files or directories in the cloud, but don't worry, the program will automatically create the needed files and directories when it encounters a 404 problem.  
 
-2. Q：为什么叫 PotatoSack？  
-    A：因为咱服务器的性能和土豆差不多，备份数据就像扛土豆麻袋一样 （゜ー゜）。
+2. Q: Why the plugin is called 'PotatoSack'？  
+    A：Because the performance of our server is similar to that of a potato, backing up data is like carrying a sack of potatoes. (゜ー゜)
 
-如果还有其他问题，欢迎提出 issue。  
+Feel free to raise an issue if you have any other questions.
 
-## 开源协议
+## License
 
-本插件采用 MIT 开源协议。
+MIT Licensed.
 
-感谢你的使用 (￣▽￣)"  
+Thanks for using. (￣▽￣)"  
