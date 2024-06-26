@@ -101,7 +101,7 @@ public class BackupChecker implements Runnable {
                     throw new IOException("Failed to make incremental backup");
             }
         } catch (Exception e) {
-            ConsoleSender.logError(e.getMessage());
+            ConsoleSender.logError("[BackupChecker] " + e.getMessage());
             e.printStackTrace();
         } finally {
             // 最终一定要释放锁

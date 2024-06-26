@@ -693,3 +693,40 @@ incre*.zip # 压缩包内
 * 重试压缩上传时，在末尾填充了 `平均溢出字节数 × 5` B，因为这里只出现了一次错误，平均溢出字节数就是 `4` ，因此填充了 `4 × 5 = 20` B。  
 
 </details>
+
+### 读取并压缩文件的同时文件发生了修改
+
+在启动了异步世界保存后，在读取并压缩文件的同时，服务端的线程可能会正在写入一些区块文件，这就会导致备份所在线程读取出的文件可能是数据混乱的（多线程读写冲突）。
+
+本插件采用了 **CRC32、文件大小、文件最后修改时间** 来校验文件完整性，保证压缩入压缩包的文件不是数据混乱的。  
+
+<details>
+
+<summary>展开查看日志</summary>
+
+```log
+[04:10:01 INFO]: [PotatoSack] Making incremental backup...
+[04:10:03 INFO]: [PotatoSack] ------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------
+[04:10:03 INFO]: [PotatoSack] Compressing...
+[04:10:04 INFO]: [PotatoSack] [Println] Warning: Conflict: File modified while being added to zip - ./world/region/r.0.0.mca
+[04:10:04 INFO]: [PotatoSack] Retrying to compress files...(1/5)
+[04:10:04 WARN]: [PotatoSack] [Logger] Warning: Conflict: File modified while being added to zip - ./world/region/r.0.0.mca
+[04:10:04 INFO]: [PotatoSack] [Println] Warning: Conflict: File modified while being added to zip - ./world/region/r.-1.0.mca
+[04:10:04 INFO]: [PotatoSack] Retrying to compress files...(2/5)
+[04:10:04 WARN]: [PotatoSack] [Logger] Warning: Conflict: File modified while being added to zip - ./world/region/r.-1.0.mca
+[04:10:05 INFO]: [PotatoSack] [Println] Warning: Conflict: File modified while being added to zip - ./world/region/r.0.0.mca
+[04:10:05 INFO]: [PotatoSack] Retrying to compress files...(3/5)
+[04:10:05 WARN]: [PotatoSack] [Logger] Warning: Conflict: File modified while being added to zip - ./world/region/r.0.0.mca
+[04:10:07 INFO]: [PotatoSack] Uploading Incremental Backup...
+[04:10:08 INFO]: [PotatoSack] File upload task: incre000002.zip to https://api.onedrive.com/.......
+[04:10:10 INFO]: [PotatoSack]  --> Chunk successfully uploaded.
+[04:10:10 INFO]: [PotatoSack] Last chunk - (Range: 0-8586561)
+[04:10:10 INFO]: [PotatoSack] Upload success! File size: 8586562 bytes
+[04:10:10 INFO]: [PotatoSack] Uploading Record Files...
+[04:10:12 INFO]: [PotatoSack] Successfully made incremental backup: 000002 in backup group 020240626000001
+```
+
+</details>
+
+上面这个日志中正在以传统方式进行增量备份，恰好在读取文件并压缩的过程中遇上了服务端正在异步写入世界文件的情况，程序检测到写入压缩包的文件完整性有误，从而重试压缩。
+
