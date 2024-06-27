@@ -118,7 +118,7 @@ potatosack.reload
 
 上文提到过，“一组备份”包括一个全量备份和一些增量备份。在恢复服务器数据的时候，BackupMerger 可以将这些备份合并成一个完整的备份。
 
-详见 [BackupMerger](backups-merger/README.md)。  
+详见 [BackupMerger](backups-merger/README.zh_CN.md)。  
 
 ### OneDrive Token Tool
 
