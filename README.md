@@ -1,6 +1,6 @@
 # PotatoSack
 
-![Logo](./memos/potatosack-logo-transparent-smaller.png)  
+![Logo](./memos/pics/potatosack-logo-transparent-smaller.png)  
 
 _Take it easy, carrying a sack of potatoes isn't that hard!_
 
@@ -61,7 +61,7 @@ The configuration file is located at `plugins/PotatoSack/configs.yml`。
 # OneDrive API Configuration (Support OneDrive Business(ODB)/Personal(ODC))
 onedrive:
   # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-  # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/ms-graph-auth
+  # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool
   client-id:
   client-secret:
   refresh-token:
@@ -114,19 +114,19 @@ potatosack.reload
 
 > 💡 **Operators** will have this permission by default.
 
-## 小工具
+## Small tools
 
-### BackupMerger  
+### Backup Merger  
 
 As mentioned above, a "group of backups" consists of a full backup and some incremental backups. BackupMerger can merge these backups into one full backup when we are to restore server data.
 
 See [BackupMerger](backups-merger/README.md).    
 
-### MSGraphAuth  
+### OneDrive Token Tool  
 
 With this tool, you can get the OneDrive Refresh Token required for writing configurations.
 
-See [MS Graph Auth](ms-graph-auth/README.md)。
+See [onedrive-token-tool](onedrive-token-tool/README.md)。
 
 ## FAQ
 
@@ -134,7 +134,12 @@ See [MS Graph Auth](ms-graph-auth/README.md)。
 
     A：This is often due to missing files or directories in the cloud, but don't worry, the program will automatically create the needed files and directories when it encounters a 404 problem.  
 
-2. Q: Why the plugin is called 'PotatoSack'？  
+2. Q: Where is the backup data stored in OneDrive?
+
+    A: `OneDrive root directory/PotatoSack` or `OneDrive root directory/Apps/<your application name>/PotatoSack`. When using OneDrive Personal with the `Files.ReadWrite.AppFolder` permission scope, the latter will be the case.  
+
+2. Q: Why the plugin is called 'PotatoSack'？    
+    
     A：Because the performance of our server is similar to that of a potato, backing up data is like carrying a sack of potatoes. (゜ー゜)
 
 Feel free to raise an issue if you have any other questions.

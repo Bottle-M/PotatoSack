@@ -1,6 +1,6 @@
 # PotatoSack
 
-![Logo](./memos/potatosack-logo-transparent-smaller.png)  
+![Logo](./memos/pics/potatosack-logo-transparent-smaller.png)  
 
 _放轻松些，我的老伙计，这袋儿土豆可比苏珊婶婶家的大理石雕像好搬多了！_
 
@@ -61,7 +61,7 @@ Lang: 中文简体 | [English](README.md)
 # OneDrive API 配置 (支持 OneDrive Business(ODB)/Personal(ODC))
 onedrive:
   # 开发文档参考: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-  # 工具: https://github.com/Bottle-M/PotatoSack/tree/main/ms-graph-auth
+  # 工具: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool
   client-id:
   client-secret:
   refresh-token:
@@ -114,17 +114,17 @@ potatosack.reload
 
 ## 小工具
 
-### BackupMerger  
+### Backup Merger  
 
 上文提到过，“一组备份”包括一个全量备份和一些增量备份。在恢复服务器数据的时候，BackupMerger 可以将这些备份合并成一个完整的备份。
 
 详见 [BackupMerger](backups-merger/README.md)。  
 
-### MSGraphAuth  
+### OneDrive Token Tool
 
 通过这个工具你可以获取到编写配置时所需的 OneDrive 的 Refresh Token。  
 
-详见 [MS Graph Auth](ms-graph-auth/README.md)。
+详见 [onedrive-token-tool](onedrive-token-tool/README.zh_CN.md)。
 
 ## FAQ
 
@@ -132,7 +132,12 @@ potatosack.reload
 
     A：这往往是因为云端的文件缺失或相应目录未建立，不过不用担心，程序在遇到 404 响应后会自动建立相应文件和目录。
 
-2. Q：为什么叫 PotatoSack？  
+2. Q：备份数据存放在 OneDrive 的哪个位置？  
+
+    A：`OneDrive 根目录/PotatoSack`，或者 `OneDrive 根目录/应用/<你创建的应用程序名>/PotatoSack`。当使用 OneDrive 家庭版 / 个人版，且采用 `Files.ReadWrite.AppFolder` 权限结点时，将会是后者的情况。  
+
+3. Q：为什么叫 PotatoSack？  
+    
     A：因为咱服务器的性能和土豆差不多，备份数据就像扛土豆麻袋一样 （゜ー゜）。
 
 如果还有其他问题，欢迎提出 issue。  
