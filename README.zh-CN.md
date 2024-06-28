@@ -40,14 +40,14 @@ Lang: 中文简体 | [English](README.md)
 
 传统的备份方式是将待备份文件先临时压缩为压缩包，再上传到云端，这种方式要求硬盘空间能容纳下待备份文件 + 产生的压缩包。  
 
-然而，很多服务提供商会限制硬盘的可用空间。假如可用空间只有 10 GiB，而存档数据就占用了 7 GiB，那么硬盘剩余的空间是不太能容纳下产生的压缩包的，也就会导致备份失败。
+然而，很多服务提供商会限制硬盘的可用空间。假如可用空间只有 10 GiB，而世界存档数据就占用了 7 GiB，那么硬盘剩余的空间是不太能容纳下产生的压缩包的，也就会导致备份失败。
 
 </details>
 
 
 ## 怎么安装此插件？
 
-1. 在[这里](https://github.com/Bottle-M/PotatoSack/releases/latest)下载插件。
+1. 在[这里](https://github.com/Bottle-M/PotatoSack/releases/latest)下载插件。(`PotatoSack*.jar`)  
 2. 把插件复制到你服务器目录下的 `plugins` 目录中。
 3. 启动服务器，插件会在 `plugins/PotatoSack` 目录下生成初始配置文件 `configs.yml`，你需要在此文件中对插件进行必要的[配置](#配置文件)。
 4. 修改配置后重启服务器即可。如果见到下面这样的日志内容，说明 PotatoSack 插件启动成功。  

@@ -40,14 +40,14 @@ The "Streaming Compression Upload" of this plugin refers to the backup method of
 
 The traditional backup method temporarily compresses the files to be backed up into zip archives before uploading them to the cloud, which requires disk space enough to accommodate the files to be backed up and the resulting zip archives.  
 
-However, many service providers limit the available space of disk. If the available space is only 10 GiB and the archived data takes up 7 GiB, the remaining space on the disk won't be able to accommodate the temporary zip archive and the backup will fail.
+However, many service providers limit the available space of disk. If the available space is only 10 GiB and the world data takes up 7 GiB, the remaining space on the disk won't be able to accommodate the temporary zip archive and the backup will fail.
 
 </details>
 
 
 ## Installation
 
-1. Download the plugin [here](https://github.com/Bottle-M/PotatoSack/releases/latest).  
+1. Download the plugin [here](https://github.com/Bottle-M/PotatoSack/releases/latest). (`PotatoSack*.jar`)    
 2. Put the plugin in the `plugins` directory of your server directory.  
 3. Launch the server, and the plugin will generate the initial configuration file `configs.yml`. You need to [configure](#configuration) it.  
 4. Restart server after you have configured the plugin. If you find the log below, it means the plugin has been successfully initialized.   
