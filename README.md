@@ -8,9 +8,11 @@ Lang: [中文简体](README.zh-CN.md) | English
 
 ## What's this?
 
-This is a simple backup plugin originally written for my Minecraft server to backup **world data**. It supports **incremental/full backup mechanism**.  
+This is a simple backup plugin originally written for my Minecraft server to back up **world data**. It supports **incremental/full backup mechanism**.  
 
 Backed-up archives are not stored locally, but are uploaded to the OneDrive cloud storage.  
+
+* Supported Minecraft Versions: **1.19+**  
 
 * ✨ This plugin can compress and upload files **with little** local disk space usage, thus is suitable for scenarios where the service provider has imposed a limit on disk space. See the [Concepts](#concepts) for more details.
 
@@ -87,7 +89,7 @@ stop-incremental-backup-when-no-player: true
 # Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
 use-streaming-compression-upload: false
 
-# The worlds that you would like to backup, example:
+# The worlds that you would like to back up, example:
 # worlds:
 #  - world
 #  - world_nether
@@ -138,7 +140,7 @@ See [onedrive-token-tool](onedrive-token-tool/README.md)。
 
     A: `OneDrive root directory/PotatoSack` or `OneDrive root directory/Apps/<your application name>/PotatoSack`. When using OneDrive Personal with the `Files.ReadWrite.AppFolder` permission scope, the latter will be the case.  
 
-2. Q: Why the plugin is called 'PotatoSack'？    
+3. Q: Why the plugin is called 'PotatoSack'？    
     
     A：Because the performance of our server is similar to that of a potato, backing up data is like carrying a sack of potatoes. (゜ー゜)
 

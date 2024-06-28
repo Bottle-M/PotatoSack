@@ -12,6 +12,8 @@ Lang: 中文简体 | [English](README.md)
 
 备份的存档**不会留存在本地**，而是上传至 **OneDrive** 云端目录中。
 
+* 支持的 Minecraft 版本: **1.19+**
+
 * ✨ 本插件在压缩上传文件时可以**几乎不占用**多余的本地硬盘空间，适用于服务提供商对硬盘空间进行了限制的场景。详见[概念介绍](#概念介绍)。
 
 > 本插件目前仅支持 OneDrive (**非世纪互联版**)。
@@ -47,7 +49,7 @@ Lang: 中文简体 | [English](README.md)
 
 1. 在[这里](https://github.com/Bottle-M/PotatoSack/releases/latest)下载插件。
 2. 把插件复制到你服务器目录下的 `plugins` 目录中。
-3. 启动服务器，插件会在 `plugins/PotatoSack` 目录下生成初始配置文件 `configs.yml`，你需要在此文件中对插件进行必要的[配置](#配置)。
+3. 启动服务器，插件会在 `plugins/PotatoSack` 目录下生成初始配置文件 `configs.yml`，你需要在此文件中对插件进行必要的[配置](#配置文件)。
 4. 修改配置后重启服务器即可。如果见到下面这样的日志内容，说明 PotatoSack 插件启动成功。  
     ```log
     [12:52:32 INFO]: [PotatoSack] PotatoSack successfully initialized! Savor using it!
