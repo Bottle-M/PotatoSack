@@ -142,7 +142,7 @@ See [onedrive-token-tool](onedrive-token-tool/README.md)。
 
 3. Q: Why the plugin is called 'PotatoSack'？    
     
-    A：Because the performance of our server is similar to that of a potato, backing up data is like carrying a sack of potatoes. (゜ー゜)
+    A：Because the performance of my server is similar to that of a potato, backing up data is like carrying a sack of potatoes. (゜ー゜)
 
 Feel free to raise an issue if you have any other questions.
 
