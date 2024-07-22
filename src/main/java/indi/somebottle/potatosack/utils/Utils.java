@@ -216,8 +216,14 @@ public class Utils {
             crc32.reset();
             if (!quiet)
                 System.out.println("[Verbose] Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
-            zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
             File file = new File(zipFilePath.filePath);
+            // 如果待压缩文件不存在，则忽略 20240722
+            // 可能在文件列表到开始压缩文件这段时间内，这个文件被删除了
+            if (!file.exists()) {
+                ConsoleSender.logWarn("(Unexpected!) File " + zipFilePath.filePath + " not found while compressing, it may have been deleted, ignored.");
+                continue;
+            }
+            zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
             // 先记录在读取文件前的时间戳，以及文件大小
             long fileModifiedTimeBefore = file.lastModified();
             long fileSizeBefore = file.length();

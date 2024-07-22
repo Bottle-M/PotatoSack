@@ -375,7 +375,7 @@ public class StreamedZipUploader {
                 return false;
             }
         }
-        // 注意，要在流关闭后再取出结果
+        // 注意，要在流关闭后，流内数据全部冲刷完毕，再取出结果
         long filesSize = fileSizeCounter.get();
         // 末尾还要加上填充的空白字符
         totalSize = filesSize + paddingSize;
