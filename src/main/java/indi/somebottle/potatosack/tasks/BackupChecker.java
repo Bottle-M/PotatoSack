@@ -50,7 +50,7 @@ public class BackupChecker implements Runnable {
         for (String worldName : worlds) {
             File worldRecordFile = backupMaker.getWorldRecordsFile(worldName);
             System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
-            if (!worldRecordFile.exists())
+            if (!worldRecordFile.exists()) {
                 // 从云端抓取
                 if (!backupMaker.pullRecordsFile("_" + worldName)) {
                     if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
@@ -62,6 +62,7 @@ public class BackupChecker implements Runnable {
                         return false;
                     }
                 }
+            }
         }
         return true;
     }

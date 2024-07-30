@@ -16,10 +16,7 @@ import org.bukkit.World;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -172,12 +169,25 @@ public class BackupMaker {
      * @param worldName 世界名
      * @return WorldRecord对象
      * @throws IOException IO异常
+     * @apiNote 如果获取不成功会自动建立新的 _世界名.json。如果连文件都没法新建就会返回 null。
      */
     public WorldRecord getWorldRecord(String worldName) throws IOException {
         File worldRecordFile = getWorldRecordsFile(worldName);
-        if (!worldRecordFile.exists())
-            if (!pullRecordsFile("_" + worldName))
-                return null; // 获取失败
+        if (!worldRecordFile.exists()) {
+            // 如果本地没有则尝试从云端拉取
+            if (!pullRecordsFile("_" + worldName)) {
+                // 如果云端也没有则创建新文件
+                if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
+                    worldRecordFile.getParentFile().mkdirs();
+                // 在本地新建文件
+                if (worldRecordFile.createNewFile()) {
+                    writeWorldRecord(worldName, new HashMap<>());
+                } else {
+                    // 若文件都没法新建，返回 null
+                    return null;
+                }
+            }
+        }
         // 读入backup.json
         String worldJson = new String(Files.readAllBytes(worldRecordFile.toPath()));
         // 解析成配置对象
@@ -248,9 +258,12 @@ public class BackupMaker {
      * 建立一个全量备份
      *
      * @return 是否成功
+     * @throws IOException          IO 异常
+     * @throws InterruptedException 中断异常
+     * @throws NullPointerException 空指针异常（按理来说不应该出现，和记录文件读取有关）
      * @apiNote 本方法会进行: <p>1. 压缩相应文件</p><p>2. 上传压缩后的文件</p><p>3. 检查是否有需要删除的备份组（只保留几组）</p>
      */
-    public boolean makeFullBackup() throws IOException, InterruptedException {
+    public boolean makeFullBackup() throws IOException, InterruptedException, NullPointerException {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
@@ -319,7 +332,6 @@ public class BackupMaker {
             // 临时文件路径
             String tempOutputFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
             // 2. 开始压缩
-            // TODO: 待测试，抛弃 Utils.zip 方法
             if (!Utils.zipSpecificFiles(worldZipFilePaths, tempOutputFilePath, true))
                 return false;
             // 3. 上传压缩好的文件
@@ -372,8 +384,11 @@ public class BackupMaker {
      * 建立一个增量备份
      *
      * @return 是否成功
+     * @throws IOException          IO 异常
+     * @throws InterruptedException 中断异常
+     * @throws NullPointerException 空指针异常（按理来说不应该出现，和记录文件读取有关）
      */
-    public boolean makeIncreBackup() throws IOException, InterruptedException {
+    public boolean makeIncreBackup() throws IOException, InterruptedException, NullPointerException {
         ConsoleSender.toConsole("Making incremental backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
