@@ -1,9 +1,9 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 /**
  * createUploadSession 请求后返回的结果字段
  */
-public class UpSessionCreateResp {
+public class OneDriveUpSessionCreateResp {
     private String uploadUrl;
     private String expirationDateTime;
 

@@ -1,42 +1,37 @@
 package indi.somebottle.potatosack;
 
+import indi.somebottle.potatosack.clients.ClientFactory;
+import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.command.PotatoSackExecutor;
 import indi.somebottle.potatosack.command.PotatoSackTabCompleter;
-import indi.somebottle.potatosack.onedrive.Client;
-import indi.somebottle.potatosack.onedrive.TokenFetcher;
 import indi.somebottle.potatosack.tasks.BackupChecker;
-import indi.somebottle.potatosack.tasks.TokenChecker;
-import indi.somebottle.potatosack.utils.*;
+import indi.somebottle.potatosack.utils.Config;
+import indi.somebottle.potatosack.utils.ConsoleSender;
+import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.OkHttpClient;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
-import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class PotatoSack extends JavaPlugin {
-    public static Plugin plugin = null; // 插件对象
+    private static PotatoSack pluginInstance = null; // 插件对象
     public static File worldContainerDir = null; // 服务端根目录 File 对象
-    public static ValueAvgTracker streamedOverflowBytesTracker = new ValueAvgTracker(); // 流式上传溢出字节数平均数统计
-    private final Config config = new Config(); // 配置文件对象
-    private TokenFetcher tokenFetcher; // TokenFetcher对象
-    private Client odClient; // OneDrive客户端
-
-    private final BukkitTask[] checkTasks = new BukkitTask[2]; // 定时检查任务数组
+    public BukkitTask backupCheckTask = null; // 备份检查定时任务
+    private Client fileClient = null; // 文件存储客户端
 
     /**
      * 插件启动时进行的操作
      *
-     * @apiNote 此处输出主要是System.out的方法实现，因为主线程会被阻塞
+     * @apiNote 此部分输出主要是 System.out 的方法实现
      */
     @Override
     public void onEnable() {
-        plugin = this; // 暴露插件对象
+        pluginInstance = this;
         // 20240613 配置服务端根目录
         worldContainerDir = this.getServer().getWorldContainer();
         Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE); // 设置OkHttpClient日志级别
@@ -49,44 +44,23 @@ public final class PotatoSack extends JavaPlugin {
         // 开始初始化插件
         System.out.println("Potato Sack Initializing...");
         // 初始化配置
-        String clientId = (String) config.getConfig("onedrive.client-id");
-        String clientScrt = (String) config.getConfig("onedrive.client-secret");
-        String refreshToken = (String) config.getConfig("onedrive.refresh-token");
-        // 初始化TokenFetcher
-        tokenFetcher = new TokenFetcher(clientId, clientScrt, refreshToken, config);
-        // 初始化获取token
-        if (!tokenFetcher.fetch()) {
-            System.out.println("Potato Sack Failed to Initialize! Please check configs.yml");
+        Config config = new Config();
+        String clientType = (String) config.getConfig("client-type");
+        // 初始化文件存储客户端
+        try {
+            fileClient = ClientFactory.getClient(clientType, config);
+        } catch (Exception e) {
+            ConsoleSender.logError("Failed to initialize client: " + e.getMessage());
+            e.printStackTrace();
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;
         }
-        // 初始化OneDrive客户端
-        odClient = new Client(tokenFetcher);
         try {
-            // 输出Onedrive AppFolder
-            // 20240614 这一步还有个作用，就是让 OneDrive 自动创建应用目录
-            System.out.println("Onedrive AppFolder URL: " + odClient.getAppFolderUrl());
-            // 检查OneDrive上插件数据目录是否建立
-            if (odClient.getItem(Constants.OD_APP_DATA_FOLDER) == null) {
-                System.out.println("Take it easy, the 404 problem above is not a big deal.");
-                System.out.println("404 Detected, creating data folder in OneDrive.");
-                // 如果没有建立则建立数据目录
-                if (odClient.createFolder(Constants.OD_APP_DATA_FOLDER)) {
-                    System.out.println("Successfully created data folder in OneDrive.");
-                } else {
-                    throw new IOException("Failed to create data folder in OneDrive.");
-                }
-            }
             // 初始化备份核心
-            backupChecker = new BackupChecker(odClient, config);
-            // 初始化备份
-            if (!backupChecker.initialize())
-                throw new IOException("Failed to initialize backup module.");
+            backupChecker = new BackupChecker(fileClient, config);
             // 初始化异步任务定时器
-            // 每30秒检查一次AccessToken是否过期
-            checkTasks[0] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, new TokenChecker(tokenFetcher), 0, 20 * 30);
             // 每60秒检查一次备份（首次执行前等待60秒)
-            checkTasks[1] = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
+            backupCheckTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
             // 注册重载配置指令
             PluginCommand mainCommand = getCommand("potatosack");
             if (mainCommand == null)
@@ -105,13 +79,23 @@ public final class PotatoSack extends JavaPlugin {
         ConsoleSender.toConsole("PotatoSack successfully initialized! Savor using it!");
     }
 
+    /**
+     * 获取插件主类实例，如果还没有初始化则返回 null
+     *
+     * @return 插件主类实例，可能是 null
+     */
+    public static PotatoSack getPluginInstance() {
+        return pluginInstance;
+    }
+
     @Override
     public void onDisable() {
         // Plugin shutdown logic
+        if (fileClient != null)
+            fileClient.shutdown();
         // 取消定时任务
-        for (BukkitTask task : checkTasks)
-            if (task != null)
-                task.cancel();
-        ConsoleSender.toConsoleSync("PotatoSack Shutting Down...See you next time~");
+        if (backupCheckTask != null)
+            backupCheckTask.cancel();
+        ConsoleSender.toConsoleSync("PotatoSack shutting down...See you next time~ (∠・ω< )⌒★");
     }
 }

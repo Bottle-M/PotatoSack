@@ -1,4 +1,4 @@
-package indi.somebottle.potatosack.entities.backup;
+package indi.somebottle.potatosack.tasks.entities;
 
 import indi.somebottle.potatosack.utils.Utils;
 

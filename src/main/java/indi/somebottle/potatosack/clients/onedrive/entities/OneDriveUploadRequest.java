@@ -1,21 +1,21 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 import com.google.gson.annotations.SerializedName;
 
 /**
  * 请求上传时需要的字段
  */
-public class UploadRequest {
+public class OneDriveUploadRequest {
     private ItemRequest item;
 
-    public UploadRequest(String name) {
+    public OneDriveUploadRequest(String name) {
         item = new ItemRequest();
         item.setName(name);
         // 同名冲突时重命名文件
         item.setConflictBehavior("rename");
     }
 
-    public UploadRequest(String name, String conflictBehavior) {
+    public OneDriveUploadRequest(String name, String conflictBehavior) {
         item = new ItemRequest();
         item.setName(name);
         item.setConflictBehavior(conflictBehavior);

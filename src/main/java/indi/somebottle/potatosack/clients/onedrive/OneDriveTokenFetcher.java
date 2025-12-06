@@ -1,16 +1,17 @@
-package indi.somebottle.potatosack.onedrive;
+package indi.somebottle.potatosack.clients.onedrive;
 
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.entities.onedrive.RefreshResp;
+import indi.somebottle.potatosack.clients.onedrive.entities.OneDriveRefreshResp;
 import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-public class TokenFetcher {
-    private final String endPoint = Constants.MS_TOKEN_ENDPOINT; // Microsoft Token更新终结点
+public class OneDriveTokenFetcher {
+    @SuppressWarnings("FieldCanBeLocal")
+    private final String MS_TOKEN_ENDPOINT = "https://login.microsoftonline.com/common/oauth2/v2.0/token"; // Microsoft Token 更新终结点
     private final String clientId;
     private final String clientScrt;
     private String refreshToken;
@@ -19,7 +20,7 @@ public class TokenFetcher {
     private final Gson gson = new Gson();
     private final Config config;
 
-    public TokenFetcher(String clientId, String clientSecret, String refreshToken, Config config) {
+    public OneDriveTokenFetcher(String clientId, String clientSecret, String refreshToken, Config config) {
         this.clientId = clientId;
         this.clientScrt = clientSecret;
         this.refreshToken = refreshToken;
@@ -48,7 +49,7 @@ public class TokenFetcher {
                 .add("client_secret", clientScrt)
                 .build();
         Request postReq = new Request.Builder()
-                .url(endPoint)
+                .url(MS_TOKEN_ENDPOINT)
                 .post(body)
                 .build();
         ResponseBody responseBody = null;
@@ -58,7 +59,7 @@ public class TokenFetcher {
             if (response.isSuccessful()) {
                 if (responseBody != null) {
                     String rawResp = responseBody.string();
-                    RefreshResp respObj = gson.fromJson(rawResp, RefreshResp.class);
+                    OneDriveRefreshResp respObj = gson.fromJson(rawResp, OneDriveRefreshResp.class);
                     setRefreshToken(respObj.refreshToken);
                     setAccessToken(respObj.accessToken);
                     // 更新下次更新时间（提前60秒）

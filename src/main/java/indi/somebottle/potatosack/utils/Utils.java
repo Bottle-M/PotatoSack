@@ -1,9 +1,11 @@
 package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
-import indi.somebottle.potatosack.entities.backup.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
+import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
+import org.bukkit.plugin.Plugin;
 
 import java.io.*;
 import java.math.BigInteger;
@@ -12,15 +14,13 @@ import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 
 public class Utils {
-    // 防止备份任务并发
-    public final static BackupMutex BACKUP_MUTEX = new BackupMutex();
-
     /**
      * 获得当前的秒级时间戳
      *
@@ -153,13 +153,13 @@ public class Utils {
     }
 
     /**
-     * 遍历获取指定目录下所有文件的最后哈希值
+     * 遍历获取指定目录下所有文件的目前哈希值
      *
      * @param srcDir 待扫描目录（File对象）
      * @param res    （递归用） 调用时传入null即可
      * @return Map(String - > 文件最后哈希值)对象
      */
-    public static Map<String, String> getLastFileHashes(File srcDir, Map<String, String> res) {
+    public static Map<String, String> getCurrentFileHashes(File srcDir, Map<String, String> res) {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -167,7 +167,7 @@ public class Utils {
             return res;
         for (File file : files) {
             if (file.isFile()) {
-                // 获得相对服务器根目录的路径，比如/root/server/world/region转换为world/region
+                // 获得相对服务器根目录的路径，比如 /root/server/world/region 转换为 world/region
                 String relativePath = pathRelativeToServer(file);
                 // 是文件则加入
                 res.put(
@@ -176,7 +176,7 @@ public class Utils {
                 );
             } else if (file.isDirectory()) {
                 // 是目录则继续
-                getLastFileHashes(file, res);
+                getCurrentFileHashes(file, res);
             }
         }
         return res;
@@ -343,65 +343,111 @@ public class Utils {
         return res.toArray(new ZipFilePath[0]);
     }
 
-
     /**
-     * 设置**所有**世界：是否启动自动保存
+     * 启动指定世界的自动保存
      *
-     * @param value 是否停止
-     * @return 被影响的世界字符串List
+     * @param plugin          插件对象，不可为 null
+     * @param worldSaveStates 之前记录的世界保存状态列表，不可为 null
+     * @apiNote 此方法可在异步线程中调用
      */
-    public static List<String> setWorldsSave(boolean value) {
-        return setWorldsSave(null, value);
+    public static void enableWorldsSave(Plugin plugin, List<WorldSaveState> worldSaveStates) {
+        if (plugin == null || worldSaveStates == null)
+            return;
+        // 记录影响到的世界数量
+        AtomicInteger numAffectedWorlds = new AtomicInteger();
+        List<Pair<World, WorldSaveState>> worldList = new ArrayList<>();
+        for (WorldSaveState wss : worldSaveStates) {
+            World world = Bukkit.getWorld(wss.getWorldName());
+            if (world != null)
+                worldList.add(Pair.of(world, wss));
+        }
+        // 等待主线程任务完成的 CountdownLatch
+        CountDownLatch cdl = new CountDownLatch(1);
+        // 在主线程中，设置全部世界的保存情况
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            // 停止世界自动保存
+            try {
+                worldList.forEach(pair -> {
+                    // 世界目前的自动保存状态
+                    boolean currentAutoSave = pair.getFirst().isAutoSave();
+                    if (currentAutoSave != pair.getSecond().isCurrentAutoSaveState()) {
+                        // 虽然之前关闭了自动保存，但现在状态和记录的不一样，说明在这段时间内，世界的自动保存状态被其他插件修改过，就不作改动
+                        return;
+                    }
+                    if (currentAutoSave == pair.getSecond().isPreviousAutoSaveState()) {
+                        // 原本的自动保存状态和现在的一样，说明世界本来就关闭了自动保存，就不作改动
+                        return;
+                    }
+                    pair.getFirst().setAutoSave(pair.getSecond().isPreviousAutoSaveState());
+                    numAffectedWorlds.getAndIncrement();
+                });
+            } finally {
+                // 主线程任务完成，通知调用线程
+                cdl.countDown();
+            }
+        });
+        try {
+            cdl.await();
+        } catch (InterruptedException e) {
+            System.out.println("Waiting for world auto save stop interrupted:" + e);
+        }
+        System.out.println("Auto-save enabled, affected " + numAffectedWorlds.get() + " worlds.");
     }
 
     /**
-     * 设置指定世界：是否启动自动保存
+     * 关闭指定世界的自动保存
      *
-     * @param worlds 世界名列表
-     * @param value  是否停止
-     * @return 被影响的世界字符串List
+     * @param plugin 插件对象，不可为 null
+     * @param worlds 世界名列表，如果为 null 则表示全部世界
+     * @return 所有世界保存状态组成的 List
+     * @apiNote 此方法可在异步线程中调用
      */
-    public static List<String> setWorldsSave(List<String> worlds, boolean value) {
+    public static List<WorldSaveState> disableWorldsSave(Plugin plugin, List<String> worlds) {
         // 这样写是因为，有的插件（比如一些需要地图还原的小游戏插件）依赖于将 world 设置为非自动保存
-        // 这里我会将受到影响的世界返回，下次设置时可以作为 worlds 参数传入，以免影响到一些世界原有的状态
-        List<String> affectedWorlds = new ArrayList<>(); // 受影响的世界
-        // 等待主线程任务完成的 CountdownLatch
-        CountDownLatch cdl = new CountDownLatch(1);
-        if (PotatoSack.plugin != null) {
-            List<World> worldList;
-            if (worlds == null) {
-                // 如果没有指定世界，则默认为全部
-                worldList = Bukkit.getWorlds();
-            } else {
-                worldList = new ArrayList<>();
-                for (String worldName : worlds) {
-                    World world = Bukkit.getWorld(worldName);
-                    if (world != null)
-                        worldList.add(world);
-                }
-            }
-            // 在主线程中，设置全部世界的保存情况
-            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-                // 停止世界自动保存
-                try {
-                    worldList.forEach(world -> {
-                        if (world.isAutoSave() != value) // 和要设定的值不一样，说明有变更
-                            affectedWorlds.add(world.getName());
-                        world.setAutoSave(value);
-                    });
-                } finally {
-                    // 主线程任务完成，通知调用线程
-                    cdl.countDown();
-                }
-            });
-            try {
-                cdl.await();
-            } catch (InterruptedException e) {
-                System.out.println("Waiting for world auto save stop interrupted:" + e);
+        // 这里特意记录一下每个世界的保存状态和原始状态
+        List<WorldSaveState> worldSaveStates = new ArrayList<>();
+        if (plugin == null)
+            return worldSaveStates;
+        // 记录影响到的世界数量
+        AtomicInteger numAffectedWorlds = new AtomicInteger();
+        List<World> worldList;
+        if (worlds == null) {
+            // 如果没有指定世界，则默认为全部
+            worldList = Bukkit.getWorlds();
+        } else {
+            worldList = new ArrayList<>();
+            for (String worldName : worlds) {
+                World world = Bukkit.getWorld(worldName);
+                if (world != null)
+                    worldList.add(world);
             }
         }
-        System.out.println("[DEBUG] Auto-save " + (value ? "started" : "stopped") + ", affected Worlds: " + String.join(", ", affectedWorlds));
-        return affectedWorlds;
+        // 等待主线程任务完成的 CountdownLatch
+        CountDownLatch cdl = new CountDownLatch(1);
+        // 在主线程中，设置全部世界的保存情况
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            // 停止世界自动保存
+            try {
+                worldList.forEach(world -> {
+                    boolean prevAutoSave = world.isAutoSave();
+                    if (prevAutoSave) // 之前的自动保存状态是启用的
+                        numAffectedWorlds.getAndIncrement();
+                    world.setAutoSave(false);
+                    // 记录这个世界的保存状态
+                    worldSaveStates.add(new WorldSaveState(world.getName(), prevAutoSave, false));
+                });
+            } finally {
+                // 主线程任务完成，通知调用线程
+                cdl.countDown();
+            }
+        });
+        try {
+            cdl.await();
+        } catch (InterruptedException e) {
+            System.out.println("Waiting for world auto save stop interrupted:" + e);
+        }
+        System.out.println("Auto-save disabled, affected " + numAffectedWorlds.get() + " worlds.");
+        return worldSaveStates;
     }
 
     /**

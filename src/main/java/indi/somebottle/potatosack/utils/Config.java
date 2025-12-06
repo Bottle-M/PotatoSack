@@ -2,6 +2,7 @@ package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.Plugin;
 
 import java.io.File;
 import java.io.IOException;
@@ -9,22 +10,28 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Config {
+    private final Plugin plugin; // 插件对象
     private File configFile; // configs.yml文件对象
     private YamlConfiguration config; // configs.yml配置内容
 
+    public Config() {
+        plugin = PotatoSack.getPluginInstance();
+        loadConfig();
+    }
+
     /**
-     * 载入配置文件configs.yml
+     * 载入配置文件 configs.yml
      */
     private void loadConfig() {
         // 插件配置目录
-        File dataDir = PotatoSack.plugin.getDataFolder();
+        File dataDir = plugin.getDataFolder();
         if (!dataDir.exists())
             dataDir.mkdirs();
         // 配置文件
         configFile = new File(dataDir, "configs.yml");
         if (!configFile.exists())
             // 创建默认配置文件（resources/configs.yml）
-            PotatoSack.plugin.saveResource("configs.yml", false);
+            plugin.saveResource("configs.yml", false);
         config = YamlConfiguration.loadConfiguration(configFile);
         inspectConfig();
     }
@@ -107,6 +114,8 @@ public class Config {
         if (config.get("onedrive.refresh-token") == null) {
             config.set("onedrive.refresh-token", "");
         }
+        // TODO: 添加 use-app-folder 配置项，别忘了 resource 目录中的
+        // TODO: 添加 client-type 配置项，别忘了 resource 目录中的
         if (config.get("max-full-backups-retained") == null) {
             config.set("max-full-backups-retained", 3);
         }

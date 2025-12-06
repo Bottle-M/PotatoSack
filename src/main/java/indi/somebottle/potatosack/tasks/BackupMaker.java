@@ -2,16 +2,18 @@ package indi.somebottle.potatosack.tasks;
 
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.PotatoSack;
-import indi.somebottle.potatosack.entities.backup.BackupRecord;
-import indi.somebottle.potatosack.entities.backup.WorldRecord;
-import indi.somebottle.potatosack.entities.backup.ZipFilePath;
-import indi.somebottle.potatosack.entities.onedrive.Item;
-import indi.somebottle.potatosack.onedrive.Client;
+import indi.somebottle.potatosack.clients.base.Client;
+import indi.somebottle.potatosack.clients.base.entities.FileItem;
+import indi.somebottle.potatosack.tasks.entities.BackupRecord;
+import indi.somebottle.potatosack.tasks.entities.WorldRecord;
+import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
+import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.Utils;
 import org.bukkit.World;
+import org.bukkit.plugin.Plugin;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,22 +22,33 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 记录文件.json均放在插件目录plugins/PotatoSack/data下
+ * 记录文件 .json 均放在插件目录 plugins/PotatoSack/data 下
  */
 public class BackupMaker {
-    private final Client odClient;
+    private final Client client;
+    private final Plugin plugin;
     // 记录等数据文件存放目录，plugins/PotatoSack/data
     private final String pluginDataPath;
     // 临时压缩包存放目录，plugins/PotatoSack/temp
     private final String pluginTempPath;
     private final Config config;
     private final Gson gson = new Gson();
+    private final String worldRecordsFilePrefix = "_"; // 世界记录文件名前缀
 
-    public BackupMaker(Client odClient, Config config) {
-        this.odClient = odClient;
+    /**
+     * 构造 BackupMaker
+     *
+     * @param client 文件服务客户端对象
+     * @param config 配置对象
+     * @throws IOException IO 异常，通常是网络原因
+     */
+    @SuppressWarnings({"ResultOfMethodCallIgnored", "unchecked"})
+    public BackupMaker(Client client, Config config) throws IOException {
+        this.client = client;
         this.config = config;
-        pluginTempPath = PotatoSack.plugin.getDataFolder() + File.separator + "temp" + File.separator;
-        pluginDataPath = PotatoSack.plugin.getDataFolder() + File.separator + "data" + File.separator;
+        this.plugin = PotatoSack.getPluginInstance();
+        pluginDataPath = plugin.getDataFolder() + File.separator + "data" + File.separator;
+        pluginTempPath = plugin.getDataFolder() + File.separator + "temp" + File.separator;
         // 建立必要的目录
         File tempDir = new File(pluginTempPath);
         if (!tempDir.exists())
@@ -43,11 +56,30 @@ public class BackupMaker {
         File dataDir = new File(pluginDataPath);
         if (!dataDir.exists())
             dataDir.mkdirs();
+        // 初始化本地备份记录文件
+        // 先检查 backup.json
+        File backupRecordFile = getBackupRecordFile();
+        System.out.println("Reading backup record file: " + backupRecordFile.getAbsolutePath());
+        if (getBackupRecord() == null) {
+            // 这里拉取失败时 getBackupRecord 会自动建立新的 backup 记录文件，创建失败才会返回 null
+            throw new IOException("Failed to create local backup record file.");
+        }
+        // 再检查各个世界的配置文件
+        List<String> worlds = (List<String>) config.getConfig("worlds");
+        for (String worldName : worlds) {
+            File worldRecordFile = getWorldRecordsFile(worldName);
+            System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
+            if (getWorldRecord(worldName) == null) {
+                // 这里拉取失败时 getWorldRecord 会自动建立新的 world 记录文件，创建失败才会返回 null
+                throw new IOException("Failed to create local world record file for world: " + worldName);
+            }
+        }
     }
 
     /**
-     * 请理临时目录中的文件
+     * 请理临时目录中的文件，临时目录只有一层
      */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     public void cleanTempDir() {
         File tempDir = new File(pluginTempPath);
         if (tempDir.exists()) {
@@ -61,9 +93,9 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的backup.json
+     * 写入本地的 backup.json
      *
-     * @param rec 备份记录BackupRecord对象
+     * @param rec 备份记录 BackupRecord 对象
      * @throws IOException IO异常
      */
     public void writeBackupRecord(BackupRecord rec) throws IOException {
@@ -72,7 +104,7 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的backup.json
+     * writeBackupRecord 的重载，写入本地的 backup.json
      *
      * @param lastFullBackupTime  最近一次全量备份时间戳
      * @param lastIncreBackupTime 最近一次增量备份时间戳
@@ -147,16 +179,26 @@ public class BackupMaker {
     }
 
     /**
-     * 取得本地的backup.json对象
+     * 取得本地的 backup.json 对象
      *
      * @return BackupRecord对象
-     * @apiNote 如果backup.json不存在本地，会从云端拉取，拉取失败会返回null
+     * @apiNote 如果 backup.json 不存在本地，会从云端拉取，拉取不成功会自动建立新的 backup.json，创建失败会返回 null
      */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     public BackupRecord getBackupRecord() throws IOException {
         File backupRecordFile = getBackupRecordFile();
-        if (!backupRecordFile.exists())
-            if (!pullRecordsFile("backup"))
-                return null; // 获取失败
+        if (!backupRecordFile.exists()) {
+            if (!pullRecordsFile("backup")) {
+                if (!backupRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
+                    backupRecordFile.getParentFile().mkdirs();
+                if (backupRecordFile.createNewFile()) {
+                    // 初始化文件JSON内容
+                    writeBackupRecord(0, 0, "", "", new ArrayList<>());
+                } else {
+                    return null; // 获取失败
+                }
+            }
+        }
         // 读入backup.json
         String backupJson = new String(Files.readAllBytes(backupRecordFile.toPath()));
         // 解析成配置对象
@@ -169,13 +211,14 @@ public class BackupMaker {
      * @param worldName 世界名
      * @return WorldRecord对象
      * @throws IOException IO异常
-     * @apiNote 如果获取不成功会自动建立新的 _世界名.json。如果连文件都没法新建就会返回 null。
+     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _世界名.json。如果连文件都没法新建就会返回 null。
      */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     public WorldRecord getWorldRecord(String worldName) throws IOException {
         File worldRecordFile = getWorldRecordsFile(worldName);
         if (!worldRecordFile.exists()) {
             // 如果本地没有则尝试从云端拉取
-            if (!pullRecordsFile("_" + worldName)) {
+            if (!pullRecordsFile(worldRecordsFilePrefix + worldName)) {
                 // 如果云端也没有则创建新文件
                 if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
                     worldRecordFile.getParentFile().mkdirs();
@@ -211,11 +254,11 @@ public class BackupMaker {
      * @apiNote _世界名.json中存放世界数据目录中所有文件的最后哈希值
      */
     public File getWorldRecordsFile(String worldName) {
-        return new File(pluginDataPath + "_" + worldName + ".json");
+        return new File(pluginDataPath + worldRecordsFilePrefix + worldName + ".json");
     }
 
     /**
-     * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/*.json
+     * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/[fileName].json
      *
      * @param fileName 文件名
      * @return 是否拉取成功
@@ -234,12 +277,13 @@ public class BackupMaker {
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
      * @apiNote 文件名不包含.json后缀
      */
+    @SuppressWarnings("StringEqualsEmptyString")
     public boolean pullRecordsFile(String[] fileNames) throws IOException {
         // 先对OneDrive下的插件数据目录进行列表
-        List<Item> itemsRes;
-        String latestFolderName = ""; // 找出字典序上最大的一个子目录名，这里的目录名格式形如020240104000001
-        itemsRes = odClient.listItems(Constants.OD_APP_DATA_FOLDER);
-        for (Item item : itemsRes) {
+        List<FileItem> itemsRes;
+        String latestFolderName = ""; // 找出字典序上最大的一个子目录名，这里的目录名格式形如 020240104000001
+        itemsRes = client.listItems(Constants.APP_DATA_FOLDER);
+        for (FileItem item : itemsRes) {
             if (item.isFolder() && item.getName().compareTo(latestFolderName) > 0)
                 latestFolderName = item.getName();
         }
@@ -248,8 +292,8 @@ public class BackupMaker {
         // 从云端拉取backup.json
         boolean success = true;
         for (String name : fileNames) {
-            File recordFile = new File(pluginDataPath + name + ".json");
-            success = odClient.downloadFile(Constants.OD_APP_DATA_FOLDER + "/" + latestFolderName + "/" + name + ".json", recordFile) && success;
+            String recordFilePath = pluginDataPath + name + ".json";
+            success = client.downloadFile(Constants.APP_DATA_FOLDER + "/" + latestFolderName + "/" + name + ".json", recordFilePath) && success;
         }
         return success;
     }
@@ -263,6 +307,7 @@ public class BackupMaker {
      * @throws NullPointerException 空指针异常（按理来说不应该出现，和记录文件读取有关）
      * @apiNote 本方法会进行: <p>1. 压缩相应文件</p><p>2. 上传压缩后的文件</p><p>3. 检查是否有需要删除的备份组（只保留几组）</p>
      */
+    @SuppressWarnings({"StringEqualsEmptyString", "unchecked"})
     public boolean makeFullBackup() throws IOException, InterruptedException, NullPointerException {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
@@ -274,7 +319,7 @@ public class BackupMaker {
         // 1. 扫描世界目录生成包含每个文件最后哈希值的 _世界名.json
         for (String worldName : worlds) {
             // 获得各个世界的配置文件;
-            World world = PotatoSack.plugin.getServer().getWorld(worldName);
+            World world = plugin.getServer().getWorld(worldName);
             if (world == null) {
                 ConsoleSender.logWarn("World " + worldName + " not found, ignored.");
                 continue;
@@ -282,23 +327,23 @@ public class BackupMaker {
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             worldPaths.add(worldAbsPath);
             // 扫描世界目录下的所有文件，计算文件哈希（为增量备份做准备）
-            Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
+            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(new File(worldAbsPath), null);
             // _世界名.json 中存放世界数据目录中所有文件的最后哈希值
-            writeWorldRecord(worldName, lastFileHashes);
+            writeWorldRecord(worldName, currentFileHashes);
         }
         String currFullBackupId; // 备份组号
-        String currDate = Utils.getDateStr(); // 当前日期，形如20240104
+        String currDate = Utils.getDateStr(); // 当前日期，形如 20240104
         String lastFullBackupId = rec.getLastFullBackupId(); // 获得前一次的备份组号
         if (lastFullBackupId.equals("") || !lastFullBackupId.substring(1, 9).equals(currDate)) {
-            // 1. 尚无备份组 或 2. 不是同一天，从序号1重新开始
+            // 1. 尚无备份组 或 2. 不是同一天，从序号 1 重新开始
             currFullBackupId = "0" + currDate + "000001";
         } else {
-            // 末尾序号
-            int serial = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
-            currFullBackupId = "0" + currDate + String.format("%06d", serial);
+            // 否则直接递增序号即可
+            int serialNum = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
+            currFullBackupId = "0" + currDate + String.format("%06d", serialNum);
         }
         // 全量备份文件在云端的路径
-        String remotePath = Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
+        String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
         // 扫描 worldPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
         ZipFilePath[] worldZipFilePaths = Utils.scanPeerDirsToZipPaths(worldPaths.toArray(new String[0]));
         if ((boolean) config.getConfig("use-streaming-compression-upload")) {
@@ -308,22 +353,22 @@ public class BackupMaker {
             // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
             // 要保证这个期间世界数据不会变动，否则会上传失败
             // 储存停止自动保存的世界
-            List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
-            ConsoleSender.toConsole("Temporarily stopped world auto-save...");
+            List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worlds);
+            ConsoleSender.toConsole("Temporarily disabled world auto-save...");
             try {
                 // 202406 开始前先等待 30s，即使关闭了自动保存，之前自动保存可能还有正在异步进行的保存工作
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                if (!odClient.zipPipingUpload(worldZipFilePaths, remotePath, true)) {
+                if (!client.streamCompressAndUpload(worldZipFilePaths, remotePath, true)) {
                     // 如果流式压缩上传失败了就退避 10 分钟
                     putOffFullBackup(rec, 10 * 60L);
                     return false;
                 }
             } finally {
                 // 恢复世界自动保存
-                Utils.setWorldsSave(saveStoppedWorlds, true);
-                ConsoleSender.toConsole("Restarted world auto-save...");
+                Utils.enableWorldsSave(plugin, worldSaveStates);
+                ConsoleSender.toConsole("Enabled world auto-save...");
             }
         } else {
             // ################### 采用先把压缩后的zip文件全写入硬盘，再把硬盘中的文件上传的方式
@@ -336,7 +381,7 @@ public class BackupMaker {
                 return false;
             // 3. 上传压缩好的文件
             ConsoleSender.toConsole("Uploading Full Backup...");
-            if (!odClient.uploadLargeFile(tempOutputFilePath, remotePath))
+            if (!client.uploadLargeFile(tempOutputFilePath, remotePath))
                 return false;
         }
         // 4. 更新备份记录
@@ -346,25 +391,25 @@ public class BackupMaker {
         // 全量备份后也要修改增量备份时间记录
         rec.setLastIncreBackupTime(Utils.timeStamp());
         rec.setLastIncreBackupId(""); // 同时重置增量备份ID，让其从000001重新开始
-        // 重置增量备份历史
+        // 全量备份后重置增量备份历史
         rec.clearIncreBackupsHistory();
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
-        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
+        if (!client.uploadFile(pluginDataPath + "backup.json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
             return false;
         for (String worldName : worlds) {
-            if (!odClient.uploadFile(pluginDataPath + "_" + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + currFullBackupId + "/_" + worldName + ".json"))
+            if (!client.uploadFile(pluginDataPath + worldRecordsFilePrefix + worldName + ".json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/_" + worldName + ".json"))
                 return false;
         }
         // 6. 删除过时备份
         // 列出云端目录中所有目录
-        List<Item> itemsRes = odClient.listItems(Constants.OD_APP_DATA_FOLDER);
+        List<FileItem> itemsRes = client.listItems(Constants.APP_DATA_FOLDER);
         // 筛出目录
         // 按字典升序排序，把老备份放在前面
-        List<Item> folderItems = itemsRes.stream()
-                .filter(Item::isFolder)
-                .sorted(Comparator.comparing(Item::getName))
+        List<FileItem> folderItems = itemsRes.stream()
+                .filter(FileItem::isFolder)
+                .sorted(Comparator.comparing(FileItem::getName))
                 .collect(Collectors.toList());
         int deleteCnt = folderItems.size() - (int) config.getConfig("max-full-backups-retained");
         if (deleteCnt > 0) {
@@ -372,7 +417,7 @@ public class BackupMaker {
             for (int i = 0; i < deleteCnt; i++) {
                 // 移除多余备份
                 String deleteName = folderItems.get(i).getName();
-                if (!odClient.deleteItem(Constants.OD_APP_DATA_FOLDER + "/" + deleteName))
+                if (!client.deleteItem(Constants.APP_DATA_FOLDER + "/" + deleteName))
                     return false;
             }
         }
@@ -388,6 +433,7 @@ public class BackupMaker {
      * @throws InterruptedException 中断异常
      * @throws NullPointerException 空指针异常（按理来说不应该出现，和记录文件读取有关）
      */
+    @SuppressWarnings({"StringEqualsEmptyString", "unchecked"})
     public boolean makeIncreBackup() throws IOException, InterruptedException, NullPointerException {
         ConsoleSender.toConsole("Making incremental backup...");
         // 获得备份记录文件
@@ -407,25 +453,26 @@ public class BackupMaker {
         // 1. 扫描每个世界目录找到有差异的文件
         for (String worldName : worlds) {
             // 获得各个世界的配置文件;
-            World world = PotatoSack.plugin.getServer().getWorld(worldName);
+            World world = plugin.getServer().getWorld(worldName);
             if (world == null) {
                 ConsoleSender.logWarn("World " + worldName + " not found, ignored.");
                 continue;
             }
             String worldAbsPath = world.getWorldFolder().getAbsolutePath();
             // 扫描世界目录下的所有文件，计算哈希值（为增量备份做准备）
-            Map<String, String> lastFileHashes = Utils.getLastFileHashes(new File(worldAbsPath), null);
+            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(new File(worldAbsPath), null);
             // 获得上一次增量备份时的文件哈希值
             WorldRecord prevWorldRec = getWorldRecord(worldName);
             Map<String, String> prevLastFileHashes = prevWorldRec.getLastFileHashes();
             // 找到被删除的文件的路径
             deletedPaths.addAll(
-                    Utils.getDeletedFilePaths(prevLastFileHashes, lastFileHashes)
+                    Utils.getDeletedFilePaths(prevLastFileHashes, currentFileHashes)
             );
             // 找到发生变动的文件的绝对路径
-            for (String key : lastFileHashes.keySet()) {
-                // 新记录中新出现的文件 or 新记录中的文件最后修改时间相比旧记录有变动
-                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(lastFileHashes.get(key)))
+            for (String key : currentFileHashes.keySet()) {
+                // 新记录中新出现的文件 or 新记录中的文件哈希相比旧记录有变动
+                // key 其实是文件的相对路径
+                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(currentFileHashes.get(key)))
                     increFilePaths.add( // 添加到增量文件列表
                             new ZipFilePath(
                                     // 获得文件绝对路径以便Zip打包, key 就是文件相对于服务端根目录的相对路径
@@ -435,7 +482,7 @@ public class BackupMaker {
                     );
             }
             // 更新 _世界名.json 中存放世界数据目录中所有文件的最后哈希值
-            writeWorldRecord(worldName, lastFileHashes);
+            writeWorldRecord(worldName, currentFileHashes);
         }
         // 若没有文件变更则不进行本次增量备份
         if (increFilePaths.size() == 0 && deletedPaths.size() == 0) {
@@ -460,7 +507,7 @@ public class BackupMaker {
             increBackupId = String.format("%06d", increBackupIdNum + 1);
         }
         // 压缩包在云端的路径
-        String remotePath = Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/incre" + increBackupId + ".zip";
+        String remotePath = Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/incre" + increBackupId + ".zip";
         if ((boolean) config.getConfig("use-streaming-compression-upload")) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Upload ]<------");
@@ -468,21 +515,21 @@ public class BackupMaker {
             // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
             // 要保证这个期间世界数据不会变动，否则会上传失败
             // 储存停止自动保存的世界
-            List<String> saveStoppedWorlds = Utils.setWorldsSave(false);
+            List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worlds);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
                 // 202406 开始前先等待 30s，即使关闭了自动保存，之前自动保存可能还有正在异步进行的保存工作
                 // 尽量等待这些工作完成
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
-                if (!odClient.zipPipingUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
+                if (!client.streamCompressAndUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
                     // 流式压缩上传如果失败就推迟 10 分钟
                     putOffIncreBackup(rec, 10 * 60L);
                     return false;
                 }
             } finally {
                 // 恢复世界自动保存
-                Utils.setWorldsSave(saveStoppedWorlds, true);
+                Utils.enableWorldsSave(plugin, worldSaveStates);
                 ConsoleSender.toConsole("Restarted world auto-save...");
             }
         } else {
@@ -496,7 +543,7 @@ public class BackupMaker {
                 return false;
             // 3. 上传
             ConsoleSender.toConsole("Uploading Incremental Backup...");
-            if (!odClient.uploadFile(tempOutputFilePath, remotePath))
+            if (!client.uploadFile(tempOutputFilePath, remotePath))
                 return false;
         }
         // 4. 更新备份记录
@@ -508,13 +555,35 @@ public class BackupMaker {
         writeBackupRecord(rec);
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
-        if (!odClient.uploadFile(pluginDataPath + "backup.json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
+        if (!client.uploadFile(pluginDataPath + "backup.json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
             return false;
         for (String worldName : worlds) {
-            if (!odClient.uploadFile(pluginDataPath + "_" + worldName + ".json", Constants.OD_APP_DATA_FOLDER + "/" + lastFullBackupId + "/_" + worldName + ".json"))
+            if (!client.uploadFile(pluginDataPath + worldRecordsFilePrefix + worldName + ".json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/_" + worldName + ".json"))
                 return false;
         }
         ConsoleSender.toConsole("Successfully made incremental backup: " + increBackupId + " in backup group " + lastFullBackupId);
         return true;
+    }
+
+    /**
+     * 获取上次全量备份时间戳
+     *
+     * @return 时间戳，单位秒
+     * @throws IOException IO 异常
+     */
+    public long getLastFullBackupTime() throws IOException {
+        BackupRecord rec = getBackupRecord();
+        return rec.getLastFullBackupTime();
+    }
+
+    /**
+     * 获取上次增量备份时间戳
+     *
+     * @return 时间戳，单位秒
+     * @throws IOException IO 异常
+     */
+    public long getLastIncreBackupTime() throws IOException {
+        BackupRecord rec = getBackupRecord();
+        return rec.getLastIncreBackupTime();
     }
 }

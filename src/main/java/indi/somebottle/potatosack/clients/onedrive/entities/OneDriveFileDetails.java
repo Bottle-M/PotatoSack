@@ -1,9 +1,9 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 /**
  * children - value - item中的file字段
  */
-public class FileDetails {
+public class OneDriveFileDetails {
     private String mimeType;
 
     public String getMimeType() {

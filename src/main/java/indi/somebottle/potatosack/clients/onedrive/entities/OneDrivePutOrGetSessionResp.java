@@ -1,11 +1,11 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 import java.util.List;
 
 /**
  * PUT/GET 请求 uploadUrl 的响应
  */
-public class PutOrGetSessionResp {
+public class OneDrivePutOrGetSessionResp {
     private String expirationDateTime;
     private List<String> nextExpectedRanges;
 

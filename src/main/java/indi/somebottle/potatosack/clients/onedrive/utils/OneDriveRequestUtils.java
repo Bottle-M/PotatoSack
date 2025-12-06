@@ -1,7 +1,7 @@
-package indi.somebottle.potatosack.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.utils;
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
+import indi.somebottle.potatosack.clients.onedrive.entities.OneDrivePutOrGetSessionResp;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -11,13 +11,13 @@ import okhttp3.ResponseBody;
 import java.io.IOException;
 import java.util.List;
 
-public class RequestUtils {
+public class OneDriveRequestUtils {
     private static final Gson gson = new Gson();
 
     /**
      * 此类用于包装 OneDrive 相关的部分共用请求方法
      */
-    private RequestUtils() {
+    private OneDriveRequestUtils() {
     }
 
     /**
@@ -42,7 +42,7 @@ public class RequestUtils {
                 // 成功拿到
                 ConsoleSender.toConsole("Get next expected range successfully.");
                 // 解析响应
-                PutOrGetSessionResp respObj = gson.fromJson(respBody.string(), PutOrGetSessionResp.class);
+                OneDrivePutOrGetSessionResp respObj = gson.fromJson(respBody.string(), OneDrivePutOrGetSessionResp.class);
                 List<String> nextRanges = respObj.getNextExpectedRanges();
                 if (nextRanges != null && nextRanges.size() > 0) {
                     String[] range = nextRanges.get(0).split("-");

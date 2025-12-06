@@ -1,11 +1,11 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 import com.google.gson.annotations.SerializedName;
 
 /**
  * 申请新AccessToken的返回字段
  */
-public class RefreshResp {
+public class OneDriveRefreshResp {
     @SerializedName("access_token")
     public String accessToken;
     @SerializedName("token_type")

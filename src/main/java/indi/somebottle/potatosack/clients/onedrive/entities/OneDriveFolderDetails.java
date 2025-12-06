@@ -1,9 +1,9 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 /**
  * children - value - item中的folder字段
  */
-public class FolderDetails {
+public class OneDriveFolderDetails {
 
     private long childCount;
 

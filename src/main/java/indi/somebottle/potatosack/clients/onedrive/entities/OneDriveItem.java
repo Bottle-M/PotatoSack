@@ -1,18 +1,19 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 import com.google.gson.annotations.SerializedName;
+import indi.somebottle.potatosack.clients.base.entities.FileItem;
 
 /**
  * children - value - item
  */
-public class Item {
+public class OneDriveItem implements FileItem {
     private String createdDateTime;
     private String id;
     private String lastModifiedDateTime;
     private String name;
     private long size;
-    private FolderDetails folder;
-    private FileDetails file;
+    private OneDriveFolderDetails folder;
+    private OneDriveFileDetails file;
     private String webUrl;
     @SerializedName("@microsoft.graph.downloadUrl")
     private String downloadUrl;
@@ -97,19 +98,19 @@ public class Item {
         this.size = size;
     }
 
-    public FolderDetails getFolder() {
+    public OneDriveFolderDetails getFolder() {
         return folder;
     }
 
-    public void setFolder(FolderDetails folder) {
+    public void setFolder(OneDriveFolderDetails folder) {
         this.folder = folder;
     }
 
-    public FileDetails getFile() {
+    public OneDriveFileDetails getFile() {
         return file;
     }
 
-    public void setFile(FileDetails file) {
+    public void setFile(OneDriveFileDetails file) {
         this.file = file;
     }
 

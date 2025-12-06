@@ -1,13 +1,10 @@
-package indi.somebottle.potatosack.onedrive;
+package indi.somebottle.potatosack.clients.onedrive;
 
 import com.google.gson.Gson;
-import indi.somebottle.potatosack.PotatoSack;
-import indi.somebottle.potatosack.entities.backup.ZipFilePath;
-import indi.somebottle.potatosack.entities.onedrive.PutOrGetSessionResp;
-import indi.somebottle.potatosack.utils.ConsoleSender;
-import indi.somebottle.potatosack.utils.Constants;
-import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
-import indi.somebottle.potatosack.utils.Utils;
+import indi.somebottle.potatosack.clients.onedrive.entities.OneDrivePutOrGetSessionResp;
+import indi.somebottle.potatosack.clients.onedrive.utils.OneDriveRequestUtils;
+import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
 import java.io.IOException;
@@ -24,7 +21,7 @@ import java.util.zip.ZipOutputStream;
  * 如果剩余空间不够，可能导致压缩文件写入失败。
  * 这个模块的思路是时间换空间，先模拟压缩一遍，计算出压缩文件的总大小，然后再压缩一遍，边压缩边上传，即可避免磁盘剩余空间不够的情况
  */
-public class StreamedZipUploader {
+public class OneDriveStreamedZipUploader {
     private final OkHttpClient client = new OkHttpClient.Builder()
             .connectTimeout(Constants.OKHTTP_CONNECT_TIMEOUT, TimeUnit.SECONDS)
             .writeTimeout(Constants.OKHTTP_WRITE_TIMEOUT, TimeUnit.SECONDS)
@@ -34,10 +31,13 @@ public class StreamedZipUploader {
             .build();
     private final Gson gson = new Gson();
     private String uploadUrl; // 文件上传时请求的 URL
-    private final Client odClient; // OneDrive 模块
+    private final OneDriveClient odClient; // OneDrive 模块
     private final String targetUploadPath; // 文件在 OneDrive 中的路径
     private long paddingSize = 0; // 在计算出 totalSize 后，在末尾填充的空白字节数
     private long totalSize = 0; // 压缩文件总大小
+    // 分块上传时每块的大小，单位字节（320KiB 的整数倍）
+    public static int CHUNK_SIZE = 1024 * 320 * 50; // 15.625MiB 一块（320 KiB 的整数倍）
+    private static final ValueAvgTracker streamedOverflowBytesTracker = new ValueAvgTracker(); // 流式上传溢出字节数平均数统计
 
     /**
      * 构建 StreamedZipUploader
@@ -45,7 +45,7 @@ public class StreamedZipUploader {
      * @param odClient   OneDrive Client 对象
      * @param remotePath 文件在 OneDrive 中的远程目录路径，比如"Documents/test.txt"指的就是 "根目录/Documents/test.txt"
      */
-    public StreamedZipUploader(Client odClient, String remotePath) {
+    public OneDriveStreamedZipUploader(OneDriveClient odClient, String remotePath) {
         this.targetUploadPath = remotePath;
         this.odClient = odClient;
     }
@@ -55,7 +55,7 @@ public class StreamedZipUploader {
      */
     private class UploadOutputStream extends OutputStream {
         // 缓冲区的大小就是一块文件的大小
-        private byte[] buffer = new byte[Constants.CHUNK_SIZE];
+        private byte[] buffer = new byte[CHUNK_SIZE];
         private int writePos = 0; // 写入位置
         private long chunkOffset = 0L; // 当前块对应的 range 的起始字节编号
         private long expectRangeStart = 0L; // 服务端期待下次收到的 range 的起始字节编号（服务端返回，用来判断上传是否缺失了字节）
@@ -134,7 +134,7 @@ public class StreamedZipUploader {
                         // 返回202说明还需要上传其他字节
                         if (respBody == null) throw new IOException("No response body.");
                         // 读取响应
-                        PutOrGetSessionResp respObj = gson.fromJson(respBody.string(), PutOrGetSessionResp.class);
+                        OneDrivePutOrGetSessionResp respObj = gson.fromJson(respBody.string(), OneDrivePutOrGetSessionResp.class);
                         // 读取服务端期待收到的range
                         List<String> nextRanges = respObj.getNextExpectedRanges();
                         if (nextRanges != null && nextRanges.size() > 0) {
@@ -173,7 +173,7 @@ public class StreamedZipUploader {
                         case 416:
                             // 遇到 416 问题时，检查服务端要求接收的下一个分片的起始字节编号是什么
                             ConsoleSender.toConsole("Fragment overlap, querying server to determine whether the transfer can proceed.");
-                            long[] nextExpectedRange = RequestUtils.getNextExpectedRange(client, uploadUrl);
+                            long[] nextExpectedRange = OneDriveRequestUtils.getNextExpectedRange(client, uploadUrl);
                             ConsoleSender.toConsole("Next expect range start: " + nextExpectedRange[0] + ", current rangeEnd: " + currRangeEnd);
                             if (nextExpectedRange[0] == currRangeEnd + 1) {
                                 // 当前分片 range 的末尾字节编号 +1 就是服务端期待接收到的下一个字节，说明当前分片服务端已经成功收到
@@ -266,7 +266,7 @@ public class StreamedZipUploader {
             writePos = (int) (totalSize - chunkOffset);
             // 健壮性考虑: 如果误差字节数大于一块的大小，则重设缓冲区
             if (writePos > buffer.length) {
-                if (writePos > 10L * Constants.CHUNK_SIZE) {
+                if (writePos > 10L * CHUNK_SIZE) {
                     // 但是误差字节数不允许过大，至多为 10 块的大小
                     ConsoleSender.logWarn("Failed to pad. File size error is too large!!!");
                     throw new IOException("Unexpected: File size error is too large!!!");
@@ -409,7 +409,7 @@ public class StreamedZipUploader {
                 // 异常的多态
                 // 出现 400 问题的时候比对 rangeEnd 和 totalSize，如果 rangeEnd >= totalSize，说明是因为超出约定大小，需要立即重试
                 // 获得溢出的字节数，更新平均溢出的字节数
-                PotatoSack.streamedOverflowBytesTracker.update(e.getOverflowSize());
+                streamedOverflowBytesTracker.update(e.getOverflowSize());
                 // 如果 400 错误的原因是 range 错误，立即重试，自动填充空白字符
                 if (retry) {
                     // 重试过了，但还是溢出了，回避
@@ -419,7 +419,7 @@ public class StreamedZipUploader {
                 ConsoleSender.toConsole("Data size overflowed the previous agreed size. Retrying... ");
                 // 没有重试过则进行重试
                 // 末尾填充的空白字节数 = 5 × 平均溢出的字节数
-                paddingSize = 5 * PotatoSack.streamedOverflowBytesTracker.getAvg();
+                paddingSize = 5 * streamedOverflowBytesTracker.getAvg();
                 // 立即重试一次
                 return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
             } catch (Exception e) {

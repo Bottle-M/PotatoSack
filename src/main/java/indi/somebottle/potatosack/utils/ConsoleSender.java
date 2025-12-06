@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 
 public final class ConsoleSender {
     /**
@@ -16,11 +17,12 @@ public final class ConsoleSender {
     public static void logError(String msg) {
         String finalMsg = "Fatal: " + msg;
         System.out.println("[Println] " + finalMsg);
-        if (PotatoSack.plugin != null) {
+        Plugin plugin = PotatoSack.getPluginInstance();
+        if (plugin != null) {
             // 记录到服务端日志
             // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
-            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-                PotatoSack.plugin.getLogger().severe("[Logger] " + finalMsg);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                plugin.getLogger().severe("[Logger] " + finalMsg);
             });
         }
     }
@@ -34,11 +36,12 @@ public final class ConsoleSender {
     public static void logWarn(String msg) {
         String finalMsg = "Warning: " + msg;
         System.out.println("[Println] " + finalMsg);
-        if (PotatoSack.plugin != null) {
+        Plugin plugin = PotatoSack.getPluginInstance();
+        if (plugin != null) {
             // 记录到服务端日志
             // 因为logWarn可能在异步方法中被调用，这里需要把getLogger.warning通过runTask放回主线程调用
-            Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
-                PotatoSack.plugin.getLogger().warning("[Logger] " + finalMsg);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                plugin.getLogger().warning("[Logger] " + finalMsg);
             });
         }
     }
@@ -73,7 +76,11 @@ public final class ConsoleSender {
      */
     public static void toPlayer(Player target, String text) {
         // 放在主线程中执行
-        Bukkit.getScheduler().runTask(PotatoSack.plugin, () -> {
+        Plugin plugin = PotatoSack.getPluginInstance();
+        if (plugin == null) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
             target.sendMessage(ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "]" + ChatColor.RESET + " " + text);
         });
     }

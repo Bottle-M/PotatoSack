@@ -1,19 +1,19 @@
-package indi.somebottle.potatosack.entities.onedrive;
+package indi.somebottle.potatosack.clients.onedrive.entities;
 
 import com.google.gson.annotations.SerializedName;
 
 /**
  * children - 请求建立目录
  */
-public class FolderRequest {
+public class OneDriveFolderRequest {
     private String name;
-    private FolderDetails folder;
+    private OneDriveFolderDetails folder;
     @SerializedName("@microsoft.graph.conflictBehavior")
     private String behavior;
 
-    public FolderRequest(String name) {
+    public OneDriveFolderRequest(String name) {
         this.name = name;
-        this.folder = new FolderDetails();
+        this.folder = new OneDriveFolderDetails();
         this.behavior = "rename";
     }
 
@@ -25,11 +25,11 @@ public class FolderRequest {
         this.name = name;
     }
 
-    public FolderDetails getFolder() {
+    public OneDriveFolderDetails getFolder() {
         return folder;
     }
 
-    public void setFolder(FolderDetails folder) {
+    public void setFolder(OneDriveFolderDetails folder) {
         this.folder = folder;
     }
 
