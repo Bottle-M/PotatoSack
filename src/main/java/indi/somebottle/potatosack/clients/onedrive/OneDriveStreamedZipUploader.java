@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.clients.onedrive;
 import com.google.gson.Gson;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDrivePutOrGetSessionResp;
 import indi.somebottle.potatosack.clients.onedrive.utils.OneDriveRequestUtils;
+import indi.somebottle.potatosack.exceptions.DataSizeOverflowException;
 import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
 import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
@@ -16,10 +17,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipOutputStream;
 
 /**
- * 本模块用于实现在压缩的同时进行上传，可以避免这样的情况：
- * 比如很多家的面板服会限制磁盘大小，而一般的备份建立方式会先建立一个 Zip 文件存放在本地临时目录，然后再进行上传，这就要求磁盘剩余的空间能容纳下这个压缩包。
- * 如果剩余空间不够，可能导致压缩文件写入失败。
- * 这个模块的思路是时间换空间，先模拟压缩一遍，计算出压缩文件的总大小，然后再压缩一遍，边压缩边上传，即可避免磁盘剩余空间不够的情况
+ * <p>本模块用于实现在压缩的同时进行上传，可以避免这样的情况：</p>
+ * <p>比如很多家的面板服会限制磁盘大小，而一般的备份建立方式会先建立一个 Zip 文件存放在本地临时目录，然后再进行上传，这就要求磁盘剩余的空间能容纳下这个压缩包。</p>
+ * <p>如果剩余空间不够，可能导致压缩文件写入失败。</p>
+ * <p>这个模块的思路是时间换空间，先模拟压缩一遍，计算出压缩文件的总大小，然后再压缩一遍，边压缩边上传，即可避免磁盘剩余空间不够的情况</p>
  */
 public class OneDriveStreamedZipUploader {
     private final OkHttpClient client = new OkHttpClient.Builder()
@@ -313,27 +314,9 @@ public class OneDriveStreamedZipUploader {
     }
 
     /**
-     * CounterOutputStream 不执行任何写入操作，仅仅计算 Zip 文件流输出的字节数
-     */
-    private static class CounterOutputStream extends OutputStream {
-        // 计数器
-        private final AtomicLong counter;
-
-        public CounterOutputStream(AtomicLong counter) {
-            this.counter = counter;
-        }
-
-        @Override
-        public void write(int b) {
-            counter.incrementAndGet();
-        }
-
-    }
-
-    /**
      * 将指定的文件打包成Zip并上传
      *
-     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param zipFilePaths 要打包的文件路径对 ZipFilePath[]
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 是否打包上传成功
      */
@@ -444,23 +427,6 @@ public class OneDriveStreamedZipUploader {
         }
         ConsoleSender.toConsole("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
-    }
-
-    /**
-     * 当上传的文件大小超出了先前模拟压缩计算出的大小时抛出此异常
-     */
-    public static class DataSizeOverflowException extends IOException {
-        private final long overflowSize;
-
-        public DataSizeOverflowException(String msg, long overflowSize) {
-            super(msg);
-            // 实际上传大小相较模拟压缩计算的大小溢出了多少字节
-            this.overflowSize = overflowSize;
-        }
-
-        public long getOverflowSize() {
-            return overflowSize;
-        }
     }
 
 }
