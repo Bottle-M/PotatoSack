@@ -22,6 +22,7 @@ public class Config {
     /**
      * 载入配置文件 configs.yml
      */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     private void loadConfig() {
         // 插件配置目录
         File dataDir = plugin.getDataFolder();
@@ -114,8 +115,12 @@ public class Config {
         if (config.get("onedrive.refresh-token") == null) {
             config.set("onedrive.refresh-token", "");
         }
-        // TODO: 添加 use-app-folder 配置项，别忘了 resource 目录中的
-        // TODO: 添加 client-type 配置项，别忘了 resource 目录中的
+        if (config.get("onedrive.use-app-folder") == null) {
+            config.set("onedrive.use-app-folder", true);
+        }
+        if (config.get("client-type") == null) {
+            config.set("client-type", "onedrive");
+        }
         if (config.get("max-full-backups-retained") == null) {
             config.set("max-full-backups-retained", 3);
         }

@@ -1,7 +1,11 @@
+# Client Type
+client-type: onedrive
+
 # OneDrive API Configuration (Support OneDrive Business(ODB)/Personal(ODC))
 onedrive:
   # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
   # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool
+  use-app-folder: true
   client-id:
   client-secret:
   refresh-token:
