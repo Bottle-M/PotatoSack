@@ -8,12 +8,10 @@ import indi.somebottle.potatosack.tasks.entities.BackupRecord;
 import indi.somebottle.potatosack.tasks.entities.WorldRecord;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
 import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
-import indi.somebottle.potatosack.utils.Config;
-import indi.somebottle.potatosack.utils.ConsoleSender;
-import indi.somebottle.potatosack.utils.Constants;
-import indi.somebottle.potatosack.utils.Utils;
+import indi.somebottle.potatosack.utils.*;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
@@ -34,6 +32,14 @@ public class BackupMaker {
     private final Config config;
     private final Gson gson = new Gson();
     private final String worldRecordsFilePrefix = "_"; // 世界记录文件名前缀
+    /**
+     * 全量备份指数退避计算器 (分钟)
+     */
+    private final ExponentialBackoffCalculator fullBackupBackoffCalculator;
+    /**
+     * 增量备份指数退避计算器 (分钟)
+     */
+    private final ExponentialBackoffCalculator increBackupBackoffCalculator;
 
     /**
      * 构造 BackupMaker
@@ -74,6 +80,9 @@ public class BackupMaker {
                 throw new IOException("Failed to create local world record file for world: " + worldName);
             }
         }
+        // 初始化指数退避计算器
+        fullBackupBackoffCalculator = new ExponentialBackoffCalculator(Utils.objToLong(config.getConfig("full-backup-interval")));
+        increBackupBackoffCalculator = new ExponentialBackoffCalculator(Utils.objToLong(config.getConfig("incremental-backup-check-interval")));
     }
 
     /**
@@ -125,28 +134,30 @@ public class BackupMaker {
     }
 
     /**
-     * 将下次全量备份延迟至当前时间的 sec 秒后
+     * 将下次全量备份延迟至当前时间的一段时间后（指数退避）
      *
      * @param rec BackupRecord 备份记录文件对象
-     * @param sec 推迟的秒数
      * @throws IOException 文件读写异常
      */
-    public void putOffFullBackup(BackupRecord rec, long sec) throws IOException {
+    public void putOffFullBackup(BackupRecord rec) throws IOException {
         long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
+        long sec = fullBackupBackoffCalculator.getNextBackoffTime() * 60;
+        fullBackupBackoffCalculator.backoff();
         rec.setLastFullBackupTime(Utils.timeStamp() - fullBackupInterval * 60 + sec);
         // 更新 backup.json
         writeBackupRecord(rec);
     }
 
     /**
-     * 将下次增量备份延迟到当前时间的 sec 秒后
+     * 将下次增量备份延迟到当前时间的一段时间后（指数退避）
      *
      * @param rec BackupRecord 备份记录文件对象
-     * @param sec 推迟的秒数
      * @throws IOException 文件读写异常
      */
-    public void putOffIncreBackup(BackupRecord rec, long sec) throws IOException {
+    public void putOffIncreBackup(BackupRecord rec) throws IOException {
         long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
+        long sec = increBackupBackoffCalculator.getNextBackoffTime() * 60;
+        increBackupBackoffCalculator.backoff();
         rec.setLastIncreBackupTime(Utils.timeStamp() - increBackupInterval * 60 + sec);
         // 更新 backup.json
         writeBackupRecord(rec);
@@ -299,6 +310,27 @@ public class BackupMaker {
     }
 
     /**
+     * 获取当前的全量备份组号
+     *
+     * @param rec 备份记录对象
+     * @return 下一个全量备份组号
+     */
+    private static @NotNull String getNextFullBackupId(BackupRecord rec) {
+        String currFullBackupId; // 备份组号
+        String currDate = Utils.getDateStr(); // 当前日期，形如 20240104
+        String lastFullBackupId = rec.getLastFullBackupId(); // 获得前一次的备份组号
+        if (lastFullBackupId.equals("") || !lastFullBackupId.substring(1, 9).equals(currDate)) {
+            // 1. 尚无备份组 或 2. 不是同一天，从序号 1 重新开始
+            currFullBackupId = "0" + currDate + "000001";
+        } else {
+            // 否则直接递增序号即可
+            int serialNum = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
+            currFullBackupId = "0" + currDate + String.format("%06d", serialNum);
+        }
+        return currFullBackupId;
+    }
+
+    /**
      * 建立一个全量备份
      *
      * @return 是否成功
@@ -331,17 +363,7 @@ public class BackupMaker {
             // _世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, currentFileHashes);
         }
-        String currFullBackupId; // 备份组号
-        String currDate = Utils.getDateStr(); // 当前日期，形如 20240104
-        String lastFullBackupId = rec.getLastFullBackupId(); // 获得前一次的备份组号
-        if (lastFullBackupId.equals("") || !lastFullBackupId.substring(1, 9).equals(currDate)) {
-            // 1. 尚无备份组 或 2. 不是同一天，从序号 1 重新开始
-            currFullBackupId = "0" + currDate + "000001";
-        } else {
-            // 否则直接递增序号即可
-            int serialNum = Integer.parseInt(lastFullBackupId.substring(9)) + 1;
-            currFullBackupId = "0" + currDate + String.format("%06d", serialNum);
-        }
+        String currFullBackupId = getNextFullBackupId(rec);
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
         // 扫描 worldPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
@@ -361,8 +383,8 @@ public class BackupMaker {
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
                 if (!client.streamCompressAndUpload(worldZipFilePaths, remotePath, true)) {
-                    // 如果流式压缩上传失败了就退避 10 分钟
-                    putOffFullBackup(rec, 10 * 60L);
+                    // 如果流式压缩上传失败了就指数退避
+                    putOffFullBackup(rec);
                     return false;
                 }
             } finally {
@@ -381,9 +403,13 @@ public class BackupMaker {
                 return false;
             // 3. 上传压缩好的文件
             ConsoleSender.toConsole("Uploading Full Backup...");
-            if (!client.uploadLargeFile(tempOutputFilePath, remotePath))
+            if (!client.uploadLargeFile(tempOutputFilePath, remotePath)) {
+                putOffFullBackup(rec);
                 return false;
+            }
         }
+        // 如果备份成功了就重置指数退避计算器
+        fullBackupBackoffCalculator.reset();
         // 4. 更新备份记录
         // 写入backup.json
         rec.setLastFullBackupId(currFullBackupId);
@@ -523,8 +549,8 @@ public class BackupMaker {
                 ConsoleSender.toConsole("Waiting for 30s before backup start...");
                 Thread.sleep(30000);
                 if (!client.streamCompressAndUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
-                    // 流式压缩上传如果失败就推迟 10 分钟
-                    putOffIncreBackup(rec, 10 * 60L);
+                    // 流式压缩上传如果失败就指数退避
+                    putOffIncreBackup(rec);
                     return false;
                 }
             } finally {
@@ -543,9 +569,13 @@ public class BackupMaker {
                 return false;
             // 3. 上传
             ConsoleSender.toConsole("Uploading Incremental Backup...");
-            if (!client.uploadFile(tempOutputFilePath, remotePath))
+            if (!client.uploadFile(tempOutputFilePath, remotePath)) {
+                putOffIncreBackup(rec);
                 return false;
+            }
         }
+        // 如果成功了就重置指数退避计算器
+        increBackupBackoffCalculator.reset();
         // 4. 更新备份记录
         rec.setLastIncreBackupId(increBackupId);
         long currentTimestamp = Utils.timeStamp();

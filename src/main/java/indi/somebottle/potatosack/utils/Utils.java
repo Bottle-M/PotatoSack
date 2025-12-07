@@ -76,7 +76,7 @@ public class Utils {
     }
 
     /**
-     * 将代表数值的Object对象转换为long
+     * 将代表数值的 Object 对象转换为 long
      *
      * @param obj Object
      * @return long
