@@ -5,24 +5,26 @@ package indi.somebottle.potatosack.utils;
  */
 public class ExponentialBackoffCalculator {
     private final long upperBound;
-    private long nextBackoffTime = 1;
+    private final long baseBackoff;
+    private long nextBackoffTime;
 
     /**
      * 初始化指数退避时间计算器
      *
-     * @param upperBound 最大退避时间（某个单位）
+     * @param baseBackoff 基础退避时间（某个单位）
+     * @param upperBound  最大退避时间（某个单位）
      */
-    public ExponentialBackoffCalculator(long upperBound) {
+    public ExponentialBackoffCalculator(long baseBackoff, long upperBound) {
+        this.baseBackoff = baseBackoff;
         this.upperBound = upperBound;
         reset();
     }
 
     /**
-     * 初始化指数退避时间计算器，默认最大退避时间为 Long.MAX_VALUE 个单位
+     * 初始化指数退避时间计算器，默认退避基础时间 1 个单位，最大退避时间为 Long.MAX_VALUE 个单位
      */
     public ExponentialBackoffCalculator() {
-        this.upperBound = Long.MAX_VALUE;
-        reset();
+        this(1, Long.MAX_VALUE);
     }
 
     /**
@@ -42,6 +44,6 @@ public class ExponentialBackoffCalculator {
     }
 
     public void reset() {
-        nextBackoffTime = 1;
+        nextBackoffTime = Math.min(baseBackoff, upperBound);
     }
 }

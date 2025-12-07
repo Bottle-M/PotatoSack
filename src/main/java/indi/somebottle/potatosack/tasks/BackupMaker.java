@@ -81,8 +81,8 @@ public class BackupMaker {
             }
         }
         // 初始化指数退避计算器
-        fullBackupBackoffCalculator = new ExponentialBackoffCalculator(Utils.objToLong(config.getConfig("full-backup-interval")));
-        increBackupBackoffCalculator = new ExponentialBackoffCalculator(Utils.objToLong(config.getConfig("incremental-backup-check-interval")));
+        fullBackupBackoffCalculator = new ExponentialBackoffCalculator(5, Utils.objToLong(config.getConfig("full-backup-interval")));
+        increBackupBackoffCalculator = new ExponentialBackoffCalculator(5, Utils.objToLong(config.getConfig("incremental-backup-check-interval")));
     }
 
     /**
