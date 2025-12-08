@@ -63,7 +63,7 @@ public class OneDriveTokenFetcher {
                     setRefreshToken(respObj.refreshToken);
                     setAccessToken(respObj.accessToken);
                     // 更新下次更新时间（提前60秒）
-                    nextRefreshTime = Utils.timeStamp() + Integer.parseInt(respObj.expiresIn) - 60;
+                    nextRefreshTime = Utils.timestamp() + Integer.parseInt(respObj.expiresIn) - 60;
                     System.out.println("Onedrive token refreshed");
                     // 更新配置文件中的refreshToken
                     if (config != null)

@@ -16,7 +16,7 @@ public class OneDriveTokenUpdater implements Runnable {
     @Override
     public void run() {
         // 检查发现到了下次要更新token的时候了
-        if (Utils.timeStamp() > oneDriveTokenFetcher.getNextRefreshTime()) {
+        if (Utils.timestamp() > oneDriveTokenFetcher.getNextRefreshTime()) {
             // 尝试更新token
             if (!oneDriveTokenFetcher.fetch()) {
                 // 更新失败

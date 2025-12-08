@@ -9,13 +9,13 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * 文件存储服务客户端接口
+ * 云存储服务客户端接口
  */
 public abstract class Client {
     protected Config config;
 
     /**
-     * 初始化文件存储服务客户端
+     * 初始化云存储服务客户端
      *
      * @param config 配置对象
      */
@@ -83,7 +83,7 @@ public abstract class Client {
     public abstract boolean streamCompressAndUpload(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException;
 
     /**
-     * 将本地大文件上传到文件存储中
+     * 将本地大文件上传到云存储中
      *
      * @param localPath  本地文件路径
      * @param remotePath 远程目录路径，比如 "Documents/test.txt" 指的就是 "根目录/Documents/test.txt"

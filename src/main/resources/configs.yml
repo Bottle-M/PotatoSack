@@ -1,42 +1,49 @@
-# Client Type
-client-type: onedrive
-
-# OneDrive API Configuration (Support OneDrive Business(ODB)/Personal(ODC))
-onedrive:
-  # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-  # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool
-  use-app-folder: true
-  client-id:
-  client-secret:
-  refresh-token:
+client:
+    # Choose the Cloud Storage Service Provider you want to use.
+    use: onedrive
+    # OneDrive API Configuration (Support OneDrive Business(ODB) / Personal(ODC))
+    # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
+    # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool
+    onedrive:
+        # Reference: https://learn.microsoft.com/en-us/onedrive/developer/rest-api/concepts/special-folders-appfolder
+        # Although currently only OneDrive Personal(ODC) supports the "app folder",
+        # it's recommended to enable this option for safer data isolation and future compatibility.
+        # For OneDrive Business(ODB), the data isolation is not supported, but the app folder can still be created and used normally.
+        use-app-folder: true
+        client-id:
+        client-secret:
+        refresh-token:
 
 # The number of full backups to keep, actually it refers to "groups of backups" to keep.
-# Note: "A group of backups" consists of a full backup and a set of incremental backups following it(before the next full backup).
+# Note: "A group of backups" consists of a full backup and a set of incremental backups following it (before the next full backup).
 # Note: If a full backup is deleted, all incremental backups following it before the next full backup will be deleted as well.
-max-full-backups-retained: 3
+max-full-backups-retained: 10
 
-# The interval of full backups (in minutes)
-# Note: The full backups will be generated according to the interval below.
-full-backup-interval: 1440
+cron:
+    # Cron expression for generating full backups
+    # Note: This uses standard UNIX Cron syntax.
+    # Example: "0 2 */1 * *" means the full backup runs every day at 2:00 AM.
+    full-backup: "0 2 */1 * *"
 
-# The interval of incremental backups (in minutes)
-# Note: The incremental backups will be generated according to the interval below.
-incremental-backup-check-interval: 15
+    # Cron expression for generating incremental backups
+    # Note: This uses standard UNIX Cron syntax.
+    # Example: "*/30 * * * *" means the incremental backup runs every 30 minutes.
+    incremental-backup: "*/30 * * * *"
 
 # Whether to stop incremental backup when no player is online
 # Note: It may save you some data traffic expenses when nobody's there.
-# Note: Full backup won't be stopped, only incremental backups will be affected.
+# Note: Full backup won't be stopped by this option, only incremental backups will be affected.
 stop-incremental-backup-when-no-player: true
 
 # Whether to upload files while compressing them. (Time-space trade-off)
 # Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
-# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
+# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (Each chunk of zip file is only about 15.625 MiB)
 use-streaming-compression-upload: false
 
 # The worlds that you would like to backup, example:
 # worlds:
-#  - world
-#  - world_nether
-#  - world_the_end
+#   - world
+#   - world_nether
+#   - world_the_end
 # Note: If you leave this blank, the plugin won't work.
 worlds: [ ]

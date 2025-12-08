@@ -14,6 +14,31 @@ public class Config {
     private File configFile; // configs.yml文件对象
     private YamlConfiguration config; // configs.yml配置内容
 
+    // 配置项键名常量
+    public interface KEYS {
+        interface CLIENT {
+            String USE = "client.use";
+
+            interface ONEDRIVE {
+                String USE_APP_FOLDER = "client.onedrive.use-app-folder";
+                String CLIENT_ID = "client.onedrive.client-id";
+                String CLIENT_SECRET = "client.onedrive.client-secret";
+                String REFRESH_TOKEN = "client.onedrive.refresh-token";
+            }
+        }
+
+        String MAX_FULL_BACKUPS_RETAINED = "max-full-backups-retained";
+
+        interface CRON {
+            String FULL_BACKUP = "cron.full-backup";
+            String INCREMENTAL_BACKUP = "cron.incremental-backup";
+        }
+
+        String STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER = "stop-incremental-backup-when-no-player";
+        String USE_STREAMING_COMPRESSION_UPLOAD = "use-streaming-compression-upload";
+        String WORLDS = "worlds";
+    }
+
     public Config() {
         plugin = PotatoSack.getPluginInstance();
         loadConfig();
@@ -106,39 +131,39 @@ public class Config {
      * @apiNote 配置中的部分项目可能因为用户配置错误而丢失，这里检查配置项是否完整，对缺失项填充默认值
      */
     private void inspectConfig() {
-        if (config.get("onedrive.client-id") == null) {
-            config.set("onedrive.client-id", "");
+        if (config.get(KEYS.CLIENT.USE) == null) {
+            config.set(KEYS.CLIENT.USE, "onedrive");
         }
-        if (config.get("onedrive.client-secret") == null) {
-            config.set("onedrive.client-secret", "");
+        if (config.get(KEYS.CLIENT.ONEDRIVE.USE_APP_FOLDER) == null) {
+            config.set(KEYS.CLIENT.ONEDRIVE.USE_APP_FOLDER, true);
         }
-        if (config.get("onedrive.refresh-token") == null) {
-            config.set("onedrive.refresh-token", "");
+        if (config.get(KEYS.CLIENT.ONEDRIVE.CLIENT_ID) == null) {
+            config.set(KEYS.CLIENT.ONEDRIVE.CLIENT_ID, "");
         }
-        if (config.get("onedrive.use-app-folder") == null) {
-            config.set("onedrive.use-app-folder", true);
+        if (config.get(KEYS.CLIENT.ONEDRIVE.CLIENT_SECRET) == null) {
+            config.set(KEYS.CLIENT.ONEDRIVE.CLIENT_SECRET, "");
         }
-        if (config.get("client-type") == null) {
-            config.set("client-type", "onedrive");
+        if (config.get(KEYS.CLIENT.ONEDRIVE.REFRESH_TOKEN) == null) {
+            config.set(KEYS.CLIENT.ONEDRIVE.REFRESH_TOKEN, "");
         }
-        if (config.get("max-full-backups-retained") == null) {
-            config.set("max-full-backups-retained", 3);
+        if (config.get(KEYS.MAX_FULL_BACKUPS_RETAINED) == null) {
+            config.set(KEYS.MAX_FULL_BACKUPS_RETAINED, 10);
         }
-        if (config.get("full-backup-interval") == null) {
-            config.set("full-backup-interval", 1440);
+        if (config.get(KEYS.CRON.FULL_BACKUP) == null) {
+            config.set(KEYS.CRON.FULL_BACKUP, "0 2 */1 * *");
         }
-        if (config.get("incremental-backup-check-interval") == null) {
-            config.set("incremental-backup-check-interval", 15);
+        if (config.get(KEYS.CRON.INCREMENTAL_BACKUP) == null) {
+            config.set(KEYS.CRON.INCREMENTAL_BACKUP, "*/30 * * * *");
         }
-        if (config.get("stop-incremental-backup-when-no-player") == null) {
-            config.set("stop-incremental-backup-when-no-player", true);
+        if (config.get(KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER) == null) {
+            config.set(KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER, true);
         }
-        if (config.get("use-streaming-compression-upload") == null) {
-            config.set("use-streaming-compression-upload", false);
+        if (config.get(KEYS.USE_STREAMING_COMPRESSION_UPLOAD) == null) {
+            config.set(KEYS.USE_STREAMING_COMPRESSION_UPLOAD, false);
         }
-        if (config.get("worlds") == null) {
+        if (config.get(KEYS.WORLDS) == null) {
             List<String> worlds = new ArrayList<>();
-            config.set("worlds", worlds);
+            config.set(KEYS.WORLDS, worlds);
         }
         saveConfig();
     }

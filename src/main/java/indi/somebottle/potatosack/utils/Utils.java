@@ -12,6 +12,11 @@ import java.math.BigInteger;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,10 +29,24 @@ public class Utils {
     /**
      * 获得当前的秒级时间戳
      *
-     * @return 秒级时间戳
+     * @return 秒级时间戳 (UNIX 时间戳)
      */
-    public static long timeStamp() {
+    public static long timestamp() {
         return System.currentTimeMillis() / 1000;
+    }
+
+    /**
+     * 把 UNIX 秒级时间戳转换为当前系统时区下的日期字符串
+     *
+     * @param timestamp UNIX 秒级时间戳
+     * @return 日期字符串，格式为 yyyy-MM-dd HH:mm:ss
+     */
+    public static String timestampToDateStr(long timestamp) {
+        Instant instant = Instant.ofEpochSecond(timestamp);
+        ZonedDateTime dateTime = ZonedDateTime.ofInstant(instant, ZoneId.systemDefault());
+        LocalDateTime localDateTime = dateTime.toLocalDateTime();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        return dateTime.format(formatter);
     }
 
     /**

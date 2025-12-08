@@ -17,7 +17,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 记录文件 .json 均放在插件目录 plugins/PotatoSack/data 下
@@ -33,11 +32,11 @@ public class BackupMaker {
     private final Gson gson = new Gson();
     private final String worldRecordsFilePrefix = "_"; // 世界记录文件名前缀
     /**
-     * 全量备份指数退避计算器 (分钟)
+     * 全量备份指数退避计算器 (秒)
      */
     private final ExponentialBackoffCalculator fullBackupBackoffCalculator;
     /**
-     * 增量备份指数退避计算器 (分钟)
+     * 增量备份指数退避计算器 (秒)
      */
     private final ExponentialBackoffCalculator increBackupBackoffCalculator;
 
@@ -71,7 +70,7 @@ public class BackupMaker {
             throw new IOException("Failed to create local backup record file.");
         }
         // 再检查各个世界的配置文件
-        List<String> worlds = (List<String>) config.getConfig("worlds");
+        List<String> worlds = (List<String>) config.getConfig(Config.KEYS.WORLDS);
         for (String worldName : worlds) {
             File worldRecordFile = getWorldRecordsFile(worldName);
             System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
@@ -81,8 +80,8 @@ public class BackupMaker {
             }
         }
         // 初始化指数退避计算器
-        fullBackupBackoffCalculator = new ExponentialBackoffCalculator(5, Utils.objToLong(config.getConfig("full-backup-interval")));
-        increBackupBackoffCalculator = new ExponentialBackoffCalculator(5, Utils.objToLong(config.getConfig("incremental-backup-check-interval")));
+        fullBackupBackoffCalculator = new ExponentialBackoffCalculator(300);
+        increBackupBackoffCalculator = new ExponentialBackoffCalculator(300);
     }
 
     /**
@@ -108,7 +107,7 @@ public class BackupMaker {
      * @throws IOException IO异常
      */
     public void writeBackupRecord(BackupRecord rec) throws IOException {
-        rec.setFileUpdateTime(Utils.timeStamp());
+        rec.setFileUpdateTime(Utils.timestamp());
         Files.write(getBackupRecordFile().toPath(), gson.toJson(rec).getBytes());
     }
 
@@ -126,7 +125,7 @@ public class BackupMaker {
         BackupRecord rec = new BackupRecord();
         rec.setLastFullBackupTime(lastFullBackupTime);
         rec.setLastIncreBackupTime(lastIncreBackupTime);
-        rec.setFileUpdateTime(Utils.timeStamp());
+        rec.setFileUpdateTime(Utils.timestamp());
         rec.setLastFullBackupId(lastFullBackupId);
         rec.setLastIncreBackupId(lastIncreBackupId);
         rec.setIncreBackupsHistory(increBackupsHistory);
@@ -134,16 +133,24 @@ public class BackupMaker {
     }
 
     /**
-     * 将下次全量备份延迟至当前时间的一段时间后（指数退避）
+     * 将下次全量备份延迟至当前时间的一段时间后（指数退避，退避时间上界为直至下一次备份启动的间隔时间）
      *
      * @param rec BackupRecord 备份记录文件对象
      * @throws IOException 文件读写异常
      */
     public void putOffFullBackup(BackupRecord rec) throws IOException {
-        long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
-        long sec = fullBackupBackoffCalculator.getNextBackoffTime() * 60;
+        String fullBackupCronExp = (String) config.getConfig(Config.KEYS.CRON.FULL_BACKUP);
+        CronUtils fullBackupCron = new CronUtils(fullBackupCronExp);
+        long nextTimestampFromNow = fullBackupCron.nextExecutionTimestamp(Utils.timestamp());
+        // 计算现在到下一次执行的时间间隔
+        long durationToNext = (nextTimestampFromNow - Utils.timestamp());
+        // 计算自上次执行至今的时间间隔
+        long durationFromLast = fullBackupCron.timeFromLastExecution(Utils.timestamp());
+        // 退避时间不可超过 <自上一次执行到下一次执行的时间间隔>
+        long durationFromLastToNext = durationToNext + durationFromLast;
+        long backoffSec = fullBackupBackoffCalculator.getNextBackoffTime(durationFromLastToNext);
         fullBackupBackoffCalculator.backoff();
-        rec.setLastFullBackupTime(Utils.timeStamp() - fullBackupInterval * 60 + sec);
+        rec.setLastFullBackupTime(Utils.timestamp() - durationFromLast + backoffSec);
         // 更新 backup.json
         writeBackupRecord(rec);
     }
@@ -155,10 +162,19 @@ public class BackupMaker {
      * @throws IOException 文件读写异常
      */
     public void putOffIncreBackup(BackupRecord rec) throws IOException {
-        long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
-        long sec = increBackupBackoffCalculator.getNextBackoffTime() * 60;
+        String increBackupCronExp = (String) config.getConfig(Config.KEYS.CRON.INCREMENTAL_BACKUP);
+        CronUtils increBackupCron = new CronUtils(increBackupCronExp);
+        long nextTimestampFromNow = increBackupCron.nextExecutionTimestamp(Utils.timestamp());
+        // 计算现在到下一次执行的时间间隔
+        long durationToNext = (nextTimestampFromNow - Utils.timestamp());
+        // 计算自上次执行至今的时间间隔
+        long durationFromLast = increBackupCron.timeFromLastExecution(Utils.timestamp());
+        // 退避时间不可超过 <自上一次执行到下一次执行的时间间隔>
+        long durationFromLastToNext = durationToNext + durationFromLast;
+        long backoffSec = increBackupBackoffCalculator.getNextBackoffTime(durationFromLastToNext);
         increBackupBackoffCalculator.backoff();
-        rec.setLastIncreBackupTime(Utils.timeStamp() - increBackupInterval * 60 + sec);
+        // TODO: 仔细检查退避和时间计算是否正确
+        rec.setLastIncreBackupTime(Utils.timestamp() - durationFromLast + backoffSec);
         // 更新 backup.json
         writeBackupRecord(rec);
     }
@@ -171,7 +187,7 @@ public class BackupMaker {
      * @throws IOException IO异常
      */
     public void writeWorldRecord(String worldName, WorldRecord rec) throws IOException {
-        rec.setFileUpdateTime(Utils.timeStamp());
+        rec.setFileUpdateTime(Utils.timestamp());
         Files.write(getWorldRecordsFile(worldName).toPath(), gson.toJson(rec).getBytes());
     }
 
@@ -184,7 +200,7 @@ public class BackupMaker {
      */
     public void writeWorldRecord(String worldName, Map<String, String> recList) throws IOException {
         WorldRecord rec = new WorldRecord();
-        rec.setFileUpdateTime(Utils.timeStamp());
+        rec.setFileUpdateTime(Utils.timestamp());
         rec.setLastFileHashes(recList);
         writeWorldRecord(worldName, rec);
     }
@@ -345,7 +361,7 @@ public class BackupMaker {
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
         // 获得世界名
-        List<String> worlds = (List<String>) config.getConfig("worlds");
+        List<String> worlds = (List<String>) config.getConfig(Config.KEYS.WORLDS);
         // 各个世界的目录路径
         List<String> worldPaths = new ArrayList<>();
         // 1. 扫描世界目录生成包含每个文件最后哈希值的 _世界名.json
@@ -368,7 +384,7 @@ public class BackupMaker {
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
         // 扫描 worldPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
         ZipFilePath[] worldZipFilePaths = Utils.scanPeerDirsToZipPaths(worldPaths.toArray(new String[0]));
-        if ((boolean) config.getConfig("use-streaming-compression-upload")) {
+        if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
             // 这里需要临时禁止自动保存
@@ -397,7 +413,7 @@ public class BackupMaker {
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
             ConsoleSender.toConsole("Compressing...");
             // 临时文件路径
-            String tempOutputFilePath = pluginTempPath + "full" + Utils.timeStamp() + ".zip";
+            String tempOutputFilePath = pluginTempPath + "full" + Utils.timestamp() + ".zip";
             // 2. 开始压缩
             if (!Utils.zipSpecificFiles(worldZipFilePaths, tempOutputFilePath, true))
                 return false;
@@ -413,9 +429,9 @@ public class BackupMaker {
         // 4. 更新备份记录
         // 写入backup.json
         rec.setLastFullBackupId(currFullBackupId);
-        rec.setLastFullBackupTime(Utils.timeStamp());
+        rec.setLastFullBackupTime(Utils.timestamp());
         // 全量备份后也要修改增量备份时间记录
-        rec.setLastIncreBackupTime(Utils.timeStamp());
+        rec.setLastIncreBackupTime(Utils.timestamp());
         rec.setLastIncreBackupId(""); // 同时重置增量备份ID，让其从000001重新开始
         // 全量备份后重置增量备份历史
         rec.clearIncreBackupsHistory();
@@ -436,8 +452,8 @@ public class BackupMaker {
         List<FileItem> folderItems = itemsRes.stream()
                 .filter(FileItem::isFolder)
                 .sorted(Comparator.comparing(FileItem::getName))
-                .collect(Collectors.toList());
-        int deleteCnt = folderItems.size() - (int) config.getConfig("max-full-backups-retained");
+                .toList();
+        int deleteCnt = folderItems.size() - (int) config.getConfig(Config.KEYS.MAX_FULL_BACKUPS_RETAINED);
         if (deleteCnt > 0) {
             ConsoleSender.toConsole("Deleting Old Backups...");
             for (int i = 0; i < deleteCnt; i++) {
@@ -471,7 +487,7 @@ public class BackupMaker {
             return makeFullBackup();
         }
         // 获得世界名
-        List<String> worlds = (List<String>) config.getConfig("worlds");
+        List<String> worlds = (List<String>) config.getConfig(Config.KEYS.WORLDS);
         // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
         List<String> deletedPaths = new ArrayList<>();
         // 所有有变动文件的 【绝对路径】（方便Zip打包）
@@ -534,7 +550,7 @@ public class BackupMaker {
         }
         // 压缩包在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/incre" + increBackupId + ".zip";
-        if ((boolean) config.getConfig("use-streaming-compression-upload")) {
+        if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Upload ]<------");
             // 这里需要临时禁止自动保存
@@ -578,7 +594,7 @@ public class BackupMaker {
         increBackupBackoffCalculator.reset();
         // 4. 更新备份记录
         rec.setLastIncreBackupId(increBackupId);
-        long currentTimestamp = Utils.timeStamp();
+        long currentTimestamp = Utils.timestamp();
         rec.setLastIncreBackupTime(currentTimestamp);
         // 把增量备份记录加入历史
         rec.addIncreBackupHistoryItem(increBackupId, currentTimestamp);

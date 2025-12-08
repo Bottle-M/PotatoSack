@@ -50,7 +50,7 @@ public class OneDriveClient extends Client {
     private final String apiRootPath;
 
     /**
-     * 初始化文件存储服务客户端
+     * 初始化云存储服务客户端
      *
      * @param config 配置对象
      * @throws IOException 发生网络问题 (比如 timeout) 时会抛出此错误
@@ -58,10 +58,10 @@ public class OneDriveClient extends Client {
     public OneDriveClient(Config config) throws IOException {
         super(config);
         // 获得 OneDrive 配置项
-        String clientId = (String) config.getConfig("onedrive.client-id");
-        String clientScrt = (String) config.getConfig("onedrive.client-secret");
-        String refreshToken = (String) config.getConfig("onedrive.refresh-token");
-        boolean useAppRoot = (boolean) config.getConfig("onedrive.use-app-folder");
+        String clientId = (String) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.CLIENT_ID);
+        String clientScrt = (String) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.CLIENT_SECRET);
+        String refreshToken = (String) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.REFRESH_TOKEN);
+        boolean useAppRoot = (boolean) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.USE_APP_FOLDER);
         if (useAppRoot) {
             apiRootPath = OD_API_APP_ROOT_PATH;
         } else {
@@ -84,7 +84,7 @@ public class OneDriveClient extends Client {
         // 输出 Onedrive AppFolder
         // 20240614 这一步还有个作用，就是让 OneDrive 自动创建应用目录
         System.out.println("Onedrive Root Folder URL: " + getRootFolderUrl());
-        // 初始化备份文件存储目录
+        // 初始化备份云存储目录
         if (getItem(Constants.APP_DATA_FOLDER) == null) {
             System.out.println("TAKE IT EASY, the 404 problem above is not a big deal. :)");
             System.out.println("404 Detected, creating data folder in OneDrive.");

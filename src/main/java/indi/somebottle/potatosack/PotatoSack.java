@@ -22,7 +22,7 @@ public final class PotatoSack extends JavaPlugin {
     private static PotatoSack pluginInstance = null; // 插件对象
     public static File worldContainerDir = null; // 服务端根目录 File 对象
     public BukkitTask backupCheckTask = null; // 备份检查定时任务
-    private Client fileClient = null; // 文件存储客户端
+    private Client fileClient = null; // 云存储客户端
 
     /**
      * 插件启动时进行的操作
@@ -45,10 +45,10 @@ public final class PotatoSack extends JavaPlugin {
         System.out.println("Potato Sack Initializing...");
         // 初始化配置
         Config config = new Config();
-        String clientType = (String) config.getConfig("client-type");
-        // 初始化文件存储客户端
+        String clientUsed = (String) config.getConfig(Config.KEYS.CLIENT.USE);
+        // 初始化云存储客户端
         try {
-            fileClient = ClientFactory.getClient(clientType, config);
+            fileClient = ClientFactory.getClient(clientUsed, config);
         } catch (Exception e) {
             ConsoleSender.logError("Failed to initialize client: " + e.getMessage());
             e.printStackTrace();
