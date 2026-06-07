@@ -18,6 +18,7 @@ public class Config {
     public interface KEYS {
         interface CLIENT {
             String USE = "client.use";
+            String BASE_DIR = "client.base-dir";
 
             interface ONEDRIVE {
                 String USE_APP_FOLDER = "client.onedrive.use-app-folder";
@@ -134,6 +135,9 @@ public class Config {
     private void inspectConfig() {
         if (config.get(KEYS.CLIENT.USE) == null) {
             config.set(KEYS.CLIENT.USE, "onedrive");
+        }
+        if (config.get(KEYS.CLIENT.BASE_DIR) == null) {
+            config.set(KEYS.CLIENT.BASE_DIR, "");
         }
         if (config.get(KEYS.CLIENT.ONEDRIVE.USE_APP_FOLDER) == null) {
             config.set(KEYS.CLIENT.ONEDRIVE.USE_APP_FOLDER, true);

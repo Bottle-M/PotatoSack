@@ -1,6 +1,10 @@
 client:
     # Choose the Cloud Storage Service Provider you want to use.
     use: onedrive
+    # Base directory path for storing backups in cloud storage (default: empty, meaning root directory)
+    # Example: "my/backups" will store data at "my/backups/PotatoSack/..."
+    # Note: Leading and trailing slashes will be automatically removed
+    base-dir: ""
     # OneDrive API Configuration (Support OneDrive Business(ODB) / Personal(ODC))
     # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
     # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool

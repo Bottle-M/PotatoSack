@@ -264,6 +264,29 @@ public class Utils {
     }
 
     /**
+     * 规范化云端基础目录路径
+     * <p>
+     * 去掉前后的斜杠，返回干净的路径片段
+     *
+     * @param baseDir 基础目录路径
+     * @return 规范化后的路径，如果输入为空或只有斜杠则返回空字符串
+     */
+    public static String normalizeBaseDir(String baseDir) {
+        if (baseDir == null || baseDir.isEmpty()) {
+            return "";
+        }
+        // 去掉前后的斜杠
+        baseDir = baseDir.trim();
+        while (baseDir.startsWith("/")) {
+            baseDir = baseDir.substring(1);
+        }
+        while (baseDir.endsWith("/")) {
+            baseDir = baseDir.substring(0, baseDir.length() - 1);
+        }
+        return baseDir;
+    }
+
+    /**
      * 将指定的文件加入Zip流
      *
      * @param zos          Zip输出流

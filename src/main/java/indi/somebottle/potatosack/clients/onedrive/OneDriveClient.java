@@ -85,16 +85,11 @@ public class OneDriveClient extends Client {
         // 20240614 这一步还有个作用，就是让 OneDrive 自动创建应用目录
         System.out.println("Onedrive Root Folder URL: " + getRootFolderUrl());
         // 初始化备份云存储目录
-        if (getItem(Constants.APP_DATA_FOLDER) == null) {
-            System.out.println("TAKE IT EASY, the 404 problem above is not a big deal. :)");
-            System.out.println("404 Detected, creating data folder in OneDrive.");
-            // 如果没有建立则建立数据目录
-            if (createFolder(Constants.APP_DATA_FOLDER)) {
-                System.out.println("Successfully created data folder in OneDrive.");
-            } else {
-                throw new IOException("Failed to create data folder in OneDrive.");
-            }
+        String dataFolderPath = buildFullPath(Constants.APP_DATA_FOLDER);
+        if (!ensureFolderExists(dataFolderPath)) {
+            throw new IOException("Failed to create data folder in OneDrive: " + dataFolderPath);
         }
+        System.out.println("Data folder is ready: " + dataFolderPath);
     }
 
     /**
@@ -104,7 +99,7 @@ public class OneDriveClient extends Client {
      * @throws IOException 发生网络问题 (比如 timeout) 时会抛出此错误
      */
     public String getRootFolderUrl() throws IOException {
-        OneDriveItem rootFolder = getItem("");
+        OneDriveItem rootFolder = getItemInternal("");  // 直接获取真实根目录，不拼接 baseDir
         if (rootFolder != null) {
             return rootFolder.getWebUrl();
         } else {
@@ -165,7 +160,7 @@ public class OneDriveClient extends Client {
 
     @SuppressWarnings("StringEqualsEmptyString")
     @Override
-    public List<FileItem> listItems(String path) throws IOException {
+    protected List<FileItem> listItemsInternal(String path) throws IOException {
         String url;
         if (path.equals("")) // 默认为根目录
             url = MS_GRAPH_ENDPOINT + apiRootPath + "/children";
@@ -175,7 +170,7 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public OneDriveItem getItem(String path) throws IOException {
+    protected OneDriveItem getItemInternal(String path) throws IOException {
         String url;
         if (path.equals("")) // 默认为根目录
             url = MS_GRAPH_ENDPOINT + apiRootPath;
@@ -212,13 +207,13 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public boolean downloadFile(String remotePath, String localPath) throws IOException {
+    protected boolean downloadFileInternal(String remotePath, String localPath) throws IOException {
         File localFile = new File(localPath);
         File parentFile = localFile.getParentFile();
         if (!parentFile.exists())
             if (!parentFile.mkdirs()) // 创建缺失的目录
                 return false; // 建立失败
-        OneDriveItem oneDriveItem = getItem(remotePath);
+        OneDriveItem oneDriveItem = getItemInternal(remotePath);
         // 若项目不存在或不是文件则无法下载
         if (oneDriveItem == null || oneDriveItem.isFolder())
             return false;
@@ -264,7 +259,7 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public boolean streamCompressAndUpload(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException {
+    protected boolean streamCompressAndUploadInternal(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException {
         if (zipFilePaths.length == 0 || remotePath.equals(""))
             return false;
         OneDriveStreamedZipUploader uploader = new OneDriveStreamedZipUploader(this, remotePath);
@@ -272,7 +267,7 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public boolean uploadLargeFile(String localPath, String remotePath) throws IOException {
+    protected boolean uploadLargeFileInternal(String localPath, String remotePath) throws IOException {
         if (!new File(localPath).exists() || remotePath.equals(""))
             return false;
         File localFile = new File(localPath);
@@ -322,12 +317,12 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public boolean uploadFile(String localPath, String remotePath) throws IOException {
+    protected boolean uploadFileInternal(String localPath, String remotePath) throws IOException {
         if (!new File(localPath).exists() || remotePath.equals(""))
             return false;
         File localFile = new File(localPath);
         if (localFile.length() > Constants.MAX_SMALL_FILE_SIZE) // 超过了小文件最大允许大小，转为大文件上传
-            return uploadLargeFile(localPath, remotePath);
+            return uploadLargeFileInternal(localPath, remotePath);
         // 以下为小文件上传
         String url = MS_GRAPH_ENDPOINT + apiRootPath + ":/" + remotePath + ":/content?@microsoft.graph.conflictBehavior=replace";
         // 构造请求
@@ -361,7 +356,7 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public boolean deleteItem(String path) throws IOException {
+    protected boolean deleteItemInternal(String path) throws IOException {
         String url = MS_GRAPH_ENDPOINT + apiRootPath + ":/" + path;
         // 构造请求
         Request req = new Request.Builder()
@@ -394,7 +389,7 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    public boolean createFolder(String path, String name) throws IOException {
+    protected boolean createFolderInternal(String path, String name) throws IOException {
         OneDriveFolderRequest folderReq = new OneDriveFolderRequest(name);
         String jsonReqBody = gson.toJson(folderReq);
         String url; // 子目录请求URL
