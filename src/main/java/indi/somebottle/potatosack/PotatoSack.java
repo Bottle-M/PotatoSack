@@ -4,9 +4,11 @@ import indi.somebottle.potatosack.clients.ClientFactory;
 import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.command.PotatoSackExecutor;
 import indi.somebottle.potatosack.command.PotatoSackTabCompleter;
+import indi.somebottle.potatosack.listeners.PlayerEventListener;
 import indi.somebottle.potatosack.tasks.BackupChecker;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
+import indi.somebottle.potatosack.utils.LocalStatus;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.OkHttpClient;
 import org.bukkit.Bukkit;
@@ -58,9 +60,13 @@ public final class PotatoSack extends JavaPlugin {
         try {
             // 初始化备份核心
             backupChecker = new BackupChecker(fileClient, config);
+            // 初始化本地状态管理
+            LocalStatus.getInstance();
             // 初始化异步任务定时器
             // 每60秒检查一次备份（首次执行前等待60秒)
             backupCheckTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
+            // 注册玩家事件监听器
+            getServer().getPluginManager().registerEvents(new PlayerEventListener(), this);
             // 注册重载配置指令
             PluginCommand mainCommand = getCommand("potatosack");
             if (mainCommand == null)

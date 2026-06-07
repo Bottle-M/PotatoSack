@@ -31,6 +31,14 @@ public class BackupChecker implements Runnable {
             // 下一次全量备份开始的时间戳
             long nextFullBackupTimestamp = fullBackupCron.nextExecutionTimestamp(backupMaker.getLastFullBackupTime());
             if (Utils.timestamp() >= nextFullBackupTimestamp) {
+                // 时间到了，检查是否启用了"无人上线时停止全量备份"功能
+                if ((boolean) config.getConfig(Config.KEYS.STOP_FULL_BACKUP_WHEN_NO_PLAYER_JOIN)) {
+                    // 检查是否有玩家上线过
+                    if (!LocalStatus.getInstance().getFullBackupFlag()) {
+                        // 没有玩家上线，跳过本次全量备份
+                        return;
+                    }
+                }
                 // 该进行全量备份了
                 backupRun = true;
                 boolean bkRes = backupMaker.makeFullBackup();

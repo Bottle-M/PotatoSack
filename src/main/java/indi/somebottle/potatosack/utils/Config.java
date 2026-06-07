@@ -35,6 +35,7 @@ public class Config {
         }
 
         String STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER = "stop-incremental-backup-when-no-player";
+        String STOP_FULL_BACKUP_WHEN_NO_PLAYER_JOIN = "stop-full-backup-when-no-player-join";
         String USE_STREAMING_COMPRESSION_UPLOAD = "use-streaming-compression-upload";
         String WORLDS = "worlds";
     }
@@ -157,6 +158,9 @@ public class Config {
         }
         if (config.get(KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER) == null) {
             config.set(KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER, true);
+        }
+        if (config.get(KEYS.STOP_FULL_BACKUP_WHEN_NO_PLAYER_JOIN) == null) {
+            config.set(KEYS.STOP_FULL_BACKUP_WHEN_NO_PLAYER_JOIN, false);
         }
         if (config.get(KEYS.USE_STREAMING_COMPRESSION_UPLOAD) == null) {
             config.set(KEYS.USE_STREAMING_COMPRESSION_UPLOAD, false);

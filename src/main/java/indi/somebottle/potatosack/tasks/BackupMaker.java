@@ -435,6 +435,13 @@ public class BackupMaker {
         // 全量备份后重置增量备份历史
         rec.clearIncreBackupsHistory();
         writeBackupRecord(rec);
+        // 全量备份完成，重置标记位
+        try {
+            LocalStatus.getInstance().setFullBackupFlag(false);
+        } catch (IOException e) {
+            ConsoleSender.logError("[LocalStatus] Failed to reset full backup flag: " + e.getMessage());
+            e.printStackTrace();
+        }
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
         if (!client.uploadFile(pluginDataPath + "backup.json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
