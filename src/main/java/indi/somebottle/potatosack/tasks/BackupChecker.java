@@ -2,7 +2,6 @@ package indi.somebottle.potatosack.tasks;
 
 import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.utils.*;
-import org.bukkit.Bukkit;
 
 import java.io.IOException;
 
@@ -32,10 +31,11 @@ public class BackupChecker implements Runnable {
             long nextFullBackupTimestamp = fullBackupCron.nextExecutionTimestamp(backupMaker.getLastFullBackupTime());
             if (Utils.timestamp() >= nextFullBackupTimestamp) {
                 // 时间到了，检查是否启用了"无人上线时停止全量备份"功能
-                if ((boolean) config.getConfig(Config.KEYS.STOP_FULL_BACKUP_WHEN_NO_PLAYER_JOIN)) {
+                if ((boolean) config.getConfig(Config.KEYS.STOP_FULL_BACKUP_WHEN_NO_PLAYER)) {
                     // 检查是否有玩家上线过
                     if (!LocalStatus.getInstance().getFullBackupFlag()) {
                         // 没有玩家上线，跳过本次全量备份
+                        ConsoleSender.toConsole("Skipping full backup: no player has joined since last backup.");
                         return;
                     }
                 }
@@ -48,14 +48,20 @@ public class BackupChecker implements Runnable {
                     return; // 执行了全量备份，就不检查增量备份了
             }
             // STEP 2 ------------------------- 检查是不是需要进行增量备份了
-            // 如果在线人数为0且配置了【无人时不进行增量备份】，则不进行增量备份检查
-            if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig(Config.KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER))
-                return;
             String increBackupCronExp = (String) config.getConfig(Config.KEYS.CRON.INCREMENTAL_BACKUP);
             CronUtils increBackupCron = new CronUtils(increBackupCronExp);
             // 下一次增量备份开始的时间戳
             long nextIncreBackupTimestamp = increBackupCron.nextExecutionTimestamp(backupMaker.getLastIncreBackupTime());
             if (Utils.timestamp() >= nextIncreBackupTimestamp) {
+                // 时间到了，检查是否启用了"无人上线时停止增量备份"功能
+                if ((boolean) config.getConfig(Config.KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER)) {
+                    // 检查是否有玩家上线过
+                    if (!LocalStatus.getInstance().getIncreBackupFlag()) {
+                        // 没有玩家上线，跳过本次增量备份
+                        ConsoleSender.toConsole("Skipping incremental backup: no player has joined since last backup.");
+                        return;
+                    }
+                }
                 // 该进行增量备份了
                 backupRun = true;
                 boolean bkRes = backupMaker.makeIncreBackup();

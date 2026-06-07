@@ -11,10 +11,13 @@ public class LocalStatusRecord {
     @SerializedName("full_backup_flag")
     private boolean fullBackupFlag;
 
+    @SerializedName("incre_backup_flag")
+    private boolean increBackupFlag;
+
     /**
      * 用于标记目前是否需要进行全量备份的状态量，插件可以配置在长时间没有玩家上线时停止全量备份
      * <p>
-     * 在玩家上线时该项会被设置为 true，一次全量备份完成后会被设置为 false。如果启用了上述功能，
+     * 在玩家上线时该项会被设置为 true，一次全量备份完成后会根据在线人数决定是否设置为 false。如果启用了上述功能，
      * 则在后续没有玩家上线的情况下不会进行全量备份。
      */
     public boolean isFullBackupFlag() {
@@ -23,5 +26,19 @@ public class LocalStatusRecord {
 
     public void setFullBackupFlag(boolean fullBackupFlag) {
         this.fullBackupFlag = fullBackupFlag;
+    }
+
+    /**
+     * 用于标记目前是否需要进行增量备份的状态量，插件可以配置在长时间没有玩家上线时停止增量备份
+     * <p>
+     * 在玩家上线时该项会被设置为 true，一次增量备份完成后会根据在线人数决定是否设置为 false。如果启用了上述功能，
+     * 则在后续没有玩家上线的情况下不会进行增量备份。
+     */
+    public boolean isIncreBackupFlag() {
+        return increBackupFlag;
+    }
+
+    public void setIncreBackupFlag(boolean increBackupFlag) {
+        this.increBackupFlag = increBackupFlag;
     }
 }

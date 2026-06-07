@@ -65,6 +65,28 @@ public class LocalStatus {
     }
 
     /**
+     * 获取增量备份标记位
+     * <p>
+     * true 表示需要进行增量备份，false 表示跳过增量备份
+     *
+     * @return 增量备份标记位
+     */
+    public boolean getIncreBackupFlag() {
+        return localStatusRecord.isIncreBackupFlag();
+    }
+
+    /**
+     * 设置增量备份标记位并立即持久化到文件
+     *
+     * @param flag 增量备份标记位，true 表示需要进行增量备份，false 表示跳过增量备份
+     * @throws IOException 文件写入异常
+     */
+    public void setIncreBackupFlag(boolean flag) throws IOException {
+        localStatusRecord.setIncreBackupFlag(flag);
+        saveToFile();
+    }
+
+    /**
      * 从本地文件加载状态
      * <p>
      * 如果文件不存在，则创建新文件并初始化 fullBackupFlag 为 true
@@ -80,6 +102,7 @@ public class LocalStatus {
                 statusFile.getParentFile().mkdirs();
             localStatusRecord = new LocalStatusRecord();
             localStatusRecord.setFullBackupFlag(true);
+            localStatusRecord.setIncreBackupFlag(true);
             saveToFile();
         } else {
             // 文件存在，读取并解析

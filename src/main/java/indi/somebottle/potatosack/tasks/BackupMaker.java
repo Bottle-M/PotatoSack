@@ -9,6 +9,7 @@ import indi.somebottle.potatosack.tasks.entities.WorldRecord;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
 import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
 import indi.somebottle.potatosack.utils.*;
+import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
@@ -436,9 +437,13 @@ public class BackupMaker {
         // 全量备份后重置增量备份历史
         rec.clearIncreBackupsHistory();
         writeBackupRecord(rec);
-        // 全量备份完成，重置标记位
+        // 全量备份完成，根据在线人数决定是否重置标记位
         try {
-            LocalStatus.getInstance().setFullBackupFlag(false);
+            if (Bukkit.getOnlinePlayers().size() < 1) {
+                // 无人在线，重置标记位
+                LocalStatus.getInstance().setFullBackupFlag(false);
+            }
+            // 如果有人在线，保持 true
         } catch (IOException e) {
             ConsoleSender.logError("[LocalStatus] Failed to reset full backup flag: " + e.getMessage());
             e.printStackTrace();
@@ -606,6 +611,17 @@ public class BackupMaker {
         // 把增量备份记录加入历史
         rec.addIncreBackupHistoryItem(increBackupId, currentTimestamp);
         writeBackupRecord(rec);
+        // 增量备份完成，根据在线人数决定是否重置标记位
+        try {
+            if (Bukkit.getOnlinePlayers().size() < 1) {
+                // 无人在线，重置标记位
+                LocalStatus.getInstance().setIncreBackupFlag(false);
+            }
+            // 如果有人在线，保持 true
+        } catch (IOException e) {
+            ConsoleSender.logError("[LocalStatus] Failed to reset incremental backup flag: " + e.getMessage());
+            e.printStackTrace();
+        }
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
         if (!client.uploadFile(pluginDataPath + "backup.json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))

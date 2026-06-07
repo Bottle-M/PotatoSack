@@ -18,16 +18,18 @@ public class PlayerEventListener implements Listener {
     /**
      * 玩家上线事件处理
      * <p>
-     * 当玩家上线时，将全量备份标记位设置为 true
+     * 当玩家上线时，将全量备份和增量备份标记位都设置为 true
      *
      * @param event 玩家上线事件
      */
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         try {
-            LocalStatus.getInstance().setFullBackupFlag(true);
+            LocalStatus localStatus = LocalStatus.getInstance();
+            localStatus.setFullBackupFlag(true);
+            localStatus.setIncreBackupFlag(true);
         } catch (IOException e) {
-            ConsoleSender.logError("[LocalStatus] Failed to set full backup flag: " + e.getMessage());
+            ConsoleSender.logError("[LocalStatus] Failed to set backup flags: " + e.getMessage());
             e.printStackTrace();
         }
     }

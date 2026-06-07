@@ -30,15 +30,15 @@ cron:
     # Example: "*/30 * * * *" means the incremental backup runs every 30 minutes.
     incremental-backup: "*/30 * * * *"
 
-# Whether to stop incremental backup when no player is online
-# Note: It may save you some data traffic expenses when nobody's there.
-# Note: Full backup won't be stopped by this option, only incremental backups will be affected.
+# Whether to stop incremental backup when no player has joined
+# true: Skip incremental backups if no player has joined since the last backup
+# false: Perform incremental backups according to the cron expression, regardless of player activity
 stop-incremental-backup-when-no-player: true
 
-# Whether to stop full backup when no player has joined for a long time
+# Whether to stop full backup when no player has joined
 # true: After a full backup is completed, skip subsequent scheduled full backups if no player joins, until a player joins again
 # false: Perform full backups according to the cron expression, regardless of player activity
-stop-full-backup-when-no-player-join: false
+stop-full-backup-when-no-player: false
 
 # Whether to upload files while compressing them. (Time-space trade-off)
 # Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
