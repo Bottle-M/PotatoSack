@@ -173,7 +173,6 @@ public class BackupMaker {
         long durationFromLastToNext = durationToNext + durationFromLast;
         long backoffSec = increBackupBackoffCalculator.getNextBackoffTime(durationFromLastToNext);
         increBackupBackoffCalculator.backoff();
-        // TODO: 仔细检查退避和时间计算是否正确
         rec.setLastIncreBackupTime(Utils.timestamp() - durationFromLast + backoffSec);
         // 更新 backup.json
         writeBackupRecord(rec);

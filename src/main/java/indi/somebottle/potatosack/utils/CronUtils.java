@@ -17,7 +17,6 @@ import java.util.Optional;
  * Cron 表达式相关工具类
  */
 public class CronUtils {
-    private final Cron cron;
     private final ExecutionTime executionTime;
 
     /**
@@ -29,7 +28,7 @@ public class CronUtils {
     public CronUtils(String cronExpr) throws IllegalArgumentException {
         CronDefinition cronDef = CronDefinitionBuilder.instanceDefinitionFor(CronType.UNIX);
         CronParser cronParser = new CronParser(cronDef);
-        cron = cronParser.parse(cronExpr);
+        Cron cron = cronParser.parse(cronExpr);
         cron.validate();
         executionTime = ExecutionTime.forCron(cron);
         // 尝试获取上一次和下一次执行时间，确保表达式有效
