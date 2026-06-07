@@ -364,6 +364,7 @@ public class BackupMaker {
         // 各个世界的目录路径
         List<String> worldPaths = new ArrayList<>();
         // 1. 扫描世界目录生成包含每个文件最后哈希值的 _世界名.json
+        long scanStartTime = System.currentTimeMillis();
         for (String worldName : worlds) {
             // 获得各个世界的配置文件;
             World world = plugin.getServer().getWorld(worldName);
@@ -378,6 +379,8 @@ public class BackupMaker {
             // _世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, currentFileHashes);
         }
+        // 统计扫描和计算哈希所需的时间 T
+        long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         String currFullBackupId = getNextFullBackupId(rec);
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
@@ -393,10 +396,8 @@ public class BackupMaker {
             List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worlds);
             ConsoleSender.toConsole("Temporarily disabled world auto-save...");
             try {
-                // 202406 开始前先等待 30s，即使关闭了自动保存，之前自动保存可能还有正在异步进行的保存工作
-                // 尽量等待这些工作完成
-                ConsoleSender.toConsole("Waiting for 30s before backup start...");
-                Thread.sleep(30000);
+                // 等待残余的异步保存完成
+                waitForAsyncSavesComplete(worlds, scanDuration);
                 if (!client.streamCompressAndUpload(worldZipFilePaths, remotePath, true)) {
                     // 如果流式压缩上传失败了就指数退避
                     putOffFullBackup(rec);
@@ -499,6 +500,7 @@ public class BackupMaker {
         // 所有有变动文件的 【绝对路径】（方便Zip打包）
         List<ZipFilePath> increFilePaths = new ArrayList<>();
         // 1. 扫描每个世界目录找到有差异的文件
+        long scanStartTime = System.currentTimeMillis();
         for (String worldName : worlds) {
             // 获得各个世界的配置文件;
             World world = plugin.getServer().getWorld(worldName);
@@ -532,6 +534,7 @@ public class BackupMaker {
             // 更新 _世界名.json 中存放世界数据目录中所有文件的最后哈希值
             writeWorldRecord(worldName, currentFileHashes);
         }
+        long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         // 若没有文件变更则不进行本次增量备份
         if (increFilePaths.size() == 0 && deletedPaths.size() == 0) {
             ConsoleSender.toConsole("No new files found, skip this incremental backup.");
@@ -566,10 +569,8 @@ public class BackupMaker {
             List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worlds);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
-                // 202406 开始前先等待 30s，即使关闭了自动保存，之前自动保存可能还有正在异步进行的保存工作
-                // 尽量等待这些工作完成
-                ConsoleSender.toConsole("Waiting for 30s before backup start...");
-                Thread.sleep(30000);
+                // 等待残余的异步保存完成
+                waitForAsyncSavesComplete(worlds, scanDuration);
                 if (!client.streamCompressAndUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
                     // 流式压缩上传如果失败就指数退避
                     putOffIncreBackup(rec);
@@ -637,5 +638,59 @@ public class BackupMaker {
     public long getLastIncreBackupTime() throws IOException {
         BackupRecord rec = getBackupRecord();
         return rec.getLastIncreBackupTime();
+    }
+
+    /**
+     * 在流式备份前等待残余的异步保存完成
+     * <p>
+     * 即使关闭了自动保存，之前可能还有正在异步进行的保存工作。
+     * 此方法通过动态等待和文件变动检测，确保所有异步保存完成后再开始备份，
+     * 避免因文件变动导致流式上传失败。
+     * <p>
+     * 等待策略：先等待 max(MIN_WAIT, scanDuration*2) 秒，然后检测文件是否变动，
+     * 若有变动则继续等待，直到无变动或达到总等待上限。
+     *
+     * @param worlds       世界名称列表
+     * @param scanDuration 扫描文件哈希所用时长（秒）
+     * @throws InterruptedException 线程中断异常
+     */
+    @SuppressWarnings("BusyWait")
+    private void waitForAsyncSavesComplete(List<String> worlds, long scanDuration) throws InterruptedException {
+        ConsoleSender.toConsole("Waiting for async saves to complete (scan took " + scanDuration + "s)...");
+
+        // 立即获取第一次文件修改时间快照作为基准
+        Map<String, Long> lastSnapshot = Utils.getTimeSnapshotForAllWorlds(plugin, worlds);
+
+        // 计算单次等待时间
+        long singleWaitTime = Math.max(Constants.STREAMING_UPLOAD_MIN_WAIT_SECONDS, scanDuration * 2);
+        long totalWaitTime = 0;
+
+        while (totalWaitTime < Constants.STREAMING_UPLOAD_MAX_TOTAL_WAIT_SECONDS) {
+            ConsoleSender.toConsole("Waiting " + singleWaitTime + "s... (total: " + totalWaitTime + "s)");
+            Thread.sleep(singleWaitTime * 1000);
+            totalWaitTime += singleWaitTime;
+
+            // 重新扫描文件修改时间
+            Map<String, Long> currentSnapshot = Utils.getTimeSnapshotForAllWorlds(plugin, worlds);
+
+            // 比较修改时间快照
+            if (currentSnapshot.equals(lastSnapshot)) {
+                // 无变动，结束等待
+                ConsoleSender.toConsole("No file changes detected, proceeding with backup.");
+                return;
+            }
+
+            // 有变动，更新快照，继续等待
+            ConsoleSender.toConsole("File changes detected, waiting another " + singleWaitTime + "s...");
+            lastSnapshot = currentSnapshot;
+
+            // 检查是否即将超时
+            if (totalWaitTime + singleWaitTime > Constants.STREAMING_UPLOAD_MAX_TOTAL_WAIT_SECONDS) {
+                break;
+            }
+        }
+
+        // 达到上限
+        ConsoleSender.logWarn("Reached maximum wait time (" + Constants.STREAMING_UPLOAD_MAX_TOTAL_WAIT_SECONDS + "s), proceeding with backup anyway.");
     }
 }

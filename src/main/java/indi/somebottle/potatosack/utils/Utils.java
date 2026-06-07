@@ -221,6 +221,49 @@ public class Utils {
     }
 
     /**
+     * 获取指定目录下所有文件的修改时间快照
+     *
+     * @param srcDir 待扫描目录（File对象）
+     * @param res    存储结果的 Map
+     */
+    public static void updateWorldFilesModificationSnapshot(File srcDir, Map<String, Long> res) {
+        if (res == null)
+            res = new HashMap<>();
+        File[] files = srcDir.listFiles();
+        if (files == null)
+            return;
+        for (File file : files) {
+            if (file.isFile()) {
+                String relativePath = pathRelativeToServer(file);
+                res.put(relativePath, file.lastModified());
+            } else if (file.isDirectory()) {
+                updateWorldFilesModificationSnapshot(file, res);
+            }
+        }
+    }
+
+    /**
+     * 获取所有指定世界的文件修改时间快照
+     *
+     * @param plugin 插件实例
+     * @param worlds 世界名称列表
+     * @return Map<文件相对路径, 最后修改时间戳>
+     */
+    public static Map<String, Long> getTimeSnapshotForAllWorlds(Plugin plugin, List<String> worlds) {
+        Map<String, Long> snapshot = new HashMap<>();
+        for (String worldName : worlds) {
+            World world = plugin.getServer().getWorld(worldName);
+            if (world == null) {
+                ConsoleSender.logWarn("World " + worldName + " not found, skipped in snapshot.");
+                continue;
+            }
+            String worldAbsPath = world.getWorldFolder().getAbsolutePath();
+            updateWorldFilesModificationSnapshot(new File(worldAbsPath), snapshot);
+        }
+        return snapshot;
+    }
+
+    /**
      * 将指定的文件加入Zip流
      *
      * @param zos          Zip输出流
