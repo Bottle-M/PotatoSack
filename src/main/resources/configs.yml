@@ -17,6 +17,13 @@ client:
         client-id:
         client-secret:
         refresh-token:
+    # Dropbox API Configuration
+    # Create a Dropbox app and use a refresh token with files.content.write,
+    # files.content.read, and files.metadata.read permissions.
+    dropbox:
+        app-key:
+        app-secret:
+        refresh-token:
 
 # The number of full backups to keep, actually it refers to "groups of backups" to keep.
 # Note: "A group of backups" consists of a full backup and a set of incremental backups following it (before the next full backup).
