@@ -67,7 +67,7 @@ public class OneDriveTokenFetcher {
                     System.out.println("Onedrive token refreshed");
                     // 更新配置文件中的refreshToken
                     if (config != null)
-                        config.setConfig("onedrive.refresh-token", respObj.refreshToken);
+                        config.setConfig(Config.KEYS.CLIENT.ONEDRIVE.REFRESH_TOKEN, respObj.refreshToken);
                     return true;
                 } else {
                     System.out.println("OneDrive Token Req Failed: Response body is null");
