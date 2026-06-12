@@ -7,42 +7,49 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import java.util.logging.Level;
+
 public final class ConsoleSender {
     /**
      * 记录插件出错信息（方便追溯）
      *
      * @param msg 错误信息字符串
-     * @apiNote 本方法会将错误信息记入服务端日志，同时打印到控制台，本方法首先会在本线程打印到控制台一次，再在主线程打印一次
+     * @apiNote 本方法会将错误信息记入服务端日志；插件实例不可用时使用服务器日志，最后兜底到标准错误流
      */
     public static void logError(String msg) {
-        String finalMsg = "Fatal: " + msg;
-        System.out.println("[Println] " + finalMsg);
-        Plugin plugin = PotatoSack.getPluginInstance();
-        if (plugin != null) {
-            // 记录到服务端日志
-            // 因为logError可能在异步方法中被调用，这里需要把getLogger.severe通过runTask放回主线程调用
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                plugin.getLogger().severe("[Logger] " + finalMsg);
-            });
-        }
+        log(Level.SEVERE, "Fatal: " + msg);
     }
 
     /**
      * 记录插件警告信息（方便追溯）
      *
      * @param msg 警告信息字符串
-     * @apiNote 本方法会将警告信息记入服务端日志，同时打印到控制台, 本方法首先会在本线程打印到控制台一次，再在主线程打印一次
+     * @apiNote 本方法会将警告信息记入服务端日志；插件实例不可用时使用服务器日志，最后兜底到标准错误流
      */
     public static void logWarn(String msg) {
-        String finalMsg = "Warning: " + msg;
-        System.out.println("[Println] " + finalMsg);
+        log(Level.WARNING, "Warning: " + msg);
+    }
+
+    /**
+     * 记录插件调试信息（方便追溯），仅在配置中 verbose-logging 设置为 true 时输出
+     *
+     * @param msg 调试信息字符串
+     * @apiNote 本方法会将调试信息记入服务端日志；插件实例不可用时使用服务器日志，最后兜底到标准错误流
+     */
+    public static void logDebug(String msg) {
+        log(Level.FINE, "Debug: " + msg);
+    }
+
+    private static void log(Level level, String msg) {
         Plugin plugin = PotatoSack.getPluginInstance();
         if (plugin != null) {
-            // 记录到服务端日志
-            // 因为logWarn可能在异步方法中被调用，这里需要把getLogger.warning通过runTask放回主线程调用
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                plugin.getLogger().warning("[Logger] " + finalMsg);
-            });
+            plugin.getLogger().log(level, msg);
+            return;
+        }
+        try {
+            Bukkit.getLogger().log(level, "[" + Constants.PLUGIN_PREFIX + "] " + msg);
+        } catch (Throwable ignored) {
+            System.err.println("[" + Constants.PLUGIN_PREFIX + "] " + level.getName() + ": " + msg);
         }
     }
 
@@ -80,9 +87,7 @@ public final class ConsoleSender {
         if (plugin == null) {
             return;
         }
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            target.sendMessage(ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "]" + ChatColor.RESET + " " + text);
-        });
+        Bukkit.getScheduler().runTask(plugin, () -> target.sendMessage(ChatColor.GOLD + "[" + Constants.PLUGIN_PREFIX + "]" + ChatColor.RESET + " " + text));
     }
 
     /**
