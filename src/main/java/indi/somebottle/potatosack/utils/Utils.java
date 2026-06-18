@@ -8,7 +8,6 @@ import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 
 import java.io.*;
-import java.math.BigInteger;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
@@ -53,7 +52,7 @@ public class Utils {
      * 计算文件的MD5哈希值
      *
      * @param file 文件File对象
-     * @return 哈希值
+     * @return 哈希值（32位十六进制字符串）
      */
     public static String fileMD5(File file) {
         try (FileInputStream fis = new FileInputStream(file)) {
@@ -64,8 +63,13 @@ public class Utils {
             while ((readLen = fis.read(buffer)) != -1) {
                 md5.update(buffer, 0, readLen);
             }
-            // 转换为十六进制字符串返回
-            return new BigInteger(1, md5.digest()).toString(16);
+            // 转换为十六进制字符串返回，确保前导零不会丢失
+            byte[] digest = md5.digest();
+            StringBuilder sb = new StringBuilder(32);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
         } catch (Exception e) {
             e.printStackTrace();
         }
