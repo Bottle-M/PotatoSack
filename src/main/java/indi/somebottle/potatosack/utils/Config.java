@@ -12,6 +12,12 @@ import java.util.List;
 /**
  * 插件配置管理类
  * <p>
+ * <strong>注意：此类不能做成单例。</strong>
+ * 构造函数中依赖 {@code PotatoSack.getPluginInstance()} 获取插件实例，
+ * 而该实例只有在 {@code onEnable()} 中才会初始化。
+ * 如果做成单例，在 {@code onEnable()} 之前调用 {@code getInstance()} 会导致空指针异常。
+ * </p>
+ * <p>
  * 负责加载、读取、修改和保存插件的配置文件 {@code configs.yml}。
  * 提供了配置项的完整性检查机制，确保所有必需的配置项都存在并具有默认值。
  * </p>
@@ -124,6 +130,11 @@ public class Config {
                 String REFRESH_TOKEN = "client.dropbox.refresh-token";
             }
         }
+
+        /**
+         * 配置文件中的版本号（用于判断配置文件是否过旧，是否需要补充新配置项）
+         */
+        String VERSION = "version";
 
         /**
          * 保留的最大全量备份数量
@@ -329,6 +340,15 @@ public class Config {
     }
 
     /**
+     * 获得插件版本号，读取自 {@code plugin.yml} 中的 version 字段
+     *
+     * @return 插件版本字符串
+     */
+    public String getPluginVersion() {
+        return plugin.getDescription().getVersion();
+    }
+
+    /**
      * 配置文件 {@code configs.yml} 完整性检查
      * <p>
      * 检查所有必需的配置项是否存在，对于缺失的配置项自动填充默认值。
@@ -351,6 +371,10 @@ public class Config {
      * @see #reload()
      */
     private void inspectConfig() {
+        if (config.get(KEYS.VERSION) == null) {
+            // 版本号配置项不存在，说明是旧版本的配置文件，设置默认版本号为 "legacy"
+            config.set(KEYS.VERSION, "legacy");
+        }
         if (config.get(KEYS.CLIENT.USE) == null) {
             config.set(KEYS.CLIENT.USE, "onedrive");
         }

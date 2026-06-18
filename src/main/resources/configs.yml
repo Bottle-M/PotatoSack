@@ -1,3 +1,6 @@
+# PotatoSack configuration version
+version: '${project.version}'
+
 client:
     # Choose the Cloud Storage Service Provider you want to use.
     use: onedrive
@@ -56,10 +59,16 @@ stop-full-backup-when-no-player: false
 # Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (Each chunk of zip file is only about 15.625 MiB)
 use-streaming-compression-upload: false
 
-# The worlds that you would like to backup, example:
+# The directory paths that you would like to backup, example:
 # worlds:
 #   - world
 #   - world_nether
 #   - world_the_end
+#
+# After Minecraft JE 26.1, it is better to use <Namespace:Key> format to specify worlds:
+# worlds:
+#   - minecraft:overworld
+#   - minecraft:the_nether
+#   - minecraft:the_end
 # Note: If you leave this blank, the plugin won't work.
 worlds: [ ]

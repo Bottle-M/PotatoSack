@@ -47,6 +47,16 @@ public final class PotatoSack extends JavaPlugin {
         System.out.println("Potato Sack Initializing...");
         // 初始化配置
         Config config = new Config();
+        // ---------------------------- 配置文件检查 ----------------------------
+        // 配置版本检查
+        String configVersion = (String) config.getConfig(Config.KEYS.VERSION);
+        if (configVersion == null || configVersion.equals("legacy")) {
+            // 配置文件需要手动升级
+            ConsoleSender.logWarn("Your config file is outdated ( – ⌓ – ). Please update the config file to the latest version CAREFULLY. It is suggested to backup your old backup files before you update.");
+            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+            return;
+        }
+        // -------------------------- 配置文件检查结束 --------------------------
         String clientUsed = (String) config.getConfig(Config.KEYS.CLIENT.USE);
         // 初始化云存储客户端
         try {
