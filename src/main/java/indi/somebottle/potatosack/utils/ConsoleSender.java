@@ -31,6 +31,16 @@ public final class ConsoleSender {
     }
 
     /**
+     * 记录插件一般信息
+     *
+     * @param msg 信息字符串
+     * @apiNote 本方法会将插件信息记入服务端日志；插件实例不可用时使用服务器日志，最后兜底到标准错误流
+     */
+    public static void logInfo(String msg) {
+        log(Level.INFO, "Info: " + msg);
+    }
+
+    /**
      * 记录插件调试信息（方便追溯），仅在配置中 verbose-logging 设置为 true 时输出
      *
      * @param msg 调试信息字符串
