@@ -172,9 +172,9 @@ public class Config {
         String USE_STREAMING_COMPRESSION_UPLOAD = "use-streaming-compression-upload";
 
         /**
-         * 需要备份的世界列表
+         * 需要备份的目录路径列表
          */
-        String WORLDS = "worlds";
+        String PATHS = "paths";
     }
 
     /**
@@ -360,7 +360,7 @@ public class Config {
      *   <li>云存储客户端配置（类型、base-dir、认证信息等）</li>
      *   <li>备份策略配置（保留数量、定时任务、无人上线处理等）</li>
      *   <li>性能配置（流式压缩上传开关）</li>
-     *   <li>备份世界列表</li>
+     *   <li>备份目录路径列表</li>
      * </ul>
      * </p>
      * <p>
@@ -420,9 +420,9 @@ public class Config {
         if (config.get(KEYS.USE_STREAMING_COMPRESSION_UPLOAD) == null) {
             config.set(KEYS.USE_STREAMING_COMPRESSION_UPLOAD, false);
         }
-        if (config.get(KEYS.WORLDS) == null) {
-            List<String> worlds = new ArrayList<>();
-            config.set(KEYS.WORLDS, worlds);
+        if (config.get(KEYS.PATHS) == null) {
+            List<String> paths = new ArrayList<>();
+            config.set(KEYS.PATHS, paths);
         }
         saveConfig();
     }

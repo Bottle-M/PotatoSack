@@ -17,6 +17,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,7 +41,14 @@ public final class PotatoSack extends JavaPlugin {
         // 输出服务端根目录
         System.out.println("Server root dir URI: " + worldContainerDir.toURI());
         // 测试 pathRelativeToServer 是否正常运作
-        Utils.testRelativePathToServer();
+        try {
+            Utils.testRelativePathToServer();
+        } catch (IOException e) {
+            ConsoleSender.logError("Method pathRelativeToServer worked improperly: " + e.getMessage());
+            e.printStackTrace();
+            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+            return;
+        }
         // 备份任务定时检查模块
         BackupChecker backupChecker;
         // 开始初始化插件

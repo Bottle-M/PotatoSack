@@ -136,8 +136,10 @@ public class Utils {
 
     /**
      * 用于在插件启动时检查 pathRelativeToServer 是否能正常运作
+     *
+     * @throws IOException 如果文件不存在，或者文件的真实位置不在服务端根目录下，或者发生其他 IO 错误
      */
-    public static void testRelativePathToServer() {
+    public static void testRelativePathToServer() throws IOException {
         // 拿 server.properties 测试相对服务端根目录路径
         File serverProperties = new File(System.getProperty("user.dir"), "server.properties");
         System.out.println("Absolute path of server.properties: " + serverProperties.getAbsolutePath());
@@ -145,20 +147,67 @@ public class Utils {
     }
 
     /**
-     * 将指定路径转换为一个可以当作Map Key的字符串，是一个相对于服务端根目录的相对路径
+     * 将指定路径转换为一个相对于服务端根目录的规范相对路径（Unix 风格）
+     *
+     * <p>本方法支持跟随符号链接</p>
+     *
+     * <p><b>注意，当 file 为服务端根目录时，会返回空字符串</b></p>
+     *
+     * <p>例如：</p>
+     * /root/server/world/region -> world/region
+     *
+     * <p>要求：</p>
+     * <ol>
+     *     <li>目标路径必须存在</li>
+     *     <li>目标路径的真实位置必须位于服务端根目录内</li>
+     *     <li>绝对路径和相对路径如果指向同一文件，会得到同一个 key</li>
+     * </ol>
      *
      * @param file 文件File对象
      * @return 转换后的字符串
+     * @throws IOException 如果文件不存在，或者文件的真实位置不在服务端根目录下，或者发生其他 IO 错误
      * @apiNote 比如<p>/root/server/world/region</p><p>转换为</p><p>world/region</p>
      */
-    public static String pathRelativeToServer(File file) {
-        // toURI 转换为 绝对路径 构成的标准 URI 形式
-        Path serverRootPath = Path.of(PotatoSack.worldContainerDir.toURI());
-        Path filePath = Path.of(file.toURI());
+    public static String pathRelativeToServer(File file) throws IOException {
+        // 获取服务端根目录的真实路径，以及输入路径的真实路径
+        Path serverRootPath = PotatoSack.worldContainerDir.toPath().toRealPath();
+        Path inputPath = file.toPath();
+        // 如果输入路径是绝对路径，则直接使用；如果是相对路径，则将它解析为相对于服务端根目录的路径
+        Path resolvedInputPath = inputPath.isAbsolute()
+                ? inputPath
+                : serverRootPath.resolve(inputPath);
+        Path realFilePath = resolvedInputPath.toRealPath();
+        if (!realFilePath.startsWith(serverRootPath)) {
+            // 确保输入路径的真实位置在服务端根目录下，防止路径穿越
+            throw new IllegalArgumentException(
+                    "Path is outside server root: " + file
+            );
+        }
         // 获得相对路径
-        String relativePathStr = serverRootPath.relativize(filePath).toString();
+        Path relativePath = serverRootPath.relativize(realFilePath);
         // 统一为 Unix 格式
-        return relativePathStr.replace('\\', '/');
+        return relativePath.toString().replace('\\', '/');
+    }
+
+    /**
+     * 检查相对于相同根目录的一组 Unix 相对路径中有没有包含和被包含的情况
+     *
+     * @param relativePaths 相对路径列表
+     * @return 如果存在路径 A 包含路径 B 的情况（即 A 是 B 的父目录），则返回 true；否则返回 false
+     * @apiNote 例如：如果 relativePaths 中包含 "world" 和 "world/region"，则返回 true，因为 "world" 包含 "world/region"；如果 relativePaths 中包含 "world/region" 和 "world/region/dimension"，则返回 true，因为 "world/region" 包含 "world/region/dimension"
+     */
+    public static boolean hasOverlappingRelativePaths(List<String> relativePaths) {
+        // 排序后检查相邻路径是否有包含关系
+        Collections.sort(relativePaths);
+        for (int i = 0; i < relativePaths.size() - 1; i++) {
+            String currentPath = relativePaths.get(i);
+            String nextPath = relativePaths.get(i + 1);
+            if (nextPath.startsWith(currentPath + "/") || nextPath.equals(currentPath)) {
+                // 如果下一个路径以当前路径加斜杠开头，说明当前路径包含下一个路径；或者如果两个路径完全相同，也算包含关系
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -181,8 +230,9 @@ public class Utils {
      * @param srcDir 待扫描目录（File对象）
      * @param res    （递归用） 调用时传入null即可
      * @return Map(String - > 文件最后哈希值)对象
+     * @throws IOException 如果在访问文件时发生IO错误
      */
-    public static Map<String, String> getCurrentFileHashes(File srcDir, Map<String, String> res) {
+    public static Map<String, String> getCurrentFileHashes(File srcDir, Map<String, String> res) throws IOException {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -227,10 +277,10 @@ public class Utils {
     /**
      * 获取指定目录下所有文件的修改时间快照
      *
-     * @param srcDir 待扫描目录（File对象）
+     * @param srcDir 待扫描目录（File 对象）
      * @param res    存储结果的 Map
      */
-    public static void updateWorldFilesModificationSnapshot(File srcDir, Map<String, Long> res) {
+    public static void updateFilesModificationSnapshot(File srcDir, Map<String, Long> res) throws IOException {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -241,28 +291,22 @@ public class Utils {
                 String relativePath = pathRelativeToServer(file);
                 res.put(relativePath, file.lastModified());
             } else if (file.isDirectory()) {
-                updateWorldFilesModificationSnapshot(file, res);
+                updateFilesModificationSnapshot(file, res);
             }
         }
     }
 
     /**
-     * 获取所有指定世界的文件修改时间快照
+     * 获取所有指定路径的文件修改时间快照
      *
      * @param plugin 插件实例
-     * @param worlds 世界名称列表
+     * @param paths  路径列表
      * @return Map<文件相对路径, 最后修改时间戳>
      */
-    public static Map<String, Long> getTimeSnapshotForAllWorlds(Plugin plugin, List<String> worlds) {
+    public static Map<String, Long> getTimeSnapshotForAllFilesUnderPaths(Plugin plugin, List<String> paths) throws IOException {
         Map<String, Long> snapshot = new HashMap<>();
-        for (String worldName : worlds) {
-            World world = plugin.getServer().getWorld(worldName);
-            if (world == null) {
-                ConsoleSender.logWarn("World " + worldName + " not found, skipped in snapshot.");
-                continue;
-            }
-            String worldAbsPath = world.getWorldFolder().getAbsolutePath();
-            updateWorldFilesModificationSnapshot(new File(worldAbsPath), snapshot);
+        for (String path : paths) {
+            updateFilesModificationSnapshot(new File(path), snapshot);
         }
         return snapshot;
     }

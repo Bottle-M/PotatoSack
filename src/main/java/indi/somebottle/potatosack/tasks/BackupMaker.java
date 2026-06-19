@@ -5,11 +5,12 @@ import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.tasks.entities.BackupRecord;
-import indi.somebottle.potatosack.tasks.entities.WorldRecord;
+import indi.somebottle.potatosack.tasks.entities.DirFileRecords;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
 import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
 import indi.somebottle.potatosack.utils.*;
 import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
@@ -31,7 +32,8 @@ public class BackupMaker {
     private final String pluginTempPath;
     private final Config config;
     private final Gson gson = new Gson();
-    private final String worldRecordsFilePrefix = "_"; // 世界记录文件名前缀
+    @SuppressWarnings("FieldCanBeLocal")
+    private final String DIR_FILE_RECORDS_FILE_PREFIX = "_"; // 目录文件哈希记录文件名前缀
     /**
      * 全量备份指数退避计算器 (秒)
      */
@@ -53,8 +55,8 @@ public class BackupMaker {
         this.client = client;
         this.config = config;
         this.plugin = PotatoSack.getPluginInstance();
-        pluginDataPath = plugin.getDataFolder() + File.separator + "data" + File.separator;
-        pluginTempPath = plugin.getDataFolder() + File.separator + "temp" + File.separator;
+        pluginDataPath = plugin.getDataFolder() + File.separator + "data";
+        pluginTempPath = plugin.getDataFolder() + File.separator + "temp";
         // 建立必要的目录
         File tempDir = new File(pluginTempPath);
         if (!tempDir.exists())
@@ -70,14 +72,34 @@ public class BackupMaker {
             // 这里拉取失败时 getBackupRecord 会自动建立新的 backup 记录文件，创建失败才会返回 null
             throw new IOException("Failed to create local backup record file.");
         }
-        // 再检查各个世界的配置文件
-        List<String> worlds = (List<String>) config.getConfig(Config.KEYS.WORLDS);
-        for (String worldName : worlds) {
-            File worldRecordFile = getWorldRecordsFile(worldName);
-            System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
-            if (getWorldRecord(worldName) == null) {
-                // 这里拉取失败时 getWorldRecord 会自动建立新的 world 记录文件，创建失败才会返回 null
-                throw new IOException("Failed to create local world record file for world: " + worldName);
+        List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
+        // 先检查配置的备份路径是否都是真实的目录路径
+        List<String> relativeBackupConfPaths = new ArrayList<>();
+        for (String backupConfPath : backupConfPaths) {
+            try {
+                // 如果不是服务端根目录的子孙路径就会抛出异常
+                relativeBackupConfPaths.add(Utils.pathRelativeToServer(new File(backupConfPath)));
+                // 检查路径是否存在且是目录
+                File backupConfFile = new File(backupConfPath);
+                if (!backupConfFile.exists() || !backupConfFile.isDirectory()) {
+                    throw new IOException("does not exist or is not a directory.");
+                }
+            } catch (IOException e) {
+                throw new IOException("Backup path '" + backupConfPath + "' is invalid: " + e.getMessage());
+            }
+        }
+        // 接着检查路径是否有交叠（即是否存在某个路径是另一个路径的父目录或子目录），如果有交叠就抛出异常
+        if (Utils.hasOverlappingRelativePaths(relativeBackupConfPaths)) {
+            throw new IOException("There are overlapping backup paths in the configuration. Please make sure no backup path is a parent or child of another backup path.");
+        }
+        // 再检查配置的各个待备份路径的记录文件是否存在
+        for (String backupConfPath : backupConfPaths) {
+            // 每个待备份路径都有一个目录下文件的哈希记录文件 _备份路径标识.json，存放上一次备份时该路径下所有文件的哈希值
+            File dirFileRecordsFile = getDirFileRecordsFile(backupConfPath);
+            System.out.println("Reading hash record file: " + dirFileRecordsFile.getAbsolutePath());
+            if (getDirFileRecords(backupConfPath) == null) {
+                // 这里拉取失败时 getDirFileRecords 会自动建立新的记录文件，创建失败才会返回 null
+                throw new IOException("Failed to create local record file for backup path: " + backupConfPath);
             }
         }
         // 初始化指数退避计算器
@@ -99,6 +121,70 @@ public class BackupMaker {
                 }
             }
         }
+    }
+
+    /**
+     * 根据配置的世界名获取对应的 World 对象，这里涉及到 26.1 之前和之后的区别
+     *
+     * <p>26.1 之前，直接配置的就是世界名；</p>
+     *
+     * <p>26.1 及其之后，还支持 Namespaced Key</p>
+     *
+     * @param worldConfName 配置的世界名或 Namespaced Key 字符串（如 minecraft:overworld）
+     * @return World 对象，如果找不到对应的世界则返回 null
+     */
+    private World resolveWorld(String worldConfName) {
+        if (worldConfName == null || worldConfName.equals("")) {
+            return null;
+        }
+        worldConfName = worldConfName.trim();
+
+        // 先检查有没有冒号，如果有冒号就当做 Namespaced Key 来解析
+        if (worldConfName.contains(":")) {
+            String[] parts = worldConfName.split(":", 2);
+            if (parts.length < 2 || parts[0].trim().equals("") || parts[1].trim().equals("")) {
+                // 格式不对，fallback
+                ConsoleSender.logDebug("Unrecognized namespaced world key '" + worldConfName + "' (with colon but invalid), fallback to normal world name");
+                return plugin.getServer().getWorld(worldConfName);
+            }
+            String namespace = parts[0].trim();
+            String key = parts[1].trim();
+            return plugin.getServer().getWorld(new NamespacedKey(namespace, key));
+        } else {
+            // 没有冒号就直接当做世界名
+            return plugin.getServer().getWorld(worldConfName);
+        }
+    }
+
+    /**
+     * 把配置的备份路径转换为相对服务端根目录的相对路径，然后转换为可用于文件名的规范化字符串
+     *
+     * <p><b>如果就是服务端根目录，会返回 "__root"</b></p>
+     *
+     * @param backupConfPath 配置的备份路径字符串
+     * @return 规范化的路径字符串，例如 world -> world, world/region -> world__region
+     */
+    private String backupConfPathToNormalizedName(String backupConfPath) throws IOException {
+        // 先转换为相对于服务端根目录的相对路径
+        String relativePath = Utils.pathRelativeToServer(new File(backupConfPath));
+        // 先把反斜杠替换成斜杠，再把多个连续的斜杠替换成一个斜杠
+        // 然后去掉前导、后缀斜杠
+        String normalizedPath = relativePath.replace('\\', '/').replaceAll("/+", "/").replaceAll("^/+", "").replaceAll("/+$", "");
+        if (normalizedPath.isBlank()) {
+            return "__root";
+        }
+        // 再把斜杠替换成双下划线，并把其他不合法的字符替换成下划线，得到最终的规范化字符串
+        return normalizedPath.replace("/", "__").replaceAll("[^\\p{L}\\p{N}._-]", "_");
+    }
+
+    /**
+     * 根据规范的备份标识名构建对应的目录文件哈希记录文件名，文件名为 _备份路径标识，没有 .json 后缀
+     *
+     * @param normalizedFileName 规范的备份标识名字符串，通过 backupConfPathToNormalizedName 方法获得
+     * @return 记录文件名字符串
+     */
+    private String buildDirFileRecordsFilename(String normalizedFileName) {
+        return DIR_FILE_RECORDS_FILE_PREFIX + normalizedFileName;
     }
 
     /**
@@ -180,29 +266,29 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的 _世界名.json
+     * 写入本地的 _备份路径标识.json
      *
-     * @param worldName 世界名
-     * @param rec       世界记录WorldRecord
+     * @param backupConfPath 配置的备份路径字符串
+     * @param rec           目录文件记录 DirFileRecords 对象
      * @throws IOException IO异常
      */
-    public void writeWorldRecord(String worldName, WorldRecord rec) throws IOException {
+    public void writeDirFileRecords(String backupConfPath, DirFileRecords rec) throws IOException {
         rec.setFileUpdateTime(Utils.timestamp());
-        Files.write(getWorldRecordsFile(worldName).toPath(), gson.toJson(rec).getBytes());
+        Files.write(getDirFileRecordsFile(backupConfPath).toPath(), gson.toJson(rec).getBytes());
     }
 
     /**
-     * 写入本地的 _世界名.json
+     * 写入本地的 _备份路径标识.json
      *
-     * @param worldName 世界名
-     * @param recList   Map<文件相对服务器根目录的路径, 文件哈希>
+     * @param backupConfPath 配置的备份路径字符串
+     * @param recList       Map<文件相对服务端根目录的路径, 文件哈希>
      * @throws IOException IO异常
      */
-    public void writeWorldRecord(String worldName, Map<String, String> recList) throws IOException {
-        WorldRecord rec = new WorldRecord();
+    public void writeDirFileRecords(String backupConfPath, Map<String, String> recList) throws IOException {
+        DirFileRecords rec = new DirFileRecords();
         rec.setFileUpdateTime(Utils.timestamp());
         rec.setLastFileHashes(recList);
-        writeWorldRecord(worldName, rec);
+        writeDirFileRecords(backupConfPath, rec);
     }
 
     /**
@@ -216,6 +302,7 @@ public class BackupMaker {
         File backupRecordFile = getBackupRecordFile();
         if (!backupRecordFile.exists()) {
             if (!pullRecordsFile("backup")) {
+                ConsoleSender.logInfo("Local backup record file not found, and failed to pull from cloud. Creating new local backup record file...");
                 if (!backupRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
                     backupRecordFile.getParentFile().mkdirs();
                 if (backupRecordFile.createNewFile()) {
@@ -233,35 +320,36 @@ public class BackupMaker {
     }
 
     /**
-     * 获得世界数据记录（_世界名.json）
+     * 获得备份路径对应的目录下数据哈希记录（_备份路径标识.json）
      *
-     * @param worldName 世界名
-     * @return WorldRecord对象
+     * @param backupConfPath 配置的备份路径字符串
+     * @return DirFileRecords 对象
      * @throws IOException IO异常
-     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _世界名.json。如果连文件都没法新建就会返回 null。
+     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _备份路径标识.json。如果连文件都没法新建就会返回 null。
      */
     @SuppressWarnings("ResultOfMethodCallIgnored")
-    public WorldRecord getWorldRecord(String worldName) throws IOException {
-        File worldRecordFile = getWorldRecordsFile(worldName);
-        if (!worldRecordFile.exists()) {
+    public DirFileRecords getDirFileRecords(String backupConfPath) throws IOException {
+        File dirFileRecordsFile = getDirFileRecordsFile(backupConfPath);
+        if (!dirFileRecordsFile.exists()) {
             // 如果本地没有则尝试从云端拉取
-            if (!pullRecordsFile(worldRecordsFilePrefix + worldName)) {
+            if (!pullRecordsFile(buildDirFileRecordsFilename(backupConfPathToNormalizedName(backupConfPath)))) {
+                ConsoleSender.logInfo("Local record file for directory " + backupConfPath + " not found, and failed to pull from cloud. Creating new local record file...");
                 // 如果云端也没有则创建新文件
-                if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
-                    worldRecordFile.getParentFile().mkdirs();
+                if (!dirFileRecordsFile.getParentFile().exists()) // 要先把必要的目录给建立了
+                    dirFileRecordsFile.getParentFile().mkdirs();
                 // 在本地新建文件
-                if (worldRecordFile.createNewFile()) {
-                    writeWorldRecord(worldName, new HashMap<>());
+                if (dirFileRecordsFile.createNewFile()) {
+                    writeDirFileRecords(backupConfPath, new HashMap<>());
                 } else {
                     // 若文件都没法新建，返回 null
                     return null;
                 }
             }
         }
-        // 读入backup.json
-        String worldJson = new String(Files.readAllBytes(worldRecordFile.toPath()));
+        // 读入路径文件哈希记录文件 json
+        String dirFileRecordsJson = new String(Files.readAllBytes(dirFileRecordsFile.toPath()));
         // 解析成配置对象
-        return gson.fromJson(worldJson, WorldRecord.class);
+        return gson.fromJson(dirFileRecordsJson, DirFileRecords.class);
     }
 
     /**
@@ -270,18 +358,19 @@ public class BackupMaker {
      * @return File对象
      */
     public File getBackupRecordFile() {
-        return new File(pluginDataPath + "backup.json");
+        return new File(pluginDataPath + File.separator + "backup.json");
     }
 
     /**
-     * 根据世界名获取 _世界名.json 记录文件
+     * 根据配置的备份路径字符串获取 _备份路径标识.json 的文件（哈希）记录文件 File 对象
      *
-     * @param worldName 世界名
-     * @return File对象
-     * @apiNote _世界名.json中存放世界数据目录中所有文件的最后哈希值
+     * @param backupConfPath 配置的备份路径字符串
+     * @return File 对象
+     * @apiNote _备份路径标识.json 中存放配置的目录中所有文件的最后哈希值
      */
-    public File getWorldRecordsFile(String worldName) {
-        return new File(pluginDataPath + worldRecordsFilePrefix + worldName + ".json");
+    public File getDirFileRecordsFile(String backupConfPath) throws IOException {
+        String normalizedPathName = backupConfPathToNormalizedName(backupConfPath);
+        return new File(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedPathName) + ".json");
     }
 
     /**
@@ -319,7 +408,7 @@ public class BackupMaker {
         // 从云端拉取backup.json
         boolean success = true;
         for (String name : fileNames) {
-            String recordFilePath = pluginDataPath + name + ".json";
+            String recordFilePath = pluginDataPath + File.separator + name + ".json";
             success = client.downloadFile(Constants.APP_DATA_FOLDER + "/" + latestFolderName + "/" + name + ".json", recordFilePath) && success;
         }
         return success;
@@ -360,33 +449,23 @@ public class BackupMaker {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
         BackupRecord rec = getBackupRecord();
-        // 获得世界名
-        List<String> worlds = (List<String>) config.getConfig(Config.KEYS.WORLDS);
-        // 各个世界的目录路径
-        List<String> worldPaths = new ArrayList<>();
-        // 1. 扫描世界目录生成包含每个文件最后哈希值的 _世界名.json
+        // 获得配置的备份路径列表
+        List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
+        // 1. 扫描世界目录生成包含每个文件最后哈希值的 _备份路径标识.json
         long scanStartTime = System.currentTimeMillis();
-        for (String worldName : worlds) {
-            // 获得各个世界的配置文件;
-            World world = plugin.getServer().getWorld(worldName);
-            if (world == null) {
-                ConsoleSender.logWarn("World " + worldName + " not found, ignored.");
-                continue;
-            }
-            String worldAbsPath = world.getWorldFolder().getAbsolutePath();
-            worldPaths.add(worldAbsPath);
+        for (String backupConfPath : backupConfPaths) {
             // 扫描世界目录下的所有文件，计算文件哈希（为增量备份做准备）
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(new File(worldAbsPath), null);
-            // _世界名.json 中存放世界数据目录中所有文件的最后哈希值
-            writeWorldRecord(worldName, currentFileHashes);
+            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(new File(backupConfPath), null);
+            // _备份路径标识.json 中存放待备份数据目录中所有文件的最后哈希值
+            writeDirFileRecords(backupConfPath, currentFileHashes);
         }
         // 统计扫描和计算哈希所需的时间 T
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         String currFullBackupId = getNextFullBackupId(rec);
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
-        // 扫描 worldPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
-        ZipFilePath[] worldZipFilePaths = Utils.scanPeerDirsToZipPaths(worldPaths.toArray(new String[0]));
+        // 扫描 backupConfPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
+        ZipFilePath[] backupZipFilePaths = Utils.scanPeerDirsToZipPaths(backupConfPaths.toArray(new String[0]));
         if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
@@ -394,12 +473,13 @@ public class BackupMaker {
             // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
             // 要保证这个期间世界数据不会变动，否则会上传失败
             // 储存停止自动保存的世界
-            List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worlds);
+            // TODO: 这里世界暂停保存有点难办，需要结合之后的 .potatosackignore 判断世界目录在不在备份路径里来判断需不需要关闭自动保存，目前先全部关闭
+            List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, null);
             ConsoleSender.toConsole("Temporarily disabled world auto-save...");
             try {
                 // 等待残余的异步保存完成
-                waitForAsyncSavesComplete(worlds, scanDuration);
-                if (!client.streamCompressAndUpload(worldZipFilePaths, remotePath, true)) {
+                waitForAsyncSavesComplete(backupConfPaths, scanDuration);
+                if (!client.streamCompressAndUpload(backupZipFilePaths, remotePath, true)) {
                     // 如果流式压缩上传失败了就指数退避
                     putOffFullBackup(rec);
                     return false;
@@ -414,9 +494,9 @@ public class BackupMaker {
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
             ConsoleSender.toConsole("Compressing...");
             // 临时文件路径
-            String tempOutputFilePath = pluginTempPath + "full" + Utils.timestamp() + ".zip";
+            String tempOutputFilePath = pluginTempPath + File.separator + "full" + Utils.timestamp() + ".zip";
             // 2. 开始压缩
-            if (!Utils.zipSpecificFiles(worldZipFilePaths, tempOutputFilePath, true))
+            if (!Utils.zipSpecificFiles(backupZipFilePaths, tempOutputFilePath, true))
                 return false;
             // 3. 上传压缩好的文件
             ConsoleSender.toConsole("Uploading Full Backup...");
@@ -450,10 +530,11 @@ public class BackupMaker {
         }
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
-        if (!client.uploadFile(pluginDataPath + "backup.json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
+        if (!client.uploadFile(pluginDataPath + File.separator + "backup.json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
             return false;
-        for (String worldName : worlds) {
-            if (!client.uploadFile(pluginDataPath + worldRecordsFilePrefix + worldName + ".json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/_" + worldName + ".json"))
+        for (String backupConfPath : backupConfPaths) {
+            String normalizedDirFileRecordsFileName = backupConfPathToNormalizedName(backupConfPath);
+            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json"))
                 return false;
         }
         // 6. 删除过时备份
@@ -499,26 +580,19 @@ public class BackupMaker {
             return makeFullBackup();
         }
         // 获得世界名
-        List<String> worlds = (List<String>) config.getConfig(Config.KEYS.WORLDS);
+        List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
         // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
         List<String> deletedPaths = new ArrayList<>();
         // 所有有变动文件的 【绝对路径】（方便Zip打包）
         List<ZipFilePath> increFilePaths = new ArrayList<>();
         // 1. 扫描每个世界目录找到有差异的文件
         long scanStartTime = System.currentTimeMillis();
-        for (String worldName : worlds) {
-            // 获得各个世界的配置文件;
-            World world = plugin.getServer().getWorld(worldName);
-            if (world == null) {
-                ConsoleSender.logWarn("World " + worldName + " not found, ignored.");
-                continue;
-            }
-            String worldAbsPath = world.getWorldFolder().getAbsolutePath();
-            // 扫描世界目录下的所有文件，计算哈希值（为增量备份做准备）
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(new File(worldAbsPath), null);
+        for (String backupConfPath : backupConfPaths) {
+            // 扫描指定目录下的所有文件，计算哈希值（为增量备份做准备）
+            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(new File(backupConfPath), null);
             // 获得上一次增量备份时的文件哈希值
-            WorldRecord prevWorldRec = getWorldRecord(worldName);
-            Map<String, String> prevLastFileHashes = prevWorldRec.getLastFileHashes();
+            DirFileRecords prevDirFileRec = getDirFileRecords(backupConfPath);
+            Map<String, String> prevLastFileHashes = prevDirFileRec.getLastFileHashes();
             // 找到被删除的文件的路径
             deletedPaths.addAll(
                     Utils.getDeletedFilePaths(prevLastFileHashes, currentFileHashes)
@@ -536,8 +610,8 @@ public class BackupMaker {
                             )
                     );
             }
-            // 更新 _世界名.json 中存放世界数据目录中所有文件的最后哈希值
-            writeWorldRecord(worldName, currentFileHashes);
+            // 更新 _备份路径标识.json 中存放世界数据目录中所有文件的最后哈希值
+            writeDirFileRecords(backupConfPath, currentFileHashes);
         }
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         // 若没有文件变更则不进行本次增量备份
@@ -547,7 +621,7 @@ public class BackupMaker {
         }
         // 2. 压缩
         // 写入deleted.files文件
-        String deletedRecordPath = pluginTempPath + "deleted.files";
+        String deletedRecordPath = pluginTempPath + File.separator + "deleted.files";
         String deletedFileContent = String.join("\n", deletedPaths) + "\n";
         Files.write(new File(deletedRecordPath).toPath(), deletedFileContent.getBytes());
         // 把deleted.files文件也加入压缩包
@@ -571,11 +645,12 @@ public class BackupMaker {
             // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
             // 要保证这个期间世界数据不会变动，否则会上传失败
             // 储存停止自动保存的世界
-            List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worlds);
+            // TODO: 同上
+            List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, null);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
                 // 等待残余的异步保存完成
-                waitForAsyncSavesComplete(worlds, scanDuration);
+                waitForAsyncSavesComplete(backupConfPaths, scanDuration);
                 if (!client.streamCompressAndUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
                     // 流式压缩上传如果失败就指数退避
                     putOffIncreBackup(rec);
@@ -591,7 +666,7 @@ public class BackupMaker {
             ConsoleSender.toConsole("------>[ Using Traditional Upload (Fully write zip file to local temp folder first) ]<------");
             ConsoleSender.toConsole("Compressing...");
             // 输出文件路径
-            String tempOutputFilePath = pluginTempPath + "incre" + increBackupId + ".zip";
+            String tempOutputFilePath = pluginTempPath + File.separator + "incre" + increBackupId + ".zip";
             // 执行压缩
             if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), tempOutputFilePath, true))
                 return false;
@@ -624,10 +699,11 @@ public class BackupMaker {
         }
         // 5. 上传备份记录
         ConsoleSender.toConsole("Uploading Record Files...");
-        if (!client.uploadFile(pluginDataPath + "backup.json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
+        if (!client.uploadFile(pluginDataPath + File.separator + "backup.json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
             return false;
-        for (String worldName : worlds) {
-            if (!client.uploadFile(pluginDataPath + worldRecordsFilePrefix + worldName + ".json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/_" + worldName + ".json"))
+        for (String backupConfPath : backupConfPaths) {
+            String normalizedDirFileRecordsFileName = backupConfPathToNormalizedName(backupConfPath);
+            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json"))
                 return false;
         }
         ConsoleSender.toConsole("Successfully made incremental backup: " + increBackupId + " in backup group " + lastFullBackupId);
@@ -666,16 +742,16 @@ public class BackupMaker {
      * 等待策略：先等待 max(MIN_WAIT, scanDuration*2) 秒，然后检测文件是否变动，
      * 若有变动则继续等待，直到无变动或达到总等待上限。
      *
-     * @param worlds       世界名称列表
+     * @param backupConfPaths       配置的备份路径列表，用于检测这些路径下的文件变动
      * @param scanDuration 扫描文件哈希所用时长（秒）
      * @throws InterruptedException 线程中断异常
      */
     @SuppressWarnings("BusyWait")
-    private void waitForAsyncSavesComplete(List<String> worlds, long scanDuration) throws InterruptedException {
+    private void waitForAsyncSavesComplete(List<String> backupConfPaths, long scanDuration) throws InterruptedException, IOException {
         ConsoleSender.toConsole("Waiting for async saves to complete (scan took " + scanDuration + "s)...");
 
         // 立即获取第一次文件修改时间快照作为基准
-        Map<String, Long> lastSnapshot = Utils.getTimeSnapshotForAllWorlds(plugin, worlds);
+        Map<String, Long> lastSnapshot = Utils.getTimeSnapshotForAllFilesUnderPaths(plugin, backupConfPaths);
 
         // 计算单次等待时间
         long singleWaitTime = Math.max(Constants.STREAMING_UPLOAD_MIN_WAIT_SECONDS, scanDuration * 2);
@@ -687,7 +763,7 @@ public class BackupMaker {
             totalWaitTime += singleWaitTime;
 
             // 重新扫描文件修改时间
-            Map<String, Long> currentSnapshot = Utils.getTimeSnapshotForAllWorlds(plugin, worlds);
+            Map<String, Long> currentSnapshot = Utils.getTimeSnapshotForAllFilesUnderPaths(plugin, backupConfPaths);
 
             // 比较修改时间快照
             if (currentSnapshot.equals(lastSnapshot)) {
