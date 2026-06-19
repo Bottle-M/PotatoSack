@@ -8,8 +8,10 @@ import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -49,7 +51,7 @@ public class Utils {
     }
 
     /**
-     * 计算文件的MD5哈希值
+     * 计算文件的 MD5 哈希值
      *
      * @param file 文件File对象
      * @return 哈希值（32位十六进制字符串）
@@ -74,6 +76,27 @@ public class Utils {
             e.printStackTrace();
         }
         return "";
+    }
+
+    /**
+     * 计算字符串的 MD5 哈希值
+     *
+     * @param input 待计算哈希的字符串（按 UTF-8 解码）
+     * @return 32 位十六进制哈希字符串
+     */
+    public static String md5Hex(String input) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            byte[] digest = md5.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(32);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            // MD5 是 JCE 标准算法，正常环境下不会缺失
+            throw new RuntimeException("MD5 algorithm not available, this should not happen.", e);
+        }
     }
 
     /**
@@ -197,11 +220,12 @@ public class Utils {
      * @apiNote 例如：如果 relativePaths 中包含 "world" 和 "world/region"，则返回 true，因为 "world" 包含 "world/region"；如果 relativePaths 中包含 "world/region" 和 "world/region/dimension"，则返回 true，因为 "world/region" 包含 "world/region/dimension"
      */
     public static boolean hasOverlappingRelativePaths(List<String> relativePaths) {
-        // 排序后检查相邻路径是否有包含关系
-        Collections.sort(relativePaths);
-        for (int i = 0; i < relativePaths.size() - 1; i++) {
-            String currentPath = relativePaths.get(i);
-            String nextPath = relativePaths.get(i + 1);
+        // 排序后检查相邻路径是否有包含关系（在副本上排序，避免修改入参）
+        List<String> sorted = new ArrayList<>(relativePaths);
+        Collections.sort(sorted);
+        for (int i = 0; i < sorted.size() - 1; i++) {
+            String currentPath = sorted.get(i);
+            String nextPath = sorted.get(i + 1);
             if (nextPath.startsWith(currentPath + "/") || nextPath.equals(currentPath)) {
                 // 如果下一个路径以当前路径加斜杠开头，说明当前路径包含下一个路径；或者如果两个路径完全相同，也算包含关系
                 return true;
@@ -222,6 +246,25 @@ public class Utils {
         File absoluteFile = new File(PotatoSack.worldContainerDir, relativePath);
         // 返回拼接好的路径字符串
         return absoluteFile.getPath();
+    }
+
+    /**
+     * 将配置的备份路径解析为 File 对象，用于统一备份路径对应的实际文件
+     * <p>
+     * 绝对路径原样使用；相对路径按服务端根目录（worldContainerDir）解析，
+     * 与 {@link #pathRelativeToServer(File)} 的解析基准保持一致，
+     * 避免相对路径在扫描/打包时按 JVM 工作目录解析而与键值生成基准不一致。
+     * </p>
+     *
+     * @param path 配置的备份路径（绝对或相对）
+     * @return 解析后的 File 对象
+     */
+    public static File resolveBackupConfPath(String path) {
+        File file = new File(path);
+        if (file.isAbsolute()) {
+            return file;
+        }
+        return new File(PotatoSack.worldContainerDir, path);
     }
 
     /**
@@ -297,16 +340,15 @@ public class Utils {
     }
 
     /**
-     * 获取所有指定路径的文件修改时间快照
+     * 获取所有指定路径下文件的修改时间快照
      *
-     * @param plugin 插件实例
-     * @param paths  路径列表
+     * @param paths 路径列表（绝对或相对服务端根）
      * @return Map<文件相对路径, 最后修改时间戳>
      */
-    public static Map<String, Long> getTimeSnapshotForAllFilesUnderPaths(Plugin plugin, List<String> paths) throws IOException {
+    public static Map<String, Long> getTimeSnapshotForAllFilesUnderPaths(List<String> paths) throws IOException {
         Map<String, Long> snapshot = new HashMap<>();
         for (String path : paths) {
-            updateFilesModificationSnapshot(new File(path), snapshot);
+            updateFilesModificationSnapshot(resolveBackupConfPath(path), snapshot);
         }
         return snapshot;
     }
@@ -427,7 +469,7 @@ public class Utils {
      * （递归方法） 扫描某个目录下所有文件，转换为 ZipFilePath
      *
      * @param srcDir        源目录 File 对象
-     * @param parentDirPath 父目录路径
+     * @param parentDirPath 该目录相对于服务端根的相对路径（作为 zip 内路径前缀，空串表示服务端根）
      * @return List<ZipFilePath>
      */
     private static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, String parentDirPath) throws Exception {
@@ -456,9 +498,9 @@ public class Utils {
 
 
     /**
-     * 指定多个同级目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
+     * 指定多个备份目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
      *
-     * @param srcDirPaths String[] ，指定要打包的目录绝对路径（注意：是同一目录下的子目录）
+     * @param srcDirPaths String[] ，指定要打包的备份目录路径（绝对或相对服务端根）
      * @return ZipFilePath[]
      */
     public static ZipFilePath[] scanPeerDirsToZipPaths(String[] srcDirPaths) {
@@ -466,14 +508,54 @@ public class Utils {
         try {
             // 遍历每个目录
             for (String path : srcDirPaths) {
-                File srcDir = new File(path);
-                // 扫描这个目录内的文件，形成 ZipFilePath 列表
-                res.addAll(dirFilesToZipFilePaths(srcDir, srcDir.getName()));
+                File srcDir = resolveBackupConfPath(path);
+                // 以该目录相对于服务端根的路径作为 zip 内路径前缀，保证嵌套路径也能正确还原
+                res.addAll(dirFilesToZipFilePaths(srcDir, pathRelativeToServer(srcDir)));
             }
         } catch (Exception e) {
-            ConsoleSender.logError("Transformation of world file paths to zip file paths failed: " + e.getMessage());
+            ConsoleSender.logError("Transformation of backup path to zip file paths failed: " + e.getMessage());
         }
         return res.toArray(new ZipFilePath[0]);
+    }
+
+    /**
+     * 找出其世界目录与任一配置的备份路径有交叠（相等、或互为父子目录）的已加载世界名
+     * <p>
+     * 用于确定流式备份时需要临时关闭自动保存的世界范围：只暂停真正会被备份到数据的世界，
+     * 避免无差别关闭所有世界自动保存
+     * </p>
+     *
+     * @param backupConfPaths 配置的备份路径列表
+     * @return 与备份路径有交叠的世界名列表；若存在世界目录无法解析，返回 null，表示无法判断交叠关系，调用方应关闭所有世界的自动保存
+     * TODO: 后续引入 .potatosackignore 后，被忽略的世界目录不应计入
+     */
+    public static List<String> getWorldNamesOverlappingBackupPaths(List<String> backupConfPaths) {
+        List<String> res = new ArrayList<>();
+        // 预先解析各备份路径的真实路径，便于和世界目录比较
+        List<Path> backupRealPaths = new ArrayList<>();
+        for (String path : backupConfPaths) {
+            try {
+                backupRealPaths.add(resolveBackupConfPath(path).toPath().toRealPath());
+            } catch (IOException ignored) {
+                // 路径无法解析（不存在等）则跳过，构造时已校验过，这里防御性处理
+            }
+        }
+        for (World world : Bukkit.getWorlds()) {
+            try {
+                Path worldRealPath = world.getWorldFolder().toPath().toRealPath();
+                for (Path backupRealPath : backupRealPaths) {
+                    if (worldRealPath.startsWith(backupRealPath) || backupRealPath.startsWith(worldRealPath)) {
+                        res.add(world.getName());
+                        break;
+                    }
+                }
+            } catch (IOException e) {
+                // 某个世界目录无法解析，无法判断它与备份路径是否交叠，保守起见返回 null，让调用方关闭所有世界的自动保存
+                ConsoleSender.logWarn("Failed to resolve world folder for '" + world.getName() + "': " + e.getMessage() + ". Will disable auto-save for all worlds.");
+                return null;
+            }
+        }
+        return res;
     }
 
     /**

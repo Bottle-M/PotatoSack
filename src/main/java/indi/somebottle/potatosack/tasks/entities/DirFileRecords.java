@@ -9,10 +9,10 @@ import java.util.Map;
  */
 public class DirFileRecords {
     @SerializedName("file_update_time")
-    private long fileUpdateTime; // 世界名.json文件更新时间戳
+    private long fileUpdateTime; // _备份路径标识.json 文件更新时间戳
 
     @SerializedName("last_file_hashes")
-    private Map<String, String> lastFileHashes; // 存放世界数据目录中所有文件的最后哈希值
+    private Map<String, String> lastFileHashes; // 存放指定备份目录中所有文件的最后哈希值
 
     public long getFileUpdateTime() {
         return fileUpdateTime;
