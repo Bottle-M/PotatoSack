@@ -11,21 +11,21 @@ AppFolder
 │   ├── full.zip
 │   ├── incre000001.zip
 │   ├── incre000002.zip
-│   ├── _world.json
-│   ├── _world_nether.json
-│   └── _world_the_end.json
+│   ├── _world_<hash>.json
+│   ├── _world_nether_<hash>.json
+│   └── _world_the_end_<hash>.json
 └── 020240104000002 # 一组备份
     ├── backup.json # 备份记录文件
     ├── full.zip # 一份全量备份
     ├── incre000001.zip # 一份增量备份
     ├── incre000002.zip
     ├── incre000003.zip
-    ├── _world.json # 记录 world 世界目录下所有文件的修改情况（MD5 哈希）
-    ├── _world_nether.json
-    └── _world_the_end.json
+    ├── _world_<hash>.json # 记录 world 备份目录下所有文件的修改情况（MD5 哈希）
+    ├── _world_nether_<hash>.json
+    └── _world_the_end_<hash>.json
 ```
 
-`full.zip` 存放的就是所有指定世界的全量备份。
+`full.zip` 存放的就是所有指定备份路径的全量备份。
 
 ### backup.json
 
@@ -60,13 +60,13 @@ AppFolder
 
 ### _备份路径标识.json
 
-文件名前加一个下划线是为了防止有世界名为 "`backup`"，和 `backup.json` 冲突。
+文件名前加一个下划线是为了防止某个备份路径的标识为 "`backup`" 时与 `backup.json` 冲突。
 
-1. 记录某个世界数据目录中的所有文件的最后哈希值 `last_file_hashes`。
+1. 记录某个备份目录中所有文件的最后哈希值 `last_file_hashes`。
    * 键值对: `<相对于服务端根目录的路径, MD5 哈希值>`
 2. 记录此文件的更新时间戳 `file_update_time`。
 
-文件 `_world.json` 示例如下:  
+以备份路径 `world` 为例，其记录文件 `_world_<hash>.json` 示例如下:
 
 ```json
 {
@@ -81,12 +81,12 @@ AppFolder
 
 ### incre*.zip
 
-存放指定世界的增量备份，压缩包内目录结构如下：
+存放指定备份路径的增量备份，压缩包内目录结构如下：
 
 ```bash
 incre*.zip # 压缩包内
 ├── deleted.files # 标记相比上次增量备份，被删除的文件
-├── world # 世界数据
+├── world # 备份数据
 │   ├── level.dat
 │   ├── level.dat_old
 │   ├── paper-world.yml
@@ -96,11 +96,11 @@ incre*.zip # 压缩包内
 │   │  ├── r.0.1.mca
 │   │  └── ...
 │   └── ...
-├── world_nether # 世界数据
+├── world_nether # 备份数据
 │   ├── level.dat
 │   ├── session.lock
 │   └── ...
-└── world_the_end # 世界数据
+└── world_the_end # 备份数据
     ├── level.dat
     └── ...
 ```
@@ -137,12 +137,12 @@ incre*.zip # 压缩包内
 
 ## 进行增量备份
 
-比如对 `world` 世界进行增量备份:
+比如对备份路径 `./world` 进行增量备份:
 
-1. 读取 `world.json` 中存放的所有文件的最后md5哈希值 `md5Set1` 。
+1. 读取 `world` 对应记录文件中存放的所有文件的最后md5哈希值 `md5Set1` 。
 2. 扫描 `world` 目录中的所有文件，得到所有文件的最后md5哈希值 `md5Set2` 
 3. 计算 `md5Set1` 和 `md5Set2` 的差集 `diffSet` ，差集中的是被删除的文件，将其写入 `deleted.files` 文件中。
-4. 将有更新的文件打包成 `incre*.zip`，更新 `backup.json` 和 `world.json` 。
+4. 将有更新的文件打包成 `incre*.zip`，更新 `backup.json` 和 `world` 对应的记录文件。
 5. 将第4步产生的文件传输到云端。
 
 ## 流式压缩上传 

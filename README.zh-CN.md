@@ -8,7 +8,7 @@ Lang: 中文简体 | [English](README.md)
 
 ## 这是啥子哟
 
-这是一个咱为自己 Minecraft 服务器写的一个简单的备份插件，可以对**世界数据**进行备份。支持**增量备份/全量备份**机制。  
+这是一个咱为自己 Minecraft 服务器写的一个简单的备份插件，可以对**指定目录的数据**进行备份。支持**增量备份/全量备份**机制。  
 
 备份的存档**不会留存在本地**，而是上传至 **OneDrive** 云端目录中。
 
@@ -87,13 +87,13 @@ stop-incremental-backup-when-no-player: true
 # 注: 这种方式下程序会将每块压缩文件数据暂时写入内存中的缓冲区，代价并不高。
 use-streaming-compression-upload: false
 
-# 需要进行备份的世界名，示例如下: 
-# worlds:
+# 需要进行备份的目录路径（绝对路径或相对服务端根目录的相对路径），示例如下: 
+# paths:
 #  - world
 #  - world_nether
 #  - world_the_end
 # 注: 如果这个选项留空了，则本插件不会工作。
-worlds: [ ]
+paths: [ ]
 ```
 
 ## 命令

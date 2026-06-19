@@ -8,7 +8,7 @@ Lang: [中文简体](README.zh-CN.md) | English
 
 ## What's this?
 
-This is a simple backup plugin originally written for my Minecraft server to back up **world data**. It supports **incremental/full backup mechanism**.  
+This is a simple backup plugin originally written for my Minecraft server to back up **data in specified directories**. It supports **incremental/full backup mechanism**.  
 
 Backed-up archives are not stored locally, but are uploaded to the OneDrive cloud storage.  
 
@@ -89,13 +89,13 @@ stop-incremental-backup-when-no-player: true
 # Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
 use-streaming-compression-upload: false
 
-# The worlds that you would like to back up, example:
-# worlds:
+# The directory paths that you would like to back up (absolute or relative to the server root), example:
+# paths:
 #  - world
 #  - world_nether
 #  - world_the_end
 # Note: If you leave this blank, the plugin won't work.
-worlds: [ ]
+paths: [ ]
 ```
 
 ## Command

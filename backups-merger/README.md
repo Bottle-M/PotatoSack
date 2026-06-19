@@ -9,8 +9,8 @@ A tool to merge **a group of backups** into a full backup.
 
     ```text
     020240625000001/
-    ├── _world.json
-    ├── _world_nether.json
+    ├── _world_<hash>.json
+    ├── _world_nether_<hash>.json
     ├── backup.json
     ├── full.zip
     ├── incre000001.zip
@@ -38,4 +38,4 @@ A tool to merge **a group of backups** into a full backup.
 
     ![Where to save](pics/SaveMergedAs.png)  
 
-7. The program will generate a merged zip archive (default filename is `merged.zip`). You can extract this package to your Minecraft server directory to restore your world data.  
+7. The program will generate a merged zip archive (default filename is `merged.zip`). You can extract this package to your Minecraft server directory to restore the backed-up data.  
