@@ -8,6 +8,7 @@ import indi.somebottle.potatosack.listeners.PlayerEventListener;
 import indi.somebottle.potatosack.tasks.BackupChecker;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
+import indi.somebottle.potatosack.utils.IgnoreMatcher;
 import indi.somebottle.potatosack.utils.LocalStatus;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.OkHttpClient;
@@ -45,6 +46,15 @@ public final class PotatoSack extends JavaPlugin {
             Utils.testRelativePathToServer();
         } catch (IOException e) {
             ConsoleSender.logError("Method pathRelativeToServer worked improperly: " + e.getMessage());
+            e.printStackTrace();
+            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+            return;
+        }
+        // 启动时校验 .potatosackignore（若存在），有问题直接禁用插件，避免运行时备份反复失败
+        try {
+            IgnoreMatcher.loadDefault();
+        } catch (IOException e) {
+            ConsoleSender.logError("Failed to parse .potatosackignore: " + e.getMessage());
             e.printStackTrace();
             getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
             return;

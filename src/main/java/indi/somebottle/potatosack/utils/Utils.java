@@ -271,11 +271,12 @@ public class Utils {
      * 遍历获取指定目录下所有文件的目前哈希值
      *
      * @param srcDir 待扫描目录（File对象）
+     * @param ignorer 用于跳过被忽略的文件/目录（目录命中即剪枝，不递归）
      * @param res    （递归用） 调用时传入null即可
      * @return Map(String - > 文件最后哈希值)对象
      * @throws IOException 如果在访问文件时发生IO错误
      */
-    public static Map<String, String> getCurrentFileHashes(File srcDir, Map<String, String> res) throws IOException {
+    public static Map<String, String> getCurrentFileHashes(File srcDir, IgnoreMatcher ignorer, Map<String, String> res) throws IOException {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -285,14 +286,20 @@ public class Utils {
             if (file.isFile()) {
                 // 获得相对服务器根目录的路径，比如 /root/server/world/region 转换为 world/region
                 String relativePath = pathRelativeToServer(file);
+                // 命中 ignore 规则的文件跳过（不计入哈希）
+                if (ignorer.isIgnored(relativePath, false))
+                    continue;
                 // 是文件则加入
                 res.put(
                         relativePath,
                         Utils.fileMD5(file) // 计算文件哈希
                 );
             } else if (file.isDirectory()) {
+                // 仅在存在 ignore 规则时才计算相对路径判断是否剪枝，避免无规则时的额外开销
+                if (!ignorer.isEmpty() && ignorer.isIgnored(pathRelativeToServer(file), true))
+                    continue; // 命中 ignore 的目录直接剪枝，不递归
                 // 是目录则继续
-                getCurrentFileHashes(file, res);
+                getCurrentFileHashes(file, ignorer, res);
             }
         }
         return res;
@@ -318,12 +325,36 @@ public class Utils {
     }
 
     /**
+     * 从哈希记录中移除被 ignore 的条目（用于增量备份时清理旧记录，
+     * 避免之前备份过、现已忽略的文件被误当作“删除”写入 deleted.files）
+     *
+     * @param hashes 哈希记录，可为 null
+     * @param ignorer IgnoreMatcher
+     * @return 过滤后的 Map；若无规则或入参为 null 则原样返回
+     */
+    public static Map<String, String> filterIgnoredHashes(Map<String, String> hashes, IgnoreMatcher ignorer) {
+        if (hashes == null || ignorer.isEmpty()) {
+            return hashes;
+        }
+        Map<String, String> filtered = new HashMap<>();
+        for (Map.Entry<String, String> entry : hashes.entrySet()) {
+            // 用 isIgnored（内置祖先遍历）：既匹配文件自身，也匹配“位于被忽略目录之下”的文件（与扫描期目录剪枝一致），
+            // 避免旧记录中此类文件被误当作删除
+            if (!ignorer.isIgnored(entry.getKey(), false)) {
+                filtered.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return filtered;
+    }
+
+    /**
      * 获取指定目录下所有文件的修改时间快照
      *
      * @param srcDir 待扫描目录（File 对象）
+     * @param ignorer 用于跳过被忽略的文件/目录（目录命中即剪枝）
      * @param res    存储结果的 Map
      */
-    public static void updateFilesModificationSnapshot(File srcDir, Map<String, Long> res) throws IOException {
+    public static void updateFilesModificationSnapshot(File srcDir, IgnoreMatcher ignorer, Map<String, Long> res) throws IOException {
         if (res == null)
             res = new HashMap<>();
         File[] files = srcDir.listFiles();
@@ -332,9 +363,13 @@ public class Utils {
         for (File file : files) {
             if (file.isFile()) {
                 String relativePath = pathRelativeToServer(file);
+                if (ignorer.isIgnored(relativePath, false))
+                    continue;
                 res.put(relativePath, file.lastModified());
             } else if (file.isDirectory()) {
-                updateFilesModificationSnapshot(file, res);
+                if (!ignorer.isEmpty() && ignorer.isIgnored(pathRelativeToServer(file), true))
+                    continue;
+                updateFilesModificationSnapshot(file, ignorer, res);
             }
         }
     }
@@ -342,13 +377,14 @@ public class Utils {
     /**
      * 获取所有指定路径下文件的修改时间快照
      *
-     * @param paths 路径列表（绝对或相对服务端根）
+     * @param paths  路径列表（绝对或相对服务端根）
+     * @param ignorer 用于跳过被忽略的文件/目录
      * @return Map<文件相对路径, 最后修改时间戳>
      */
-    public static Map<String, Long> getTimeSnapshotForAllFilesUnderPaths(List<String> paths) throws IOException {
+    public static Map<String, Long> getTimeSnapshotForAllFilesUnderPaths(List<String> paths, IgnoreMatcher ignorer) throws IOException {
         Map<String, Long> snapshot = new HashMap<>();
         for (String path : paths) {
-            updateFilesModificationSnapshot(resolveBackupConfPath(path), snapshot);
+            updateFilesModificationSnapshot(resolveBackupConfPath(path), ignorer, snapshot);
         }
         return snapshot;
     }
@@ -469,10 +505,11 @@ public class Utils {
      * （递归方法） 扫描某个目录下所有文件，转换为 ZipFilePath
      *
      * @param srcDir        源目录 File 对象
+     * @param ignorer        用于跳过被忽略的文件/目录（目录命中即剪枝）
      * @param parentDirPath 该目录相对于服务端根的相对路径（作为 zip 内路径前缀，空串表示服务端根）
      * @return List<ZipFilePath>
      */
-    private static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, String parentDirPath) throws Exception {
+    private static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, IgnoreMatcher ignorer, String parentDirPath) throws Exception {
         List<ZipFilePath> resPaths = new ArrayList<>();
         // 列出 srcDir 目录下的文件
         File[] files = srcDir.listFiles();
@@ -482,9 +519,12 @@ public class Utils {
         for (File file : files) {
             // 如果是目录，这就是当前扫描到的目录路径，否则就是文件的路径
             String currentDirOrFilePath = (parentDirPath.equals("") ? "" : (parentDirPath + "/")) + file.getName();
+            // 命中 ignore 规则的文件/目录跳过（目录即剪枝，不递归）
+            if (ignorer.isIgnored(currentDirOrFilePath, file.isDirectory()))
+                continue;
             if (file.isDirectory()) {
                 // 如果是目录就递归扫描文件
-                resPaths.addAll(dirFilesToZipFilePaths(file, currentDirOrFilePath));
+                resPaths.addAll(dirFilesToZipFilePaths(file, ignorer, currentDirOrFilePath));
             } else {
                 // 如果是文件就转换为 ZipFilePath
                 resPaths.add(new ZipFilePath(
@@ -501,16 +541,17 @@ public class Utils {
      * 指定多个备份目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
      *
      * @param srcDirPaths String[] ，指定要打包的备份目录路径（绝对或相对服务端根）
+     * @param ignorer      用于跳过被忽略的文件/目录
      * @return ZipFilePath[]
      */
-    public static ZipFilePath[] scanPeerDirsToZipPaths(String[] srcDirPaths) {
+    public static ZipFilePath[] scanPeerDirsToZipPaths(String[] srcDirPaths, IgnoreMatcher ignorer) {
         List<ZipFilePath> res = new ArrayList<>();
         try {
             // 遍历每个目录
             for (String path : srcDirPaths) {
                 File srcDir = resolveBackupConfPath(path);
                 // 以该目录相对于服务端根的路径作为 zip 内路径前缀，保证嵌套路径也能正确还原
-                res.addAll(dirFilesToZipFilePaths(srcDir, pathRelativeToServer(srcDir)));
+                res.addAll(dirFilesToZipFilePaths(srcDir, ignorer, pathRelativeToServer(srcDir)));
             }
         } catch (Exception e) {
             ConsoleSender.logError("Transformation of backup path to zip file paths failed: " + e.getMessage());
@@ -519,17 +560,18 @@ public class Utils {
     }
 
     /**
-     * 找出其世界目录与任一配置的备份路径有交叠（相等、或互为父子目录）的已加载世界名
+     * 找出其世界目录与任一配置的备份路径有交叠（相等、或互为父子目录）、且未被整体忽略的已加载世界名
      * <p>
      * 用于确定流式备份时需要临时关闭自动保存的世界范围：只暂停真正会被备份到数据的世界，
-     * 避免无差别关闭所有世界自动保存
+     * 避免无差别关闭所有世界自动保存。
+     * 若某世界目录本身被 ignore（整体忽略），则其数据不会被备份，相应不暂停其自动保存。
      * </p>
      *
      * @param backupConfPaths 配置的备份路径列表
-     * @return 与备份路径有交叠的世界名列表；若存在世界目录无法解析，返回 null，表示无法判断交叠关系，调用方应关闭所有世界的自动保存
-     * TODO: 后续引入 .potatosackignore 后，被忽略的世界目录不应计入
+     * @param ignorer          IgnoreMatcher，用于判断世界目录是否被整体忽略
+     * @return 与备份路径有交叠且未被忽略的世界名列表；若存在世界目录无法解析，返回 null，表示无法判断交叠关系，调用方应关闭所有世界的自动保存
      */
-    public static List<String> getWorldNamesOverlappingBackupPaths(List<String> backupConfPaths) {
+    public static List<String> getWorldNamesOverlappingBackupPaths(List<String> backupConfPaths, IgnoreMatcher ignorer) {
         List<String> res = new ArrayList<>();
         // 预先解析各备份路径的真实路径，便于和世界目录比较
         List<Path> backupRealPaths = new ArrayList<>();
@@ -543,12 +585,21 @@ public class Utils {
         for (World world : Bukkit.getWorlds()) {
             try {
                 Path worldRealPath = world.getWorldFolder().toPath().toRealPath();
+                boolean overlaps = false;
                 for (Path backupRealPath : backupRealPaths) {
                     if (worldRealPath.startsWith(backupRealPath) || backupRealPath.startsWith(worldRealPath)) {
-                        res.add(world.getName());
+                        overlaps = true;
                         break;
                     }
                 }
+                if (!overlaps) {
+                    continue;
+                }
+                // 与备份路径交叠；但若世界目录整体被 ignore，则其数据不会被备份，相应不暂停其自动保存
+                if (!ignorer.isEmpty() && ignorer.isIgnored(pathRelativeToServer(world.getWorldFolder()), true)) {
+                    continue;
+                }
+                res.add(world.getName());
             } catch (IOException e) {
                 // 某个世界目录无法解析，无法判断它与备份路径是否交叠，保守起见返回 null，让调用方关闭所有世界的自动保存
                 ConsoleSender.logWarn("Failed to resolve world folder for '" + world.getName() + "': " + e.getMessage() + ". Will disable auto-save for all worlds.");

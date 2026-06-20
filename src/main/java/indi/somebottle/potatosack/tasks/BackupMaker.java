@@ -431,11 +431,13 @@ public class BackupMaker {
         BackupRecord rec = getBackupRecord();
         // 获得配置的备份路径列表
         List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
+        // 加载 .potatosackignore（若存在）；解析失败则本次备份失败（严格）
+        IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
         // 1. 扫描各备份目录生成包含每个文件最后哈希值的 _备份路径标识.json
         long scanStartTime = System.currentTimeMillis();
         for (String backupConfPath : backupConfPaths) {
-            // 扫描备份目录下的所有文件，计算文件哈希（为增量备份做准备）
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), null);
+            // 扫描备份目录下的所有文件，计算文件哈希（为增量备份做准备），跳过被忽略的文件/目录
+            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
             // _备份路径标识.json 中存放待备份数据目录中所有文件的最后哈希值
             writeDirFileRecords(backupConfPath, currentFileHashes);
         }
@@ -445,21 +447,21 @@ public class BackupMaker {
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
         // 扫描 backupConfPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
-        ZipFilePath[] backupZipFilePaths = Utils.scanPeerDirsToZipPaths(backupConfPaths.toArray(new String[0]));
+        ZipFilePath[] backupZipFilePaths = Utils.scanPeerDirsToZipPaths(backupConfPaths.toArray(new String[0]), ignorer);
         if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
             // 这里需要临时禁止自动保存
             // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
             // 要保证这个期间世界数据不会变动，否则会上传失败
-            // 储存停止自动保存的世界：只暂停世界目录与备份路径有交叠的世界；若某世界目录无法解析则保守关闭全部（后续结合 .potatosackignore 排除被忽略的目录）
-            List<String> worldsToPause = Utils.getWorldNamesOverlappingBackupPaths(backupConfPaths);
+            // 储存停止自动保存的世界：只暂停世界目录与备份路径有交叠、且未被整体忽略的世界；若某世界目录无法解析则保守关闭全部
+            List<String> worldsToPause = Utils.getWorldNamesOverlappingBackupPaths(backupConfPaths, ignorer);
             List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worldsToPause);
             ConsoleSender.toConsole("Temporarily disabled world auto-save...");
             try {
                 // 等待残余的异步保存完成
                 try {
-                    waitForAsyncSavesComplete(backupConfPaths, scanDuration);
+                    waitForAsyncSavesComplete(backupConfPaths, ignorer, scanDuration);
                 } catch (IOException e) {
                     // 等待异步保存完成时出现 IO 异常，按失败处理并指数退避
                     ConsoleSender.logError("Failed to wait for async saves to complete: " + e.getMessage());
@@ -568,6 +570,8 @@ public class BackupMaker {
         }
         // 获得配置的备份路径列表
         List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
+        // 加载 .potatosackignore（若存在）；解析失败则本次备份失败（严格）
+        IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
         // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
         List<String> deletedPaths = new ArrayList<>();
         // 所有有变动文件的 【绝对路径】（方便Zip打包）
@@ -577,11 +581,13 @@ public class BackupMaker {
         // 1. 扫描每个备份目录找到有差异的文件
         long scanStartTime = System.currentTimeMillis();
         for (String backupConfPath : backupConfPaths) {
-            // 扫描指定目录下的所有文件，计算哈希值（为增量备份做准备）
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), null);
+            // 扫描指定目录下的所有文件，计算哈希值（为增量备份做准备），跳过被忽略的文件/目录
+            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
             // 获得上一次增量备份时的文件哈希值
             DirFileRecords prevDirFileRec = getDirFileRecords(backupConfPath);
             Map<String, String> prevLastFileHashes = prevDirFileRec.getLastFileHashes();
+            // 旧记录中过滤掉现已忽略的条目，避免它们被误当作“删除”写入 deleted.files（透明移出备份宇宙）
+            prevLastFileHashes = Utils.filterIgnoredHashes(prevLastFileHashes, ignorer);
             // 找到被删除的文件的路径
             deletedPaths.addAll(
                     Utils.getDeletedFilePaths(prevLastFileHashes, currentFileHashes)
@@ -633,15 +639,14 @@ public class BackupMaker {
             // 这里需要临时禁止自动保存
             // 因为这种上传方式需要先计算一遍ZipOutputStream输出的文件大小，再上传
             // 要保证这个期间世界数据不会变动，否则会上传失败
-            // 储存停止自动保存的世界：只暂停世界目录与备份路径有交叠的世界；若某世界目录无法解析则保守关闭全部
-            // TODO: 后续结合 .potatosackignore 排除被忽略的目录
-            List<String> worldsToPause = Utils.getWorldNamesOverlappingBackupPaths(backupConfPaths);
+            // 储存停止自动保存的世界：只暂停世界目录与备份路径有交叠、且未被整体忽略的世界；若某世界目录无法解析则保守关闭全部
+            List<String> worldsToPause = Utils.getWorldNamesOverlappingBackupPaths(backupConfPaths, ignorer);
             List<WorldSaveState> worldSaveStates = Utils.disableWorldsSave(plugin, worldsToPause);
             ConsoleSender.toConsole("Temporarily stopped world auto-save...");
             try {
                 // 等待残余的异步保存完成
                 try {
-                    waitForAsyncSavesComplete(backupConfPaths, scanDuration);
+                    waitForAsyncSavesComplete(backupConfPaths, ignorer, scanDuration);
                 } catch (IOException e) {
                     // 等待异步保存完成时出现 IO 异常，按失败处理并指数退避
                     ConsoleSender.logError("Failed to wait for async saves to complete: " + e.getMessage());
@@ -744,15 +749,16 @@ public class BackupMaker {
      * 若有变动则继续等待，直到无变动或达到总等待上限。
      *
      * @param backupConfPaths       配置的备份路径列表，用于检测这些路径下的文件变动
+     * @param ignorer                用于跳过被忽略的文件/目录（不等待其变动）
      * @param scanDuration 扫描文件哈希所用时长（秒）
      * @throws InterruptedException 线程中断异常
      */
     @SuppressWarnings("BusyWait")
-    private void waitForAsyncSavesComplete(List<String> backupConfPaths, long scanDuration) throws InterruptedException, IOException {
+    private void waitForAsyncSavesComplete(List<String> backupConfPaths, IgnoreMatcher ignorer, long scanDuration) throws InterruptedException, IOException {
         ConsoleSender.toConsole("Waiting for async saves to complete (scan took " + scanDuration + "s)...");
 
         // 立即获取第一次文件修改时间快照作为基准
-        Map<String, Long> lastSnapshot = Utils.getTimeSnapshotForAllFilesUnderPaths(backupConfPaths);
+        Map<String, Long> lastSnapshot = Utils.getTimeSnapshotForAllFilesUnderPaths(backupConfPaths, ignorer);
 
         // 计算单次等待时间
         long singleWaitTime = Math.max(Constants.STREAMING_UPLOAD_MIN_WAIT_SECONDS, scanDuration * 2);
@@ -764,7 +770,7 @@ public class BackupMaker {
             totalWaitTime += singleWaitTime;
 
             // 重新扫描文件修改时间
-            Map<String, Long> currentSnapshot = Utils.getTimeSnapshotForAllFilesUnderPaths(backupConfPaths);
+            Map<String, Long> currentSnapshot = Utils.getTimeSnapshotForAllFilesUnderPaths(backupConfPaths, ignorer);
 
             // 比较修改时间快照
             if (currentSnapshot.equals(lastSnapshot)) {
