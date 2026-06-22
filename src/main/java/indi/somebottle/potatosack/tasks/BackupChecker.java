@@ -35,7 +35,7 @@ public class BackupChecker implements Runnable {
                     // 检查是否有玩家上线过
                     if (!LocalStatus.getInstance().getFullBackupFlag()) {
                         // 没有玩家上线，跳过本次全量备份
-                        ConsoleSender.toConsole("Skipping full backup: no player has joined since last backup.");
+                        ConsoleSender.logDebug("Skipping full backup: no player has joined since last backup.");
                         return;
                     }
                 }
@@ -58,7 +58,7 @@ public class BackupChecker implements Runnable {
                     // 检查是否有玩家上线过
                     if (!LocalStatus.getInstance().getIncreBackupFlag()) {
                         // 没有玩家上线，跳过本次增量备份
-                        ConsoleSender.toConsole("Skipping incremental backup: no player has joined since last backup.");
+                        ConsoleSender.logDebug("Skipping incremental backup: no player has joined since last backup.");
                         return;
                     }
                 }
