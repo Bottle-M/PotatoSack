@@ -27,19 +27,17 @@ public final class PotatoSack extends JavaPlugin {
     public static File worldContainerDir = null; // 服务端根目录 File 对象
     public BukkitTask backupCheckTask = null; // 备份检查定时任务
     private Client fileClient = null; // 云存储客户端
+    private Config config; // 插件配置对象
 
     /**
      * 插件启动时进行的操作
-     *
-     * @apiNote 此部分输出主要是 System.out 的方法实现
      */
     @Override
     public void onEnable() {
         pluginInstance = this;
-        // 20240613 配置服务端根目录
+        // 配置服务端根目录
         worldContainerDir = this.getServer().getWorldContainer();
-        Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE); // 设置OkHttpClient日志级别
-        // 输出服务端根目录
+        Logger.getLogger(OkHttpClient.class.getName()).setLevel(Level.FINE);
         System.out.println("Server root dir URI: " + worldContainerDir.toURI());
         // 测试 pathRelativeToServer 是否正常运作
         try {
@@ -47,76 +45,104 @@ public final class PotatoSack extends JavaPlugin {
         } catch (IOException e) {
             ConsoleSender.logError("Method pathRelativeToServer worked improperly: " + e.getMessage());
             e.printStackTrace();
-            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+            getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        // 启动时校验 .potatosackignore（若存在），有问题直接禁用插件，避免运行时备份反复失败
-        try {
-            IgnoreMatcher.loadDefault();
-        } catch (IOException e) {
-            ConsoleSender.logError("Failed to parse .potatosackignore: " + e.getMessage());
-            e.printStackTrace();
-            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
-            return;
-        }
-        // 备份任务定时检查模块
-        BackupChecker backupChecker;
-        // 开始初始化插件
         System.out.println("Potato Sack Initializing...");
         // 初始化配置
-        Config config = new Config();
-        // ---------------------------- 配置文件检查 ----------------------------
-        // 配置版本检查
-        String configVersion = (String) config.getConfig(Config.KEYS.VERSION);
-        if (configVersion == null || configVersion.equals("legacy")) {
-            // 配置文件需要手动升级
-            ConsoleSender.logWarn("Your config file is outdated ( – ⌓ – ). Please update the config file to the latest version CAREFULLY. It is suggested to backup your old backup files before you update.");
-            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+        config = new Config();
+        // 初始化备份核心链（Client → BackupChecker → 定时任务）
+        String err = initBackupChain();
+        if (err != null) {
+            ConsoleSender.logError(err);
+            getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        // -------------------------- 配置文件检查结束 --------------------------
-        String clientUsed = (String) config.getConfig(Config.KEYS.CLIENT.USE);
-        // 初始化云存储客户端
+        // 注册事件、指令等（一次性）
         try {
-            fileClient = ClientFactory.getClient(clientUsed, config);
-        } catch (Exception e) {
-            ConsoleSender.logError("Failed to initialize client: " + e.getMessage());
-            e.printStackTrace();
-            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
-            return;
-        }
-        try {
-            // 初始化备份核心
-            backupChecker = new BackupChecker(fileClient, config);
-            // 初始化本地状态管理
             LocalStatus.getInstance();
-            // 初始化异步任务定时器
-            // 每60秒检查一次备份（首次执行前等待60秒)
-            backupCheckTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, backupChecker, 20 * 60, 20 * 60);
-            // 注册玩家事件监听器
             getServer().getPluginManager().registerEvents(new PlayerEventListener(), this);
-            // 注册重载配置指令
             PluginCommand mainCommand = getCommand("potatosack");
             if (mainCommand == null)
                 throw new NullPointerException("Unable to get command, this should not happen.");
-            // 设置指令执行者
-            mainCommand.setExecutor(new PotatoSackExecutor(config));
-            // 注册TAB补全
+            mainCommand.setExecutor(new PotatoSackExecutor());
             mainCommand.setTabCompleter(new PotatoSackTabCompleter());
         } catch (Exception e) {
-            // 因为网络原因(比如连接超时)导致目录建立失败
             ConsoleSender.logError(e.getMessage());
             e.printStackTrace();
-            getServer().getPluginManager().disablePlugin(this);  // 中止插件启动
+            getServer().getPluginManager().disablePlugin(this);
             return;
         }
         ConsoleSender.toConsole("PotatoSack successfully initialized! Savor using it!");
     }
 
     /**
-     * 获取插件主类实例，如果还没有初始化则返回 null
+     * 热重载配置和客户端<br>
+     * 配置变更通过共享 Config 引用即时生效；新 Client 初始化成功后才切换，失败则保留旧 Client。
      *
-     * @return 插件主类实例，可能是 null
+     * @return 重载结果消息
+     */
+    public String reloadAll() {
+        if (!config.reload()) {
+            return "Failed to reload: configs.yml could not be loaded";
+        }
+        String err = initBackupChain();
+        if (err != null) {
+            ConsoleSender.logWarn(err);
+            return "Failed to reload: " + err;
+        }
+        return "Reloaded successfully.";
+    }
+
+    /**
+     * 初始化/重建备份核心链：校验配置版本 → 创建 Client → 创建 BackupChecker → 启动定时任务。<br>
+     * 成功时关闭旧 Client 并替换；失败时不做任何状态变更。
+     *
+     * @return null 表示成功，否则返回错误描述
+     */
+    private String initBackupChain() {
+        // 重新检查 .potatosackignore 是否能正常解析，如果不能解析就会抛出异常
+        try {
+            IgnoreMatcher.loadDefault();
+        } catch (IOException e) {
+            return "Failed to parse .potatosackignore: " + e.getMessage();
+        }
+        // 配置版本检查
+        String configVersion = (String) config.getConfig(Config.KEYS.VERSION);
+        if (configVersion == null || configVersion.equals("legacy")) {
+            return "Config file is outdated, please update to the latest version.";
+        }
+        // 创建云存储客户端
+        String clientUsed = (String) config.getConfig(Config.KEYS.CLIENT.USE);
+        Client newClient;
+        try {
+            newClient = ClientFactory.getClient(clientUsed, config);
+        } catch (Exception e) {
+            return "Failed to initialize client: " + e.getMessage();
+        }
+        // 创建 BackupChecker 并启动定时任务
+        BackupChecker newBackupChecker;
+        try {
+            newBackupChecker = new BackupChecker(newClient, config);
+        } catch (IOException e) {
+            newClient.shutdown();
+            return "Failed to create BackupChecker: " + e.getMessage();
+        }
+        // 切换：关旧 → 换新 → 重调度
+        if (fileClient != null)
+            fileClient.shutdown();
+        fileClient = newClient;
+        if (backupCheckTask != null)
+            backupCheckTask.cancel();
+        backupCheckTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
+                this, newBackupChecker, 20 * 60, 20 * 60);
+        return null;
+    }
+
+    /**
+     * 获取插件主类实例
+     *
+     * @return 插件主类实例，可能为 null（尚未初始化时）
      */
     public static PotatoSack getPluginInstance() {
         return pluginInstance;
@@ -124,10 +150,8 @@ public final class PotatoSack extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        // Plugin shutdown logic
         if (fileClient != null)
             fileClient.shutdown();
-        // 取消定时任务
         if (backupCheckTask != null)
             backupCheckTask.cancel();
         ConsoleSender.toConsoleSync("PotatoSack shutting down...See you next time~ (∠・ω< )⌒★");
