@@ -34,7 +34,7 @@ public class BackupMaker {
     private final String DIR_FILE_RECORDS_FILE_PREFIX = "_"; // 目录文件哈希记录文件名前缀
     /**
      * 拼入规范化文件名的路径哈希前缀长度（取 MD5 前 8 个十六进制字符），用于避免不同路径规范化后撞名
-     *
+     * <p>
      * 比如 world/region 和 world__region 目录规范化后都是 world__region，如果加上哈希就不会重名了
      */
     private static final int PATH_HASH_PREFIX_LEN = 8;
@@ -249,7 +249,7 @@ public class BackupMaker {
      * 写入本地的 _备份路径标识.json
      *
      * @param backupConfPath 配置的备份路径字符串
-     * @param rec           目录文件记录 DirFileRecords 对象
+     * @param rec            目录文件记录 DirFileRecords 对象
      * @throws IOException IO异常
      */
     public void writeDirFileRecords(String backupConfPath, DirFileRecords rec) throws IOException {
@@ -261,7 +261,7 @@ public class BackupMaker {
      * 写入本地的 _备份路径标识.json
      *
      * @param backupConfPath 配置的备份路径字符串
-     * @param recList       Map<文件相对服务端根目录的路径, 文件哈希>
+     * @param recList        Map<文件相对服务端根目录的路径, 文件哈希>
      * @throws IOException IO异常
      */
     public void writeDirFileRecords(String backupConfPath, Map<String, String> recList) throws IOException {
@@ -748,9 +748,9 @@ public class BackupMaker {
      * 等待策略：先等待 max(MIN_WAIT, scanDuration*2) 秒，然后检测文件是否变动，
      * 若有变动则继续等待，直到无变动或达到总等待上限。
      *
-     * @param backupConfPaths       配置的备份路径列表，用于检测这些路径下的文件变动
-     * @param ignorer                用于跳过被忽略的文件/目录（不等待其变动）
-     * @param scanDuration 扫描文件哈希所用时长（秒）
+     * @param backupConfPaths 配置的备份路径列表，用于检测这些路径下的文件变动
+     * @param ignorer         用于跳过被忽略的文件/目录（不等待其变动）
+     * @param scanDuration    扫描文件哈希所用时长（秒）
      * @throws InterruptedException 线程中断异常
      */
     @SuppressWarnings("BusyWait")
@@ -765,7 +765,7 @@ public class BackupMaker {
         long totalWaitTime = 0;
 
         while (totalWaitTime < Constants.STREAMING_UPLOAD_MAX_TOTAL_WAIT_SECONDS) {
-            ConsoleSender.toConsole("Waiting " + singleWaitTime + "s... (total: " + totalWaitTime + "s)");
+            ConsoleSender.toConsole("Waiting for " + singleWaitTime + "s... (already waited for " + totalWaitTime + "s before)");
             Thread.sleep(singleWaitTime * 1000);
             totalWaitTime += singleWaitTime;
 
@@ -775,12 +775,12 @@ public class BackupMaker {
             // 比较修改时间快照
             if (currentSnapshot.equals(lastSnapshot)) {
                 // 无变动，结束等待
-                ConsoleSender.toConsole("No file changes detected, proceeding with backup.");
+                ConsoleSender.toConsole("No more async saves detected, proceeding with backup.");
                 return;
             }
 
             // 有变动，更新快照，继续等待
-            ConsoleSender.toConsole("File changes detected, waiting another " + singleWaitTime + "s...");
+            ConsoleSender.toConsole("Async saves detected, waiting for another " + singleWaitTime + "s...");
             lastSnapshot = currentSnapshot;
 
             // 检查是否即将超时
