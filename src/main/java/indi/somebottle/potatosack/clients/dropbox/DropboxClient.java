@@ -118,6 +118,16 @@ public class DropboxClient extends Client {
         String appKey = (String) config.getConfig(Config.KEYS.CLIENT.DROPBOX.APP_KEY);
         String appSecret = (String) config.getConfig(Config.KEYS.CLIENT.DROPBOX.APP_SECRET);
         String refreshToken = (String) config.getConfig(Config.KEYS.CLIENT.DROPBOX.REFRESH_TOKEN);
+        // 检查凭证是否已填写
+        if (appKey.isEmpty() || appSecret.isEmpty() || refreshToken.isEmpty()) {
+            throw new ClientInitializationException(
+                "Dropbox client is not configured. Please fill in " +
+                Config.KEYS.CLIENT.DROPBOX.APP_KEY + ", " +
+                Config.KEYS.CLIENT.DROPBOX.APP_SECRET + ", " +
+                Config.KEYS.CLIENT.DROPBOX.REFRESH_TOKEN +
+                " in configs.yml."
+            );
+        }
         tokenFetcher = new DropboxTokenFetcher(appKey, appSecret, refreshToken, config);
         if (!tokenFetcher.fetch()) {
             throw new ClientInitializationException("Failed to initialize DropboxClient: unable to fetch access token.");

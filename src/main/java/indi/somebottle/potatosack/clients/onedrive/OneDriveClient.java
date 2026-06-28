@@ -61,6 +61,16 @@ public class OneDriveClient extends Client {
         String clientId = (String) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.CLIENT_ID);
         String clientScrt = (String) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.CLIENT_SECRET);
         String refreshToken = (String) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.REFRESH_TOKEN);
+        // 检查凭证是否已填写
+        if (clientId.isEmpty() || clientScrt.isEmpty() || refreshToken.isEmpty()) {
+            throw new ClientInitializationException(
+                "OneDrive client is not configured. Please fill in " +
+                Config.KEYS.CLIENT.ONEDRIVE.CLIENT_ID + ", " +
+                Config.KEYS.CLIENT.ONEDRIVE.CLIENT_SECRET + ", " +
+                Config.KEYS.CLIENT.ONEDRIVE.REFRESH_TOKEN +
+                " in configs.yml."
+            );
+        }
         boolean useAppRoot = (boolean) config.getConfig(Config.KEYS.CLIENT.ONEDRIVE.USE_APP_FOLDER);
         if (useAppRoot) {
             apiRootPath = OD_API_APP_ROOT_PATH;
