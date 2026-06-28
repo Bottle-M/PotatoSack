@@ -26,6 +26,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 
+@SuppressWarnings("BusyWait")
 public class Utils {
     /**
      * 获得当前的秒级时间戳
@@ -54,28 +55,46 @@ public class Utils {
      * 计算文件的 MD5 哈希值
      *
      * @param file 文件File对象
-     * @return 哈希值（32位十六进制字符串）
+     * @return 哈希值（32位十六进制字符串），若无法读取则返回空字符串 ""
      */
     public static String fileMD5(File file) {
-        try (FileInputStream fis = new FileInputStream(file)) {
-            MessageDigest md5 = MessageDigest.getInstance("MD5");
-            byte[] buffer = new byte[16384]; // 16K的数据缓冲区
-            int readLen;
-            // 流式读入文件计算哈希
-            while ((readLen = fis.read(buffer)) != -1) {
-                md5.update(buffer, 0, readLen);
+        ExponentialBackoffCalculator backoffCalc = new ExponentialBackoffCalculator(1000); // 基础退避 1s
+        int retry = 0;
+        while (true) {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                MessageDigest md5 = MessageDigest.getInstance("MD5");
+                byte[] buffer = new byte[16384]; // 16K的数据缓冲区
+                int readLen;
+                // 流式读入文件计算哈希
+                while ((readLen = fis.read(buffer)) != -1) {
+                    md5.update(buffer, 0, readLen);
+                }
+                // 转换为十六进制字符串返回，确保前导零不会丢失
+                byte[] digest = md5.digest();
+                StringBuilder sb = new StringBuilder(32);
+                for (byte b : digest) {
+                    sb.append(String.format("%02x", b));
+                }
+                return sb.toString();
+            } catch (IOException e) {
+                // 文件被锁定（Windows 下常见）或其它 IO 错误，进行有限重试
+                if (retry < Constants.FILE_READ_MAX_RETRY) {
+                    retry++;
+                    try {
+                        Thread.sleep(backoffCalc.getNextBackoffTime(Constants.FILE_READ_MAX_BACKOFF_MS));
+                        backoffCalc.backoff(); // 退避时间翻倍: 1s → 2s → 4s
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    ConsoleSender.logWarn("Cannot read file " + file.getAbsolutePath() + ", skipping: " + e.getMessage());
+                    return "";
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                return "";
             }
-            // 转换为十六进制字符串返回，确保前导零不会丢失
-            byte[] digest = md5.digest();
-            StringBuilder sb = new StringBuilder(32);
-            for (byte b : digest) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            e.printStackTrace();
         }
-        return "";
     }
 
     /**
@@ -289,11 +308,12 @@ public class Utils {
                 // 命中 ignore 规则的文件跳过（不计入哈希）
                 if (ignorer.isIgnored(relativePath, false))
                     continue;
-                // 是文件则加入
-                res.put(
-                        relativePath,
-                        Utils.fileMD5(file) // 计算文件哈希
-                );
+                // 计算文件哈希；若文件被锁定无法读取（如 Windows 下的 session.lock），
+                // fileMD5 会打印 WARN 并返回 ""，此时跳过该文件不加入哈希记录
+                String hash = Utils.fileMD5(file);
+                if (!hash.isEmpty()) {
+                    res.put(relativePath, hash);
+                }
             } else if (file.isDirectory()) {
                 // 仅在存在 ignore 规则时才计算相对路径判断是否剪枝，避免无规则时的额外开销
                 if (!ignorer.isEmpty() && ignorer.isIgnored(pathRelativeToServer(file), true))
@@ -438,16 +458,41 @@ public class Utils {
             // 先记录在读取文件前的时间戳，以及文件大小
             long fileModifiedTimeBefore = file.lastModified();
             long fileSizeBefore = file.length();
-            try (FileInputStream in = new FileInputStream(file)) {
-                // 1 MiB 大小的读取缓冲区
-                byte[] buffer = new byte[1048576]; // 读出文件
-                int len;
-                while ((len = in.read(buffer)) > 0) {
-                    // 计算 CRC
-                    crc32.update(buffer, 0, len);
-                    // 写入
-                    zos.write(buffer, 0, len);
+            // 尝试打开并读取文件，遇到锁定时指数退避重试
+            ExponentialBackoffCalculator backoffCalc = new ExponentialBackoffCalculator(1000); // 基础退避 1s
+            int retry = 0;
+            boolean fileSkipped = false;
+            while (retry <= Constants.FILE_READ_MAX_RETRY) {
+                try (FileInputStream in = new FileInputStream(file)) {
+                    // 1 MiB 大小的读取缓冲区
+                    byte[] buffer = new byte[1048576]; // 读出文件
+                    int len;
+                    while ((len = in.read(buffer)) > 0) {
+                        // 计算 CRC
+                        crc32.update(buffer, 0, len);
+                        // 写入
+                        zos.write(buffer, 0, len);
+                    }
+                    break; // 读取成功，跳出重试循环
+                } catch (IOException e) {
+                    // 文件被锁定（Windows 下常见）或其它 IO 错误
+                    if (retry < Constants.FILE_READ_MAX_RETRY) {
+                        retry++;
+                        try {
+                            Thread.sleep(backoffCalc.getNextBackoffTime(Constants.FILE_READ_MAX_BACKOFF_MS));
+                            backoffCalc.backoff(); // 退避时间翻倍: 1s → 2s → 4s
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    } else {
+                        ConsoleSender.logWarn("Cannot read file " + zipFilePath.filePath + ", skipping: " + e.getMessage());
+                        fileSkipped = true;
+                        break;
+                    }
                 }
+            }
+            if (fileSkipped) {
+                continue; // 跳过该文件，处理下一个
             }
             // 文件读取写入完毕后取出这个期间计算的校验和
             long checksumBefore = crc32.getValue();
