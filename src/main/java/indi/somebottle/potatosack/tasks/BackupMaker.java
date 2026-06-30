@@ -511,6 +511,8 @@ public class BackupMaker {
             if (Bukkit.getOnlinePlayers().size() < 1) {
                 // 无人在线，重置标记位
                 LocalStatus.getInstance().setFullBackupFlag(false);
+                // 同时全量备份优于增量备份，因此也要重置增量备份标记位
+                LocalStatus.getInstance().setIncreBackupFlag(false);
             }
             // 如果有人在线，保持 true
         } catch (IOException e) {
