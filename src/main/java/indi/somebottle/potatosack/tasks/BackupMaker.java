@@ -730,6 +730,23 @@ public class BackupMaker {
     }
 
     /**
+     * 跳过本次全量备份，将 lastFullBackupTime 推进到当前时间。
+     * <ul>
+     *     <li>主要针对启用了 stop-full-backup-when-no-player 的情况</li>
+     * </ul>
+     * <p>
+     * 避免下次检查时因 lastFullBackupTime 停留在过去而立即触发备份。
+     * 这样就算玩家突然上线，备份也会等到下一个自然 cron 调度点才执行。
+     *
+     * @throws IOException IO 异常
+     */
+    public void skipFullBackup() throws IOException {
+        BackupRecord rec = getBackupRecord();
+        rec.setLastFullBackupTime(Utils.timestamp());
+        writeBackupRecord(rec);
+    }
+
+    /**
      * 获取上次增量备份时间戳
      *
      * @return 时间戳，单位秒
@@ -738,6 +755,23 @@ public class BackupMaker {
     public long getLastIncreBackupTime() throws IOException {
         BackupRecord rec = getBackupRecord();
         return rec.getLastIncreBackupTime();
+    }
+
+    /**
+     * 跳过本次增量备份，将 lastIncreBackupTime 推进到当前时间。
+     * <ul>
+     *     <li>主要针对启用了 stop-full-backup-when-no-player 的情况</li>
+     * </ul>
+     * <p>
+     * 避免下次检查时因 lastIncreBackupTime 停留在过去而立即触发备份。
+     * 这样就算玩家突然上线，备份也会等到下一个自然 cron 调度点才执行。
+     *
+     * @throws IOException IO 异常
+     */
+    public void skipIncreBackup() throws IOException {
+        BackupRecord rec = getBackupRecord();
+        rec.setLastIncreBackupTime(Utils.timestamp());
+        writeBackupRecord(rec);
     }
 
     /**

@@ -30,3 +30,5 @@ secret*
 bfg*
 
 potato_sack_tmp*/
+.reasonix/
+reasonix.toml
