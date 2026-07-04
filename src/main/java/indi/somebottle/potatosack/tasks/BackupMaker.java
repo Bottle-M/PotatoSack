@@ -90,7 +90,12 @@ public class BackupMaker {
                     throw new IOException("does not exist or is not a directory.");
                 }
                 // 如果不是服务端根目录的子孙路径就会抛出异常
-                relativeBackupConfPaths.add(Utils.pathRelativeToServer(backupConfFile));
+                String relativePath = Utils.pathRelativeToServer(backupConfFile);
+                if (relativePath.isEmpty()) {
+                    // 不能是服务端根目录
+                    throw new IOException("refers to the server root directory, which is not allowed.");
+                }
+                relativeBackupConfPaths.add(relativePath);
             } catch (Exception e) {
                 throw new IOException("Backup path '" + backupConfPath + "' is invalid: " + e.getMessage(), e);
             }
