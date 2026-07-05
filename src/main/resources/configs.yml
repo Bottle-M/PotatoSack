@@ -10,7 +10,7 @@ client:
     base-dir: ""
     # OneDrive API Configuration (Support OneDrive Business(ODB) / Personal(ODC))
     # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-    # Tool: https://github.com/yaonyan/ms-graph-cli
+    # Tool: https://potatosack.imbottle.com/onedrive-token-helper.html
     onedrive:
         # use-app-folder specifies whether to use the "app folder" for storing backups.
         # Reference:
@@ -27,6 +27,7 @@ client:
     # Dropbox API Configuration
     # Create a Dropbox app and use a refresh token with "files.content.write",
     # "files.content.read", and "files.metadata.read" permissions.
+    # Tool: https://potatosack.imbottle.com/dropbox-token-helper.html
     dropbox:
         app-key:
         app-secret:

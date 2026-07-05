@@ -73,7 +73,7 @@ client:
     base-dir: ""
     # OneDrive API 配置 (支持 OneDrive 企业版 (ODB) / 个人版 (ODC))
     # 开发文档参考: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-    # 工具: https://github.com/yaonyan/ms-graph-cli  
+    # 工具: https://potatosack.imbottle.com/onedrive-token-helper.html 
     onedrive:
         # use-app-folder 指明是否使用 AppFolder 作为存储根目录
         # 关于 AppFolder: 
@@ -88,6 +88,7 @@ client:
         refresh-token:
     # Dropbox API 配置
     # 需要有 files.content.write, files.content.read, files.metadata.read 权限
+    # 工具: https://potatosack.imbottle.com/dropbox-token-helper.html
     dropbox:
         app-key:
         app-secret:
@@ -139,6 +140,13 @@ use-streaming-compression-upload: false
 # 注 5: paths 中的路径不能有互相交叠的情况（比如你不能同时配置 'world' 和 'world/playerdata'）  
 paths: [ ]
 ```
+
+### 存储服务配置指导
+
+关于如何获取配置文件中所需的 key, secret, refresh-token 之类的，咱也写了几个较为详细的指导文档:  
+
+* [OneDrive](./memos/onedrive-guide.md)  
+* [Dropbox](./memos/dropbox-guide.md)  
 
 ## 忽略特定文件的备份
 
@@ -203,12 +211,6 @@ a/**/c
 上文提到过，“一组备份”包括一个全量备份和一些增量备份。在恢复服务器数据的时候，BackupMerger 可以将这些备份合并成一个完整的备份。
 
 详见 [BackupMerger](backups-merger/README.zh_CN.md)。  
-
-### OneDrive Token Tool
-
-通过这个工具你可以获取到编写配置时所需的 OneDrive 的 Refresh Token。  
-
-详见 [onedrive-token-tool](onedrive-token-tool/README.zh_CN.md)。
 
 ## FAQ
 
