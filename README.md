@@ -1,6 +1,6 @@
 # PotatoSack
 
-![Logo](./memos/pics/potatosack-logo-transparent-smaller.png)  
+![Logo](./memos/images/potatosack-logo-transparent-smaller.png)  
 
 _Take it easy, carrying a sack of potatoes isn't that hard!_
 

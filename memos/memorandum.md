@@ -118,7 +118,7 @@
 
 第二种情况在 Windows 平台上，删除者会触发 IO 异常，读者不会被打断：  
 
-![](./pics/delete-while-reading-io-exception.png)  
+![](./images/delete-while-reading-io-exception.png)  
 
 而在 Unix 平台上，文件被删除不影响此时的继续读取。  
 

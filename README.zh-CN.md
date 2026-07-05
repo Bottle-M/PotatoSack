@@ -1,6 +1,6 @@
 # PotatoSack
 
-![Logo](./memos/pics/potatosack-logo-transparent-smaller.png)  
+![Logo](./memos/images/potatosack-logo-transparent-smaller.png)  
 
 _放轻松些，我的老伙计，这袋儿土豆可比苏珊婶婶家的大理石雕像好搬多了！_
 
