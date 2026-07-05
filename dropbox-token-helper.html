@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dropbox Refresh Token Helper</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 16px;
+      line-height: 1.6;
+    }
+    input, textarea, button {
+      font: inherit;
+      box-sizing: border-box;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0 12px;
+    }
+    textarea {
+      min-height: 80px;
+    }
+    button {
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    .box {
+      border: 1px solid #ccc;
+      padding: 16px;
+      margin: 18px 0;
+      border-radius: 8px;
+    }
+    .active {
+      border-color: #111;
+      background: #f7f7f7;
+    }
+    .disabled {
+      opacity: 0.45;
+    }
+    .hint {
+      color: #555;
+      font-size: 14px;
+    }
+    .ok {
+      color: #147a32;
+    }
+    .warn {
+      color: #9a5a00;
+    }
+    code {
+      background: #f2f2f2;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dropbox Refresh Token Helper</h1>
+
+  <div class="box">
+    <h2>Redirect URI</h2>
+    <p>Dropbox App Console 里的 Redirect URI 应该设置为：</p>
+    <textarea id="redirectUri" readonly></textarea>
+
+    <p class="hint">
+      这是一个纯静态页面，不会上传、收集或发送你的 App Key / App Secret / Code。
+      数据只会保存在当前浏览器的 localStorage 里。换 token 时，App Secret 会通过你复制的 curl 命令发送给 Dropbox。
+    </p>
+
+    <p id="fileWarn" class="warn" style="display:none;">
+      当前页面是 file:// 打开的。建议用本地 HTTP 服务打开，例如：
+      <code>python3 -m http.server 8000</code>，然后访问
+      <code>http://localhost:8000/dropbox-refresh-token.html</code>
+    </p>
+  </div>
+
+  <div id="step1" class="box">
+    <h2>第一步：生成授权链接</h2>
+
+    <label>App Key / Client ID</label>
+    <input id="appKey" placeholder="你的 Dropbox App Key" />
+
+    <label>App Secret / Client Secret</label>
+    <input id="appSecret" type="password" placeholder="你的 Dropbox App Secret" />
+
+    <label>Scopes</label>
+    <textarea id="scopes">files.metadata.write files.metadata.read files.content.read files.content.write</textarea>
+
+    <button id="copyAuthUrl">复制授权链接</button>
+    <button id="reset">重置已保存信息</button>
+
+    <p id="step1Msg" class="hint"></p>
+
+    <p class="hint">
+      如果你的 Dropbox App 是 “App folder” 类型，访问范围会被限制在 App 文件夹内；
+      如果是 “Full Dropbox” 类型，才可能访问更大的 Dropbox 范围。这里的 scopes 只是 OAuth 权限。
+    </p>
+  </div>
+
+  <div id="step2" class="box disabled">
+    <h2>第二步：复制 curl 命令换 refresh token</h2>
+
+    <p id="codeStatus" class="hint">
+      当前 URL 里没有检测到 code。请先完成第一步授权。
+    </p>
+
+    <button id="copyCurl" disabled>复制 curl 命令</button>
+
+    <p id="step2Msg" class="hint"></p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const storageKeys = {
+      appKey: "dbx_app_key",
+      appSecret: "dbx_app_secret",
+      scopes: "dbx_scopes",
+      state: "dbx_state"
+    };
+
+    function getRedirectUri() {
+      return window.location.origin + window.location.pathname;
+    }
+
+    function getCodeFromUrl() {
+      return new URLSearchParams(window.location.search).get("code") || "";
+    }
+
+    function makeState() {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          if (ok) return true;
+        } catch (_) {}
+      }
+
+      window.prompt("自动复制失败，请手动复制：", text);
+      return false;
+    }
+
+    function saveInputs() {
+      localStorage.setItem(storageKeys.appKey, $("appKey").value.trim());
+      localStorage.setItem(storageKeys.appSecret, $("appSecret").value.trim());
+      localStorage.setItem(storageKeys.scopes, $("scopes").value.trim());
+    }
+
+    function loadInputs() {
+      $("appKey").value = localStorage.getItem(storageKeys.appKey) || "";
+      $("appSecret").value = localStorage.getItem(storageKeys.appSecret) || "";
+      $("scopes").value =
+        localStorage.getItem(storageKeys.scopes) ||
+        "files.metadata.write files.metadata.read files.content.read files.content.write";
+    }
+
+    function buildAuthUrl() {
+      const appKey = $("appKey").value.trim();
+      const scopes = $("scopes").value.trim();
+      const redirectUri = getRedirectUri();
+
+      if (!appKey) {
+        alert("请填写 App Key / Client ID");
+        return "";
+      }
+
+      if (!scopes) {
+        alert("请填写 Scopes");
+        return "";
+      }
+
+      const state = makeState();
+      localStorage.setItem(storageKeys.state, state);
+
+      const params = new URLSearchParams({
+        client_id: appKey,
+        response_type: "code",
+        token_access_type: "offline",
+        redirect_uri: redirectUri,
+        scope: scopes,
+        state
+      });
+
+      return "https://www.dropbox.com/oauth2/authorize?" + params.toString();
+    }
+
+    function shellQuote(s) {
+      return "'" + String(s).replace(/'/g, "'\"'\"'") + "'";
+    }
+
+    function buildCurlCommand(code) {
+      const appKey = $("appKey").value.trim();
+      const appSecret = $("appSecret").value.trim();
+      const redirectUri = getRedirectUri();
+
+      if (!appKey) {
+        alert("请填写 App Key / Client ID");
+        return "";
+      }
+
+      if (!appSecret) {
+        alert("请填写 App Secret / Client Secret");
+        return "";
+      }
+
+      return [
+        "curl -sS -X POST " + shellQuote("https://api.dropboxapi.com/oauth2/token") + " \\",
+        "  -H " + shellQuote("Content-Type: application/x-www-form-urlencoded") + " \\",
+        "  --data-urlencode " + shellQuote("code=" + code) + " \\",
+        "  --data-urlencode " + shellQuote("grant_type=authorization_code") + " \\",
+        "  --data-urlencode " + shellQuote("client_id=" + appKey) + " \\",
+        "  --data-urlencode " + shellQuote("client_secret=" + appSecret) + " \\",
+        "  --data-urlencode " + shellQuote("redirect_uri=" + redirectUri)
+      ].join("\n");
+    }
+
+    function updateStep2() {
+      const code = getCodeFromUrl();
+
+      if (!code) return;
+
+      $("step2").classList.remove("disabled");
+      $("step2").classList.add("active");
+      $("copyCurl").disabled = false;
+
+      $("codeStatus").innerHTML =
+        '<span class="ok">已检测到授权 code。</span> 点击下面按钮复制 curl 命令，在终端运行，然后在输出里搜索 <code>refresh_token</code>。';
+
+      const returnedState = new URLSearchParams(window.location.search).get("state") || "";
+      const savedState = localStorage.getItem(storageKeys.state) || "";
+
+      if (savedState && returnedState && savedState !== returnedState) {
+        $("codeStatus").innerHTML +=
+          '<br><span class="warn">注意：state 不一致，可能不是这次页面生成的授权回调。</span>';
+      }
+
+      location.hash = "#step2";
+    }
+
+    $("copyAuthUrl").addEventListener("click", async () => {
+      saveInputs();
+
+      const authUrl = buildAuthUrl();
+      if (!authUrl) return;
+
+      const ok = await copyText(authUrl);
+
+      $("step1Msg").innerHTML = ok
+        ? "授权链接已复制。请新开窗口/标签页粘贴打开，登录 Dropbox 并授权后会跳回本页面。"
+        : "请复制弹窗里的授权链接，新开窗口/标签页打开，登录 Dropbox 并授权后会跳回本页面。";
+    });
+
+    $("copyCurl").addEventListener("click", async () => {
+      saveInputs();
+
+      const code = getCodeFromUrl();
+      if (!code) {
+        alert("当前 URL 里没有 code");
+        return;
+      }
+
+      const cmd = buildCurlCommand(code);
+      if (!cmd) return;
+
+      const ok = await copyText(cmd);
+
+      $("step2Msg").innerHTML = ok
+        ? 'curl 命令已复制。请在终端运行，然后在输出里搜索 <code>refresh_token</code>。'
+        : '请复制弹窗里的 curl 命令，在终端运行，然后在输出里搜索 <code>refresh_token</code>。';
+    });
+
+    $("reset").addEventListener("click", () => {
+      localStorage.removeItem(storageKeys.appKey);
+      localStorage.removeItem(storageKeys.appSecret);
+      localStorage.removeItem(storageKeys.scopes);
+      localStorage.removeItem(storageKeys.state);
+      loadInputs();
+      $("step1Msg").textContent = "已重置本地保存的信息。";
+    });
+
+    ["appKey", "appSecret", "scopes"].forEach(id => {
+      $(id).addEventListener("input", saveInputs);
+    });
+
+    $("redirectUri").value = getRedirectUri();
+
+    if (window.location.protocol === "file:") {
+      $("fileWarn").style.display = "block";
+    }
+
+    loadInputs();
+    updateStep2();
+  </script>
+</body>
+</html>
