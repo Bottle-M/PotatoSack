@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OneDrive Refresh Token Helper</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 16px;
+      line-height: 1.6;
+    }
+    input, textarea, button {
+      font: inherit;
+      box-sizing: border-box;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin: 4px 0 12px;
+    }
+    textarea {
+      min-height: 86px;
+    }
+    button {
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    .box {
+      border: 1px solid #ccc;
+      padding: 16px;
+      margin: 18px 0;
+      border-radius: 8px;
+    }
+    .active {
+      border-color: #111;
+      background: #f7f7f7;
+    }
+    .disabled {
+      opacity: 0.45;
+    }
+    .hint {
+      color: #555;
+      font-size: 14px;
+    }
+    code {
+      background: #f2f2f2;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .ok {
+      color: #147a32;
+    }
+    .warn {
+      color: #9a5a00;
+    }
+  </style>
+</head>
+<body>
+  <h1>OneDrive Refresh Token Helper</h1>
+
+  <div class="box">
+    <h2>Redirect URI</h2>
+    <p>Azure App Registration 里应该设置为：</p>
+    <textarea id="redirectUri" readonly></textarea>
+    <p class="hint">
+      这是一个纯静态页面，不会上传、收集或发送你的 Client ID / Client Secret / Code。
+      数据只会保存在当前浏览器的 localStorage 里。换 token 时，Client Secret 会通过你复制的 curl 命令发送给 Microsoft。
+    </p>
+    <p id="fileWarn" class="warn" style="display:none;">
+      当前页面是 file:// 打开的。建议用本地 HTTP 服务打开，例如：
+      <code>python3 -m http.server 8000</code>，然后访问
+      <code>http://localhost:8000/onedrive-refresh-token.html</code>
+    </p>
+  </div>
+
+  <div id="step1" class="box">
+    <h2>第一步：生成授权链接</h2>
+
+    <label>Client ID</label>
+    <input id="clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+
+    <label>Client Secret</label>
+    <input id="clientSecret" type="password" placeholder="你的 client secret" />
+
+    <label>Scopes</label>
+    <textarea id="scopes">Files.Read offline_access Files.ReadWrite.AppFolder</textarea>
+
+    <button id="copyAuthUrl">复制授权链接</button>
+    <button id="reset">重置已保存信息</button>
+
+    <p id="step1Msg" class="hint"></p>
+  </div>
+
+  <div id="step2" class="box disabled">
+    <h2>第二步：复制 curl 命令换 refresh token</h2>
+    <p id="codeStatus" class="hint">当前 URL 里没有检测到 code。请先完成第一步授权。</p>
+
+    <button id="copyCurl" disabled>复制 curl 命令</button>
+
+    <p id="step2Msg" class="hint"></p>
+  </div>
+
+  <script>
+    const TENANT = "common";
+
+    const $ = (id) => document.getElementById(id);
+
+    const storageKeys = {
+      clientId: "od_client_id",
+      clientSecret: "od_client_secret",
+      scopes: "od_scopes",
+      state: "od_state"
+    };
+
+    function getRedirectUri() {
+      return window.location.origin + window.location.pathname;
+    }
+
+    function getCodeFromUrl() {
+      return new URLSearchParams(window.location.search).get("code") || "";
+    }
+
+    function makeState() {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (_) {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          if (ok) return true;
+        } catch (_) {}
+      }
+
+      window.prompt("自动复制失败，请手动复制：", text);
+      return false;
+    }
+
+    function saveInputs() {
+      localStorage.setItem(storageKeys.clientId, $("clientId").value.trim());
+      localStorage.setItem(storageKeys.clientSecret, $("clientSecret").value.trim());
+      localStorage.setItem(storageKeys.scopes, $("scopes").value.trim());
+    }
+
+    function loadInputs() {
+      $("clientId").value = localStorage.getItem(storageKeys.clientId) || "";
+      $("clientSecret").value = localStorage.getItem(storageKeys.clientSecret) || "";
+      $("scopes").value =
+        localStorage.getItem(storageKeys.scopes) ||
+        "Files.Read offline_access Files.ReadWrite.AppFolder";
+    }
+
+    function buildAuthUrl() {
+      const clientId = $("clientId").value.trim();
+      const scopes = $("scopes").value.trim();
+      const redirectUri = getRedirectUri();
+
+      if (!clientId) {
+        alert("请填写 Client ID");
+        return "";
+      }
+
+      if (!scopes.includes("offline_access")) {
+        alert("Scopes 里必须包含 offline_access，否则通常拿不到 refresh_token");
+        return "";
+      }
+
+      const state = makeState();
+      localStorage.setItem(storageKeys.state, state);
+
+      const params = new URLSearchParams({
+        client_id: clientId,
+        response_type: "code",
+        redirect_uri: redirectUri,
+        response_mode: "query",
+        scope: scopes,
+        prompt: "consent",
+        state
+      });
+
+      return `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/authorize?${params.toString()}`;
+    }
+
+    function shellQuote(s) {
+      return "'" + String(s).replace(/'/g, "'\"'\"'") + "'";
+    }
+
+    function buildCurlCommand(code) {
+      const clientId = $("clientId").value.trim();
+      const clientSecret = $("clientSecret").value.trim();
+      const scopes = $("scopes").value.trim();
+      const redirectUri = getRedirectUri();
+
+      if (!clientId) {
+        alert("请填写 Client ID");
+        return "";
+      }
+
+      if (!clientSecret) {
+        alert("请填写 Client Secret");
+        return "";
+      }
+
+      return [
+        `curl -sS -X POST ${shellQuote(`https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`)} \\`,
+        `  -H ${shellQuote("Content-Type: application/x-www-form-urlencoded")} \\`,
+        `  --data-urlencode ${shellQuote(`client_id=${clientId}`)} \\`,
+        `  --data-urlencode ${shellQuote(`client_secret=${clientSecret}`)} \\`,
+        `  --data-urlencode ${shellQuote("grant_type=authorization_code")} \\`,
+        `  --data-urlencode ${shellQuote(`code=${code}`)} \\`,
+        `  --data-urlencode ${shellQuote(`redirect_uri=${redirectUri}`)} \\`,
+        `  --data-urlencode ${shellQuote(`scope=${scopes}`)}`
+      ].join("\n");
+    }
+
+    function updateStep2() {
+      const code = getCodeFromUrl();
+
+      if (!code) return;
+
+      $("step2").classList.remove("disabled");
+      $("step2").classList.add("active");
+      $("copyCurl").disabled = false;
+      $("codeStatus").innerHTML =
+        '<span class="ok">已检测到授权 code。</span>点击下面按钮复制 curl 命令，在终端运行，然后在输出里搜索 <code>refresh_token</code>。';
+
+      const returnedState = new URLSearchParams(window.location.search).get("state") || "";
+      const savedState = localStorage.getItem(storageKeys.state) || "";
+
+      if (savedState && returnedState && savedState !== returnedState) {
+        $("codeStatus").innerHTML +=
+          '<br><span class="warn">注意：state 不一致，可能不是这次页面生成的授权回调。</span>';
+      }
+
+      location.hash = "#step2";
+    }
+
+    $("copyAuthUrl").addEventListener("click", async () => {
+      saveInputs();
+
+      const authUrl = buildAuthUrl();
+      if (!authUrl) return;
+
+      const ok = await copyText(authUrl);
+
+      $("step1Msg").innerHTML = ok
+        ? '授权链接已复制。请新开窗口/标签页粘贴打开，登录授权后会跳回本页面。'
+        : '请复制弹窗里的授权链接，新开窗口/标签页打开，登录授权后会跳回本页面。';
+    });
+
+    $("copyCurl").addEventListener("click", async () => {
+      saveInputs();
+
+      const code = getCodeFromUrl();
+      if (!code) {
+        alert("当前 URL 里没有 code");
+        return;
+      }
+
+      const cmd = buildCurlCommand(code);
+      if (!cmd) return;
+
+      const ok = await copyText(cmd);
+
+      $("step2Msg").innerHTML = ok
+        ? 'curl 命令已复制。请在终端运行，然后在输出里搜索 <code>refresh_token</code>。'
+        : '请复制弹窗里的 curl 命令，在终端运行，然后在输出里搜索 <code>refresh_token</code>。';
+    });
+
+    $("reset").addEventListener("click", () => {
+      localStorage.removeItem(storageKeys.clientId);
+      localStorage.removeItem(storageKeys.clientSecret);
+      localStorage.removeItem(storageKeys.scopes);
+      localStorage.removeItem(storageKeys.state);
+      loadInputs();
+      $("step1Msg").textContent = "已重置本地保存的信息。";
+    });
+
+    ["clientId", "clientSecret", "scopes"].forEach(id => {
+      $(id).addEventListener("input", saveInputs);
+    });
+
+    $("redirectUri").value = getRedirectUri();
+
+    if (window.location.protocol === "file:") {
+      $("fileWarn").style.display = "block";
+    }
+
+    loadInputs();
+    updateStep2();
+  </script>
+</body>
+</html>
