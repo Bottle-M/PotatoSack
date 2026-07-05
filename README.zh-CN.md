@@ -206,19 +206,19 @@ a/**/c
 
 ## 小工具
 
-### Backup Merger  
+### Backups Merger  
 
-上文提到过，“一组备份”包括一个全量备份和一些增量备份。在恢复服务器数据的时候，BackupMerger 可以将这些备份合并成一个完整的备份。
+上文提到过，“*一组备份*”包括一个全量备份和一些增量备份。在恢复服务器数据的时候，BackupsMerger 可以将这些备份合并成一个完整的备份。
 
-详见 [BackupMerger](backups-merger/README.zh_CN.md)。  
+详见 [BackupsMerger](backups-merger/README.zh_CN.md)。  
 
 ## FAQ
 
-1. 首次启动时控制台怎么打印出了 404 ？
+1. *首次启动时控制台怎么打印出了 404* ？
 
-    * 这往往是因为云端的文件缺失或相应目录未建立，不过不用担心，程序在遇到 404 响应后会自动建立相应文件和目录。  
+    * 这往往出现在插件首次初始化，是因为云端的文件缺失或相应目录未建立，不过不用担心，程序在遇到 404 响应后会自动建立相应文件和目录。  
 
-2. 备份数据会被上传到云端哪个位置？  
+2. *备份数据会被上传到云端哪个位置*？  
 
     * 如果是 OneDrive：取决于 `configs.yml` 中 `client.onedrive.use-app-folder` 的设置——
       * `true`（默认）：`OneDrive 根目录/应用/<应用程序名>/<base-dir>/PotatoSack`（App Folder）
@@ -228,7 +228,7 @@ a/**/c
 
     * (`<base-dir>` 即你在 `configs.yml` 中配置的 `client.base-dir`)  
 
-3. 为什么叫 PotatoSack？  
+3. *为什么叫 PotatoSack*？  
     
     * 因为咱服务器的性能和土豆差不多，备份数据就像扛土豆麻袋一样 （゜ー゜）  
 
