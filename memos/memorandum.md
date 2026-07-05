@@ -1,5 +1,7 @@
 # 开发备忘
 
+* 注：本开发备忘是初期开发时编写的（24 年 7 月左右），仅展现了咱早期设计的思路，和现在的实现可能有一定偏差，仅作参考 (ᵕ—ᴗ—)。  
+
 ## 关于获取用户Object ID
 
 * https://learn.microsoft.com/zh-cn/partner-center/marketplace/find-tenant-object-id
