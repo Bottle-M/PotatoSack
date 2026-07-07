@@ -19,6 +19,7 @@ public class OneDriveTokenFetcher {
     private String accessToken;
     private final Gson gson = new Gson();
     private final Config config;
+    private final ExponentialBackoffCalculator backoffCalculator = new ExponentialBackoffCalculator(30);
 
     public OneDriveTokenFetcher(String clientId, String clientSecret, String refreshToken, Config config) {
         this.clientId = clientId;
@@ -62,6 +63,7 @@ public class OneDriveTokenFetcher {
                     OneDriveRefreshResp respObj = gson.fromJson(rawResp, OneDriveRefreshResp.class);
                     setRefreshToken(respObj.refreshToken);
                     setAccessToken(respObj.accessToken);
+                    backoffCalculator.reset();
                     // 更新下次更新时间（提前60秒）
                     nextRefreshTime = Utils.timestamp() + Integer.parseInt(respObj.expiresIn) - 60;
                     System.out.println("Onedrive token refreshed");
@@ -74,16 +76,18 @@ public class OneDriveTokenFetcher {
                 }
             } else {
                 String errMsg = "Token Req Failed, code:" + response.code() + ", msg:" + response.message();
-                setRefreshToken("");
                 setAccessToken("");
+                backoffCalculator.backoff();
+                setNextRefreshTime(Utils.timestamp() + backoffCalculator.getNextBackoffTime(600));
                 if (responseBody != null)
                     errMsg += ", body:" + responseBody.string();
                 ConsoleSender.logError(errMsg);
             }
         } catch (IOException e) {
             ConsoleSender.logError("Token Req Failed" + e.getMessage());
-            setRefreshToken("");
             setAccessToken("");
+            backoffCalculator.backoff();
+            setNextRefreshTime(Utils.timestamp() + backoffCalculator.getNextBackoffTime(600));
         } finally {
             if (responseBody != null)
                 responseBody.close();

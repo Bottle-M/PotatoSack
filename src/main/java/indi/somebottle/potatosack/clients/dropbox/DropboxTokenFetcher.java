@@ -5,6 +5,7 @@ import indi.somebottle.potatosack.clients.dropbox.entities.DropboxRefreshResp;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
+import indi.somebottle.potatosack.utils.ExponentialBackoffCalculator;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.FormBody;
@@ -72,6 +73,7 @@ public class DropboxTokenFetcher {
      * 下次需要刷新令牌的时间戳（秒）
      */
     private long nextRefreshTime = 0;
+    private final ExponentialBackoffCalculator backoffCalculator = new ExponentialBackoffCalculator(30);
 
     /**
      * 构造令牌获取器
@@ -130,6 +132,7 @@ public class DropboxTokenFetcher {
                 }
                 long expiresIn = respObj.expiresIn > 60 ? respObj.expiresIn - 60 : respObj.expiresIn;
                 nextRefreshTime = Utils.timestamp() + expiresIn;
+                backoffCalculator.reset();
                 System.out.println("Dropbox token refreshed");
                 return true;
             }
@@ -138,8 +141,12 @@ public class DropboxTokenFetcher {
                 errMsg += ", body:" + responseBody.string();
             }
             ConsoleSender.logError(errMsg);
+            backoffCalculator.backoff();
+            setNextRefreshTime(Utils.timestamp() + backoffCalculator.getNextBackoffTime(600));
         } catch (IOException e) {
             ConsoleSender.logError("Dropbox token req failed: " + e.getMessage());
+            backoffCalculator.backoff();
+            setNextRefreshTime(Utils.timestamp() + backoffCalculator.getNextBackoffTime(600));
         } finally {
             client.dispatcher().executorService().shutdown();
         }

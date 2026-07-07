@@ -3,6 +3,8 @@ package indi.somebottle.potatosack.clients.dropbox;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Utils;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 /**
  * Dropbox 令牌自动更新任务
  * <p>
@@ -22,6 +24,7 @@ public class DropboxTokenUpdater implements Runnable {
      * 令牌获取器
      */
     private final DropboxTokenFetcher tokenFetcher;
+    private final AtomicBoolean fetching = new AtomicBoolean(false);
 
     /**
      * 构造令牌更新任务
@@ -35,8 +38,16 @@ public class DropboxTokenUpdater implements Runnable {
     @Override
     public void run() {
         if (Utils.timestamp() > tokenFetcher.getNextRefreshTime()) {
-            if (!tokenFetcher.fetch()) {
-                ConsoleSender.logError("Fatal: Dropbox token refresh failed!");
+            // 并发防护：已有在途 fetch 则跳过本次调度
+            if (!fetching.compareAndSet(false, true)) {
+                return;
+            }
+            try {
+                if (!tokenFetcher.fetch()) {
+                    ConsoleSender.logError("Fatal: Dropbox token refresh failed!");
+                }
+            } finally {
+                fetching.set(false);
             }
         }
     }
