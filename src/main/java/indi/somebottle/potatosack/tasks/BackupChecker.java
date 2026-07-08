@@ -1,70 +1,19 @@
 package indi.somebottle.potatosack.tasks;
 
-import indi.somebottle.potatosack.entities.backup.BackupRecord;
-import indi.somebottle.potatosack.onedrive.Client;
-import indi.somebottle.potatosack.utils.Config;
-import indi.somebottle.potatosack.utils.ConsoleSender;
-import indi.somebottle.potatosack.utils.Utils;
-import org.bukkit.Bukkit;
+import indi.somebottle.potatosack.clients.base.Client;
+import indi.somebottle.potatosack.utils.*;
 
-import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 
 public class BackupChecker implements Runnable {
+    private final static BackupMutex BACKUP_MUTEX = new BackupMutex();
+
     private final BackupMaker backupMaker;
     private final Config config;
 
-    public BackupChecker(Client odClient, Config config) {
-        this.backupMaker = new BackupMaker(odClient, config); // 初始化备份核心模块
+    public BackupChecker(Client client, Config config) throws IOException {
+        this.backupMaker = new BackupMaker(client, config); // 初始化备份核心模块
         this.config = config;
-    }
-
-    /**
-     * 初始化备份模块
-     *
-     * @return 是否初始化成功
-     */
-    public boolean initialize() throws IOException {
-        File backupRecordFile = backupMaker.getBackupRecordFile();
-        System.out.println("Reading backup record file: " + backupRecordFile.getAbsolutePath());
-        // 首先检查插件目录是否有backup.json
-        if (!backupRecordFile.exists()) {
-            // 从云端抓取文件
-            if (!backupMaker.pullRecordsFile("backup")) {
-                // 如果抓取失败就直接在本地新建文件
-                if (!backupRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
-                    backupRecordFile.getParentFile().mkdirs();
-                if (backupRecordFile.createNewFile()) {
-                    // 初始化文件JSON内容
-                    backupMaker.writeBackupRecord(0, 0, "", "", new ArrayList<>());
-                } else {
-                    return false;
-                }
-            }
-        }
-        // 检查各个世界的记录文件是否存在
-        List<String> worlds = (List<String>) config.getConfig("worlds");
-        for (String worldName : worlds) {
-            File worldRecordFile = backupMaker.getWorldRecordsFile(worldName);
-            System.out.println("Reading world record file: " + worldRecordFile.getAbsolutePath());
-            if (!worldRecordFile.exists()) {
-                // 从云端抓取
-                if (!backupMaker.pullRecordsFile("_" + worldName)) {
-                    if (!worldRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
-                        worldRecordFile.getParentFile().mkdirs();
-                    // 如果抓取失败就直接在本地新建文件
-                    if (worldRecordFile.createNewFile()) {
-                        backupMaker.writeWorldRecord(worldName, new HashMap<>());
-                    } else {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
     }
 
     @Override
@@ -73,13 +22,24 @@ public class BackupChecker implements Runnable {
         boolean backupRun = false;
         try {
             // 如果已经有备份任务在执行，则不继续本次检查
-            if (!Utils.BACKUP_MUTEX.occupy())
+            if (!BACKUP_MUTEX.occupy())
                 return;
-            // 先检查是不是该进行全量备份了
-            BackupRecord bkRec = backupMaker.getBackupRecord();
-            long fullBackupInterval = Utils.objToLong(config.getConfig("full-backup-interval"));
-            // 注意fullBackupInterval单位是分钟
-            if (Utils.timeStamp() - bkRec.getLastFullBackupTime() > fullBackupInterval * 60) {
+            // STEP 1 ------------------------- 先检查是不是该进行全量备份了
+            String fullBackupCronExp = (String) config.getConfig(Config.KEYS.CRON.FULL_BACKUP);
+            CronUtils fullBackupCron = new CronUtils(fullBackupCronExp);
+            // 下一次全量备份开始的时间戳
+            long nextFullBackupTimestamp = fullBackupCron.nextExecutionTimestamp(backupMaker.getLastFullBackupTime());
+            if (Utils.timestamp() >= nextFullBackupTimestamp) {
+                // 时间到了，检查是否启用了"无人上线时停止全量备份"功能
+                if ((boolean) config.getConfig(Config.KEYS.STOP_FULL_BACKUP_WHEN_NO_PLAYER)) {
+                    // 检查是否有玩家上线过
+                    if (!LocalStatus.getInstance().getFullBackupFlag()) {
+                        // 没有玩家上线，跳过本次全量备份
+                        ConsoleSender.logDebug("Skipping full backup: no player has joined since last backup.");
+                        backupMaker.skipFullBackup();
+                        return;
+                    }
+                }
                 // 该进行全量备份了
                 backupRun = true;
                 boolean bkRes = backupMaker.makeFullBackup();
@@ -88,13 +48,22 @@ public class BackupChecker implements Runnable {
                 else
                     return; // 执行了全量备份，就不检查增量备份了
             }
-            // 检查是不是需要进行增量备份了
-            // 如果在线人数为0且配置了【无人时不进行增量备份】，则不进行增量备份检查
-            if (Bukkit.getOnlinePlayers().size() < 1 && (boolean) config.getConfig("stop-incremental-backup-when-no-player"))
-                return;
-            long increBackupInterval = Utils.objToLong(config.getConfig("incremental-backup-check-interval"));
-            // 注意increBackupInterval单位是分钟
-            if (Utils.timeStamp() - bkRec.getLastIncreBackupTime() > increBackupInterval * 60) {
+            // STEP 2 ------------------------- 检查是不是需要进行增量备份了
+            String increBackupCronExp = (String) config.getConfig(Config.KEYS.CRON.INCREMENTAL_BACKUP);
+            CronUtils increBackupCron = new CronUtils(increBackupCronExp);
+            // 下一次增量备份开始的时间戳
+            long nextIncreBackupTimestamp = increBackupCron.nextExecutionTimestamp(backupMaker.getLastIncreBackupTime());
+            if (Utils.timestamp() >= nextIncreBackupTimestamp) {
+                // 时间到了，检查是否启用了"无人上线时停止增量备份"功能
+                if ((boolean) config.getConfig(Config.KEYS.STOP_INCREMENTAL_BACKUP_WHEN_NO_PLAYER)) {
+                    // 检查是否有玩家上线过
+                    if (!LocalStatus.getInstance().getIncreBackupFlag()) {
+                        // 没有玩家上线，跳过本次增量备份
+                        ConsoleSender.logDebug("Skipping incremental backup: no player has joined since last backup.");
+                        backupMaker.skipIncreBackup();
+                        return;
+                    }
+                }
                 // 该进行增量备份了
                 backupRun = true;
                 boolean bkRes = backupMaker.makeIncreBackup();
@@ -106,7 +75,7 @@ public class BackupChecker implements Runnable {
             e.printStackTrace();
         } finally {
             // 最终一定要释放锁
-            Utils.BACKUP_MUTEX.release();
+            BACKUP_MUTEX.release();
             if (backupRun) {
                 // 如果运行了备份任务，则在这里进行清理工作
                 backupMaker.cleanTempDir(); // 请理临时目录

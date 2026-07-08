@@ -1,38 +1,84 @@
-# OneDrive API Configuration (Support OneDrive Business(ODB)/Personal(ODC))
-onedrive:
-  # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
-  # Tool: https://github.com/Bottle-M/PotatoSack/tree/main/onedrive-token-tool
-  client-id:
-  client-secret:
-  refresh-token:
+# PotatoSack configuration version
+version: '${project.version}'
+
+client:
+    # Choose the Cloud Storage Service Provider you want to use.
+    use: onedrive
+    # Base directory path for storing backups in cloud storage (default: empty, meaning root directory)
+    # Example: if set to "my/backups", data will be stored at "my/backups/PotatoSack/..."
+    # Note: Leading and trailing slashes will be automatically removed. E.g., "/my/backups/" will be treated as "my/backups".
+    base-dir: ""
+    # OneDrive API Configuration (Support OneDrive Business(ODB) / Personal(ODC))
+    # Reference: https://learn.microsoft.com/en-us/graph/auth-v2-user?tabs=http#5-use-the-refresh-token-to-get-a-new-access-token
+    # Tool: https://potatosack.imbottle.com/onedrive-token-helper.html
+    onedrive:
+        # use-app-folder specifies whether to use the "app folder" for storing backups.
+        # Reference:
+        #   [1] https://learn.microsoft.com/en-us/onedrive/developer/rest-api/concepts/special-folders-appfolder
+        #   [2] https://learn.microsoft.com/en-us/graph/onedrive-sharepoint-appfolder
+        # Although currently only OneDrive Personal(ODC) fully supports the "app folder" (with permission "Files.ReadWrite.AppFolder"),
+        # it's still recommended to enable this option for safer data isolation and future compatibility.
+        # For OneDrive Business(ODB), the data isolation may not be fully supported,
+        # but the app folder can still be created and used normally (with permission Files.ReadWrite.All).
+        use-app-folder: true
+        client-id:
+        client-secret:
+        refresh-token:
+    # Dropbox API Configuration
+    # Create a Dropbox app and use a refresh token with "files.content.write",
+    # "files.content.read", and "files.metadata.read" permissions.
+    # Tool: https://potatosack.imbottle.com/dropbox-token-helper.html
+    dropbox:
+        app-key:
+        app-secret:
+        refresh-token:
 
 # The number of full backups to keep, actually it refers to "groups of backups" to keep.
-# Note: "A group of backups" consists of a full backup and a set of incremental backups following it(before the next full backup).
+# Note: "A group of backups" consists of a full backup and a set of incremental backups following it (before the next full backup).
 # Note: If a full backup is deleted, all incremental backups following it before the next full backup will be deleted as well.
-max-full-backups-retained: 3
+max-full-backups-retained: 10
 
-# The interval of full backups (in minutes)
-# Note: The full backups will be generated according to the interval below.
-full-backup-interval: 1440
+cron:
+    # Cron expression for generating full backups
+    # Note: This uses standard UNIX Cron syntax.
+    # Example: "0 2 */1 * *" means the full backup runs every day at 2:00 AM.
+    full-backup: "0 2 */1 * *"
 
-# The interval of incremental backups (in minutes)
-# Note: The incremental backups will be generated according to the interval below.
-incremental-backup-check-interval: 15
+    # Cron expression for generating incremental backups
+    # Note: This uses standard UNIX Cron syntax.
+    # Example: "*/30 * * * *" means the incremental backup runs every 30 minutes.
+    incremental-backup: "*/30 * * * *"
 
-# Whether to stop incremental backup when no player is online
-# Note: It may save you some data traffic expenses when nobody's there.
-# Note: Full backup won't be stopped, only incremental backups will be affected.
+# Whether to stop incremental backup when no player has joined
+# - true: Skip incremental backups if no player has joined since the last incremental / full backup
+# - false: Perform incremental backups according to the cron expression, regardless of player activity
 stop-incremental-backup-when-no-player: true
+
+# Whether to stop full backup when no player has joined
+# - true: After a full backup is completed, skip subsequent scheduled full backups if no player joins, until a player joins again
+# - false: Perform full backups according to the cron expression, regardless of player activity
+stop-full-backup-when-no-player: false
 
 # Whether to upload files while compressing them. (Time-space trade-off)
 # Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
-# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, it's not costly. (Each chunk of zip file is only about 15.625MiB)
+# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (Each chunk of zip file is only about 15.625 MiB)
 use-streaming-compression-upload: false
 
-# The worlds that you would like to backup, example:
-# worlds:
-#  - world
-#  - world_nether
-#  - world_the_end
-# Note: If you leave this blank, the plugin won't work.
-worlds: [ ]
+# The directory paths that you would like to make backups, can be absolute or relative (relative to server root) paths, example:
+# paths:
+#   - world
+#   - ./world_nether
+#   - world_the_end
+#
+# After Minecraft JE 26.1, it can be:
+# paths:
+#   - /workspace/server/world
+#   - plugins/GroupManager
+#
+# Note 1: if you leave this blank, the plugin won't work.
+# Note 2: all paths must be located under the server root directory.
+# Note 3: you can place a .potatosackignore file in the server root directory to exclude certain files or directories from backups.
+#         for more information, please refer to README.
+# Note 4: the path must not be the server root directory itself.
+# Note 5: backup paths must not overlap with each other. E.g., do not include both 'world' and 'world/playerdata'.
+paths: [ ]

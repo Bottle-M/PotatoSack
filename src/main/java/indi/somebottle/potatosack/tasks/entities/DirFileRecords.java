@@ -1,0 +1,37 @@
+package indi.somebottle.potatosack.tasks.entities;
+
+import com.google.gson.annotations.SerializedName;
+
+import java.util.Map;
+
+/**
+ * 用于解析 _备份路径标识.json，主要记录指定目录中所有文件的最后哈希值
+ */
+public class DirFileRecords {
+    @SerializedName("file_update_time")
+    private long fileUpdateTime; // _备份路径标识.json 文件更新时间戳
+
+    @SerializedName("last_file_hashes")
+    private Map<String, String> lastFileHashes; // 存放指定备份目录中所有文件的最后哈希值
+
+    public long getFileUpdateTime() {
+        return fileUpdateTime;
+    }
+
+    public void setFileUpdateTime(long fileUpdateTime) {
+        this.fileUpdateTime = fileUpdateTime;
+    }
+
+    /**
+     * 获得 _备份路径标识.json 中的 lastFileHashes，即键值对：<相对服务器根目录的路径, 文件哈希>
+     *
+     * @return Map<文件相对服务器根目录的路径, 文件哈希>
+     */
+    public Map<String, String> getLastFileHashes() {
+        return lastFileHashes;
+    }
+
+    public void setLastFileHashes(Map<String, String> lastFileHashes) {
+        this.lastFileHashes = lastFileHashes;
+    }
+}

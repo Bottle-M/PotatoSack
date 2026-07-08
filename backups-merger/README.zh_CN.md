@@ -9,8 +9,8 @@
 
     ```text
     020240625000001/
-    ├── _world.json
-    ├── _world_nether.json
+    ├── _world_<hash>.json
+    ├── _world_nether_<hash>.json
     ├── backup.json
     ├── full.zip
     ├── incre000001.zip
@@ -38,4 +38,4 @@
 
     ![Where to save](pics/SaveMergedAs.png)  
 
-7. 最终程序会产生一个合并后的 Zip 包，默认文件名是 `merged.zip`。你可以把这个压缩包解压到你的 Minecraft 服务端目录以恢复世界数据。  
+7. 最终程序会产生一个合并后的 Zip 包，默认文件名是 `merged.zip`。你可以把这个压缩包解压到你的 Minecraft 服务端目录以恢复备份数据。  
