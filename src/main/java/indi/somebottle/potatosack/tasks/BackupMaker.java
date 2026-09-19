@@ -19,7 +19,7 @@ import java.nio.file.Files;
 import java.util.*;
 
 /**
- * 记录文件 .json 均放在插件目录 plugins/PotatoSack/data 下
+ * backup.json 以及各备份路径的 _备份路径标识.bin 均放在插件目录 plugins/PotatoSack/data 下
  */
 public class BackupMaker {
     private final Client client;
@@ -106,7 +106,7 @@ public class BackupMaker {
         }
         // 再检查配置的各个待备份路径的记录文件是否存在
         for (String backupConfPath : backupConfPaths) {
-            // 每个待备份路径都有一个目录下文件的哈希记录文件 _备份路径标识.json，存放上一次备份时该路径下所有文件的哈希值
+            // 每个待备份路径都有一个目录下文件的哈希记录文件 _备份路径标识.bin，存放上一次备份时该路径下所有文件的哈希值
             File dirFileRecordsFile = getDirFileRecordsFile(backupConfPath);
             System.out.println("Reading hash record file: " + dirFileRecordsFile.getAbsolutePath());
             if (getDirFileRecords(backupConfPath) == null) {
@@ -163,13 +163,13 @@ public class BackupMaker {
     }
 
     /**
-     * 根据规范的备份标识名构建对应的目录文件哈希记录文件名，文件名为 _备份路径标识，没有 .json 后缀
+     * 根据规范的备份标识名构建对应的目录文件哈希记录文件名，文件名为 _备份路径标识.bin
      *
      * @param normalizedFileName 规范的备份标识名字符串，通过 backupConfPathToNormalizedName 方法获得
-     * @return 记录文件名字符串
+     * @return 记录文件名字符串，带 .bin 后缀
      */
     private String buildDirFileRecordsFilename(String normalizedFileName) {
-        return DIR_FILE_RECORDS_FILE_PREFIX + normalizedFileName;
+        return DIR_FILE_RECORDS_FILE_PREFIX + normalizedFileName + ".bin";
     }
 
     /**
@@ -251,7 +251,7 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的 _备份路径标识.json
+     * 写入本地的 _备份路径标识.bin
      *
      * @param backupConfPath 配置的备份路径字符串
      * @param rec            目录文件记录 DirFileRecords 对象
@@ -263,7 +263,7 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的 _备份路径标识.json
+     * 写入本地的 _备份路径标识.bin
      *
      * @param backupConfPath 配置的备份路径字符串
      * @param recList        Map<文件相对服务端根目录的路径, 文件哈希>
@@ -286,7 +286,7 @@ public class BackupMaker {
     public BackupRecord getBackupRecord() throws IOException {
         File backupRecordFile = getBackupRecordFile();
         if (!backupRecordFile.exists()) {
-            if (!pullRecordsFile("backup")) {
+            if (!pullRecordsFile("backup.json")) {
                 ConsoleSender.logInfo("Local backup record file not found, and failed to pull from cloud. Creating new local backup record file...");
                 if (!backupRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
                     backupRecordFile.getParentFile().mkdirs();
@@ -305,12 +305,12 @@ public class BackupMaker {
     }
 
     /**
-     * 获得备份路径对应的目录下数据哈希记录（_备份路径标识.json）
+     * 获得备份路径对应的目录下数据哈希记录（_备份路径标识.bin）
      *
      * @param backupConfPath 配置的备份路径字符串
      * @return DirFileRecords 对象
      * @throws IOException IO异常
-     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _备份路径标识.json。如果连文件都没法新建就会返回 null。
+     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _备份路径标识.bin。如果连文件都没法新建就会返回 null。
      */
     @SuppressWarnings("ResultOfMethodCallIgnored")
     public DirFileRecords getDirFileRecords(String backupConfPath) throws IOException {
@@ -347,36 +347,36 @@ public class BackupMaker {
     }
 
     /**
-     * 根据配置的备份路径字符串获取 _备份路径标识.json 的文件（哈希）记录文件 File 对象
+     * 根据配置的备份路径字符串获取 _备份路径标识.bin 的文件（哈希）记录文件 File 对象
      *
      * @param backupConfPath 配置的备份路径字符串
      * @return File 对象
-     * @apiNote _备份路径标识.json 中存放配置的目录中所有文件的最后哈希值
+     * @apiNote _备份路径标识.bin 中存放配置的目录中所有文件的最后哈希值
      */
     public File getDirFileRecordsFile(String backupConfPath) throws IOException {
         String normalizedPathName = backupConfPathToNormalizedName(backupConfPath);
-        return new File(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedPathName) + ".json");
+        return new File(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedPathName));
     }
 
     /**
-     * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/[fileName].json
+     * 从云端拉取数据目录中的记录文件 PotatoSack/备份组号/[fileName]
      *
-     * @param fileName 文件名
+     * @param fileName 文件名（含后缀）
      * @return 是否拉取成功
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
-     * @apiNote 文件名不包含.json后缀
+     * @apiNote 文件名需要带后缀，比如 backup.json 或 _备份路径标识.bin
      */
     public boolean pullRecordsFile(String fileName) throws IOException {
         return pullRecordsFile(new String[]{fileName});
     }
 
     /**
-     * 从云端拉取最新一组备份中的json文件 PotatoSack/备份组号/*.json
+     * 从云端拉取最新一组备份中的记录文件 PotatoSack/备份组号/*
      *
-     * @param fileNames 文件名数组String[]，指定要下载的一组json文件
+     * @param fileNames 文件名数组String[]，指定要下载的一组记录文件
      * @return 是否拉取成功
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
-     * @apiNote 文件名不包含.json后缀
+     * @apiNote 文件名需要带后缀，比如 backup.json 或 _备份路径标识.bin
      */
     @SuppressWarnings("StringEqualsEmptyString")
     public boolean pullRecordsFile(String[] fileNames) throws IOException {
@@ -390,11 +390,11 @@ public class BackupMaker {
         }
         if (latestFolderName.equals(""))
             return false;
-        // 从云端拉取backup.json
+        // 从云端拉取记录文件（backup.json 以及各备份路径的 _备份路径标识.bin）
         boolean success = true;
         for (String name : fileNames) {
-            String recordFilePath = pluginDataPath + File.separator + name + ".json";
-            success = client.downloadFile(Constants.APP_DATA_FOLDER + "/" + latestFolderName + "/" + name + ".json", recordFilePath) && success;
+            String recordFilePath = pluginDataPath + File.separator + name;
+            success = client.downloadFile(Constants.APP_DATA_FOLDER + "/" + latestFolderName + "/" + name, recordFilePath) && success;
         }
         return success;
     }
@@ -438,12 +438,12 @@ public class BackupMaker {
         List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
         // 加载 .potatosackignore（若存在）；解析失败则本次备份失败（严格）
         IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
-        // 1. 扫描各备份目录生成包含每个文件最后哈希值的 _备份路径标识.json
+        // 1. 扫描各备份目录生成包含每个文件最后哈希值的 _备份路径标识.bin
         long scanStartTime = System.currentTimeMillis();
         for (String backupConfPath : backupConfPaths) {
             // 扫描备份目录下的所有文件，计算文件哈希（为增量备份做准备），跳过被忽略的文件/目录
             Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
-            // _备份路径标识.json 中存放待备份数据目录中所有文件的最后哈希值
+            // _备份路径标识.bin 中存放待备份数据目录中所有文件的最后哈希值
             writeDirFileRecords(backupConfPath, currentFileHashes);
         }
         // 统计扫描和计算哈希所需的时间 T
@@ -530,7 +530,7 @@ public class BackupMaker {
             return false;
         for (String backupConfPath : backupConfPaths) {
             String normalizedDirFileRecordsFileName = backupConfPathToNormalizedName(backupConfPath);
-            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json"))
+            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName), Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName)))
                 return false;
         }
         // 6. 删除过时备份
@@ -716,7 +716,7 @@ public class BackupMaker {
             return false;
         for (String backupConfPath : backupConfPaths) {
             String normalizedDirFileRecordsFileName = backupConfPathToNormalizedName(backupConfPath);
-            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json"))
+            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName), Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName)))
                 return false;
         }
         ConsoleSender.toConsole("Successfully made incremental backup: " + increBackupId + " in backup group " + lastFullBackupId);
