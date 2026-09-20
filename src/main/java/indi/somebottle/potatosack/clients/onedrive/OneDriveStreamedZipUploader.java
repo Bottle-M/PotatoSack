@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDrivePutOrGetSessionResp;
 import indi.somebottle.potatosack.clients.onedrive.utils.OneDriveRequestUtils;
 import indi.somebottle.potatosack.exceptions.DataSizeOverflowException;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
@@ -316,23 +316,23 @@ public class OneDriveStreamedZipUploader {
     /**
      * 将指定的文件打包成Zip并上传
      *
-     * @param zipFilePaths 要打包的文件路径对 ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 是否打包上传成功
      */
-    public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
-        return zipSpecifiedAndUpload(zipFilePaths, quiet, false);
+    public boolean zipSpecifiedAndUpload(ZipEntryInfo[] entries, boolean quiet) throws IOException {
+        return zipSpecifiedAndUpload(entries, quiet, false);
     }
 
     /**
      * 将指定的文件打包成Zip并上传
      *
-     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @param retry        是否是重试
      * @return 是否打包上传成功
      */
-    private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) throws IOException {
+    private boolean zipSpecifiedAndUpload(ZipEntryInfo[] entries, boolean quiet, boolean retry) throws IOException {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         ConsoleSender.toConsole("Calculating file size... ");
         for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
@@ -344,7 +344,7 @@ public class OneDriveStreamedZipUploader {
                     ZipOutputStream zout = new ZipOutputStream(cos)
             ) {
                 // 进行模拟文件压缩，计算文件大小
-                Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                Utils.zipSpecificFilesUtil(zout, entries, quiet);
                 // 成功了就跳出重试循环继续后续流程
                 break;
             } catch (Utils.ZipRWConflictException e) {
@@ -377,7 +377,7 @@ public class OneDriveStreamedZipUploader {
                     ZipOutputStream zout = new ZipOutputStream(uos)
             ) {
                 try {
-                    Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                    Utils.zipSpecificFilesUtil(zout, entries, quiet);
                     // 成功压缩上传后跳出重试循环
                     break;
                 } catch (Utils.ZipRWConflictException e) {
@@ -404,7 +404,7 @@ public class OneDriveStreamedZipUploader {
                 // 末尾填充的空白字节数 = 5 × 平均溢出的字节数
                 paddingSize = 5 * streamedOverflowBytesTracker.getAvg();
                 // 立即重试一次
-                return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
+                return zipSpecifiedAndUpload(entries, quiet, true);
             } catch (Exception e) {
                 // 20240611 如果这里 uos 抛出了异常，会被捕捉
                 // 但是捕捉后，会关闭 zout 资源和 uos 资源

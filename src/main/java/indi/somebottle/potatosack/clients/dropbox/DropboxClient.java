@@ -11,7 +11,7 @@ import indi.somebottle.potatosack.clients.dropbox.entities.DropboxUploadSessionS
 import indi.somebottle.potatosack.clients.dropbox.utils.DropboxErrorUtils;
 import indi.somebottle.potatosack.clients.dropbox.utils.DropboxPathUtils;
 import indi.somebottle.potatosack.exceptions.ClientInitializationException;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
@@ -249,12 +249,12 @@ public class DropboxClient extends Client {
     }
 
     @Override
-    protected boolean streamCompressAndUploadInternal(ZipFilePath[] zipFilePaths, String fullRemotePath, boolean quiet) {
-        if (zipFilePaths.length == 0 || fullRemotePath.equals("")) {
+    protected boolean streamCompressAndUploadInternal(ZipEntryInfo[] entries, String fullRemotePath, boolean quiet) {
+        if (entries.length == 0 || fullRemotePath.equals("")) {
             return false;
         }
         DropboxStreamedZipUploader uploader = new DropboxStreamedZipUploader(this, fullRemotePath);
-        return uploader.zipSpecifiedAndUpload(zipFilePaths, quiet);
+        return uploader.zipSpecifiedAndUpload(entries, quiet);
     }
 
     @Override

@@ -1,6 +1,6 @@
 package indi.somebottle.potatosack.clients.dropbox;
 
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.Utils;
@@ -138,7 +138,7 @@ public class DropboxStreamedZipUploader {
     /**
      * 压缩并上传指定文件
      * <p>
-     * 创建上传会话和输出流后，使用 {@link indi.somebottle.potatosack.utils.Utils#zipSpecificFilesUtil(java.util.zip.ZipOutputStream, indi.somebottle.potatosack.tasks.entities.ZipFilePath[], boolean)} 进行压缩。
+     * 创建上传会话和输出流后，使用 {@link indi.somebottle.potatosack.utils.Utils#zipSpecificFilesUtil(java.util.zip.ZipOutputStream, indi.somebottle.potatosack.tasks.entities.ZipEntryInfo[], boolean)} 进行压缩。
      * 压缩数据会自动通过 {@link UploadOutputStream} 上传到 Dropbox。
      * </p>
      * <p>
@@ -150,11 +150,11 @@ public class DropboxStreamedZipUploader {
      * </ul>
      * </p>
      *
-     * @param zipFilePaths 要压缩的文件路径数组
+     * @param entries 要打包进 zip 的条目
      * @param quiet 是否静默模式（不显示 "Adding..." 信息）
      * @return {@code true} 表示压缩上传成功，{@code false} 表示失败
      */
-    public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) {
+    public boolean zipSpecifiedAndUpload(ZipEntryInfo[] entries, boolean quiet) {
         ConsoleSender.toConsole("Compressing and uploading to Dropbox... ");
         for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
             UploadOutputStream uos = null;
@@ -164,7 +164,7 @@ public class DropboxStreamedZipUploader {
                 try (UploadOutputStream uploadStream = uos;
                      ZipOutputStream zout = new ZipOutputStream(uploadStream)) {
                     try {
-                        Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                        Utils.zipSpecificFilesUtil(zout, entries, quiet);
                     } catch (Utils.ZipRWConflictException e) {
                         uploadStream.terminate();
                         ConsoleSender.logWarn(e.getMessage());

@@ -2,7 +2,7 @@ package indi.somebottle.potatosack.utils;
 
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
@@ -436,25 +436,25 @@ public class Utils {
      * 将指定的文件加入Zip流
      *
      * @param zos          Zip输出流
-     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      */
-    public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipFilePath[] zipFilePaths, boolean quiet) throws IOException, ZipRWConflictException {
+    public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipEntryInfo[] entries, boolean quiet) throws IOException, ZipRWConflictException {
         // CRC 校验和计算器
         CRC32 crc32 = new CRC32();
-        for (ZipFilePath zipFilePath : zipFilePaths) {
+        for (ZipEntryInfo entry : entries) {
             // 重置 CRC
             crc32.reset();
             if (!quiet)
-                System.out.println("[Verbose] Add file: " + zipFilePath.filePath + " -> " + zipFilePath.zipFilePath);
-            File file = new File(zipFilePath.filePath);
+                System.out.println("[Verbose] Add file: " + entry.filePath + " -> " + entry.entryPath);
+            File file = new File(entry.filePath);
             // 如果待压缩文件不存在，则忽略 20240722
             // 可能在文件列表到开始压缩文件这段时间内，这个文件被删除了
             if (!file.exists()) {
-                ConsoleSender.logWarn("(Unexpected!) File " + zipFilePath.filePath + " not found while compressing, it may have been deleted, ignored.");
+                ConsoleSender.logWarn("(Unexpected!) File " + entry.filePath + " not found while compressing, it may have been deleted, ignored.");
                 continue;
             }
-            zos.putNextEntry(new ZipEntry(zipFilePath.zipFilePath));
+            zos.putNextEntry(new ZipEntry(entry.entryPath));
             // 先记录在读取文件前的时间戳，以及文件大小
             long fileModifiedTimeBefore = file.lastModified();
             long fileSizeBefore = file.length();
@@ -462,8 +462,10 @@ public class Utils {
             ExponentialBackoffCalculator backoffCalc = new ExponentialBackoffCalculator(1000); // 基础退避 1s
             int retry = 0;
             boolean fileSkipped = false;
+            // 读取过程中对【原始文件】算出的 CRC32，读取成功时赋值
+            long checksumBefore = -1;
             while (retry <= Constants.FILE_READ_MAX_RETRY) {
-                try (FileInputStream in = new FileInputStream(file)) {
+                try (InputStream in = openInputStream4Zip(entry, file)) {
                     // 1 MiB 大小的读取缓冲区
                     byte[] buffer = new byte[1048576]; // 读出文件
                     int len;
@@ -473,6 +475,9 @@ public class Utils {
                         // 写入
                         zos.write(buffer, 0, len);
                     }
+                    // .mca 走 delta 转换时，写进 zip 的是 McaDeltaInputStream 转换后的字节，上面 crc32 攒的已经不是原文件的内容了，
+                    // 所以改用它自己算出的那份【原始文件】的 CRC
+                    checksumBefore = in instanceof McaDeltaInputStream delta ? delta.sourceCRC32() : crc32.getValue();
                     break; // 读取成功，跳出重试循环
                 } catch (IOException e) {
                     // 文件被锁定（Windows 下常见）或其它 IO 错误
@@ -485,7 +490,7 @@ public class Utils {
                             Thread.currentThread().interrupt();
                         }
                     } else {
-                        ConsoleSender.logWarn("Cannot read file " + zipFilePath.filePath + ", skipping: " + e.getMessage());
+                        ConsoleSender.logWarn("Cannot read file " + entry.filePath + ", skipping: " + e.getMessage());
                         fileSkipped = true;
                         break;
                     }
@@ -494,14 +499,12 @@ public class Utils {
             if (fileSkipped) {
                 continue; // 跳过该文件，处理下一个
             }
-            // 文件读取写入完毕后取出这个期间计算的校验和
-            long checksumBefore = crc32.getValue();
             // 文件读取，并压缩写入 Zip 后，再次检查文件时间戳、文件大小
             // 同时再读取文件一遍，重新计算校验和，检查校验和是否一致
             if (file.lastModified() != fileModifiedTimeBefore || file.length() != fileSizeBefore || checksumBefore != fileCRC32(file)) {
                 // 如果 文件更新时间戳发生变更 或 文件大小发生变化 或 校验和 发生变化，说明在读取过程中此文件同时进行了写入
                 // 可能造成数据混乱，因此要抛出异常
-                throw new ZipRWConflictException("Conflict: File modified while being added to zip - " + zipFilePath.filePath);
+                throw new ZipRWConflictException("Conflict: File modified while being added to zip - " + entry.filePath);
             }
         }
         zos.closeEntry();
@@ -509,14 +512,30 @@ public class Utils {
     }
 
     /**
+     * 打开一个待打包文件的输入流
+     *
+     * @param entry 待打包的条目
+     * @param file  待打包的文件
+     * @return 输入流，由调用方负责关闭
+     * @throws IOException 文件打不开时抛出
+     * @apiNote {@link ZipEntryInfo#mcaPrevChunkTimes} 非 null 时说明这是个"有上次基线"的 `.mca`，
+     * 交给 {@link McaDeltaInputStream} 转成增量 delta 格式；其余情况一律原样读取。
+     */
+    private static InputStream openInputStream4Zip(ZipEntryInfo entry, File file) throws IOException {
+        if (entry.mcaPrevChunkTimes == null)
+            return new FileInputStream(file);
+        return new McaDeltaInputStream(file, entry.mcaPrevChunkTimes);
+    }
+
+    /**
      * 将指定的文件打包成Zip
      *
-     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param outputPath   输出Zip包的路径
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 是否打包成功
      */
-    public static boolean zipSpecificFiles(ZipFilePath[] zipFilePaths, String outputPath, boolean quiet) {
+    public static boolean zipSpecificFiles(ZipEntryInfo[] entries, String outputPath, boolean quiet) {
         File outputFile = new File(outputPath);
         int zipRetryCnt = 0; // 已经重试的次数
         // 用 <= 是因为首次运行不算重试
@@ -529,7 +548,7 @@ public class Utils {
             try (
                     ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputFile)))
             ) {
-                zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                zipSpecificFilesUtil(zout, entries, quiet);
                 return true;
             } catch (ZipRWConflictException e) {
                 // 添加文件时发生冲突，重试压缩
@@ -547,15 +566,15 @@ public class Utils {
 
 
     /**
-     * （递归方法） 扫描某个目录下所有文件，转换为 ZipFilePath
+     * （递归方法） 扫描某个目录下所有文件，转换为 ZipEntryInfo
      *
      * @param srcDir        源目录 File 对象
      * @param ignorer        用于跳过被忽略的文件/目录（目录命中即剪枝）
      * @param parentDirPath 该目录相对于服务端根的相对路径（作为 zip 内路径前缀，空串表示服务端根）
-     * @return List<ZipFilePath>
+     * @return List<ZipEntryInfo>
      */
-    private static List<ZipFilePath> dirFilesToZipFilePaths(File srcDir, IgnoreMatcher ignorer, String parentDirPath) throws Exception {
-        List<ZipFilePath> resPaths = new ArrayList<>();
+    private static List<ZipEntryInfo> dirFilesToZipEntryInfos(File srcDir, IgnoreMatcher ignorer, String parentDirPath) throws Exception {
+        List<ZipEntryInfo> entryInfos = new ArrayList<>();
         // 列出 srcDir 目录下的文件
         File[] files = srcDir.listFiles();
         if (files == null) {
@@ -569,39 +588,39 @@ public class Utils {
                 continue;
             if (file.isDirectory()) {
                 // 如果是目录就递归扫描文件
-                resPaths.addAll(dirFilesToZipFilePaths(file, ignorer, currentDirOrFilePath));
+                entryInfos.addAll(dirFilesToZipEntryInfos(file, ignorer, currentDirOrFilePath));
             } else {
-                // 如果是文件就转换为 ZipFilePath
-                resPaths.add(new ZipFilePath(
+                // 如果是文件就转换为 ZipEntryInfo
+                entryInfos.add(new ZipEntryInfo(
                         Utils.pathAbsToServer(currentDirOrFilePath),
                         currentDirOrFilePath
                 ));
             }
         }
-        return resPaths;
+        return entryInfos;
     }
 
 
     /**
-     * 指定多个备份目录，扫描这些目录下的所有文件，组成 ZipFilePath[]
+     * 指定多个备份目录，扫描这些目录下的所有文件，组成 ZipEntryInfo[]
      *
      * @param srcDirPaths String[] ，指定要打包的备份目录路径（绝对或相对服务端根）
      * @param ignorer      用于跳过被忽略的文件/目录
-     * @return ZipFilePath[]
+     * @return ZipEntryInfo[]
      */
-    public static ZipFilePath[] scanPeerDirsToZipPaths(String[] srcDirPaths, IgnoreMatcher ignorer) {
-        List<ZipFilePath> res = new ArrayList<>();
+    public static ZipEntryInfo[] scanPeerDirsToZipEntryInfos(String[] srcDirPaths, IgnoreMatcher ignorer) {
+        List<ZipEntryInfo> res = new ArrayList<>();
         try {
             // 遍历每个目录
             for (String path : srcDirPaths) {
                 File srcDir = resolveBackupConfPath(path);
                 // 以该目录相对于服务端根的路径作为 zip 内路径前缀，保证嵌套路径也能正确还原
-                res.addAll(dirFilesToZipFilePaths(srcDir, ignorer, pathRelativeToServer(srcDir)));
+                res.addAll(dirFilesToZipEntryInfos(srcDir, ignorer, pathRelativeToServer(srcDir)));
             }
         } catch (Exception e) {
             ConsoleSender.logError("Transformation of backup path to zip file paths failed: " + e.getMessage());
         }
-        return res.toArray(new ZipFilePath[0]);
+        return res.toArray(new ZipEntryInfo[0]);
     }
 
     /**

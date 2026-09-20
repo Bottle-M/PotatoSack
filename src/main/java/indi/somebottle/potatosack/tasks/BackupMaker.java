@@ -7,7 +7,7 @@ import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.tasks.entities.BackupRecord;
 import indi.somebottle.potatosack.tasks.entities.DirFileRecords;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.*;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -429,7 +429,7 @@ public class BackupMaker {
      * @throws NullPointerException 空指针异常（按理来说不应该出现，和记录文件读取有关）
      * @apiNote 本方法会进行: <p>1. 压缩相应文件</p><p>2. 上传压缩后的文件</p><p>3. 检查是否有需要删除的备份组（只保留几组）</p>
      */
-    @SuppressWarnings({"StringEqualsEmptyString", "unchecked"})
+    @SuppressWarnings({"unchecked"})
     public boolean makeFullBackup() throws IOException, InterruptedException, NullPointerException {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
@@ -451,8 +451,8 @@ public class BackupMaker {
         String currFullBackupId = getNextFullBackupId(rec);
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
-        // 扫描 backupConfPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
-        ZipFilePath[] backupZipFilePaths = Utils.scanPeerDirsToZipPaths(backupConfPaths.toArray(new String[0]), ignorer);
+        // 扫描 backupConfPaths 对应目录的所有文件，转换为 ZipEntryInfo 对象数组
+        ZipEntryInfo[] backupZipEntryInfos = Utils.scanPeerDirsToZipEntryInfos(backupConfPaths.toArray(new String[0]), ignorer);
         if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
@@ -473,7 +473,7 @@ public class BackupMaker {
                     putOffFullBackup(rec);
                     return false;
                 }
-                if (!client.streamCompressAndUpload(backupZipFilePaths, remotePath, true)) {
+                if (!client.streamCompressAndUpload(backupZipEntryInfos, remotePath, true)) {
                     // 如果流式压缩上传失败了就指数退避
                     putOffFullBackup(rec);
                     return false;
@@ -490,7 +490,7 @@ public class BackupMaker {
             // 临时文件路径
             String tempOutputFilePath = pluginTempPath + File.separator + "full" + Utils.timestamp() + ".zip";
             // 2. 开始压缩
-            if (!Utils.zipSpecificFiles(backupZipFilePaths, tempOutputFilePath, true))
+            if (!Utils.zipSpecificFiles(backupZipEntryInfos, tempOutputFilePath, true))
                 return false;
             // 3. 上传压缩好的文件
             ConsoleSender.toConsole("Uploading Full Backup...");
@@ -581,8 +581,8 @@ public class BackupMaker {
         IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
         // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
         List<String> deletedPaths = new ArrayList<>();
-        // 所有有变动文件的 【绝对路径】（方便Zip打包）
-        List<ZipFilePath> increFilePaths = new ArrayList<>();
+        // 所有有变动的文件（文件绝对路径 + 包内相对路径；有基线的 .mca 还会带上区块时间戳）
+        List<ZipEntryInfo> increEntryInfos = new ArrayList<>();
         // 暂存各备份路径的新哈希，待上传成功后再写入硬盘（避免上传失败/中断时覆盖旧记录，导致下次增量漏掉本次未上传的变更）
         Map<String, Map<String, String>> newHashesByPath = new LinkedHashMap<>();
         // 1. 扫描每个备份目录找到有差异的文件
@@ -604,8 +604,8 @@ public class BackupMaker {
                 // 新记录中新出现的文件 or 新记录中的文件哈希相比旧记录有变动
                 // key 其实是文件的相对路径
                 if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(currentFileHashes.get(key)))
-                    increFilePaths.add( // 添加到增量文件列表
-                            new ZipFilePath(
+                    increEntryInfos.add( // 添加到增量文件列表
+                            new ZipEntryInfo(
                                     // 获得文件绝对路径以便Zip打包, key 就是文件相对于服务端根目录的相对路径
                                     Utils.pathAbsToServer(key),
                                     key
@@ -617,7 +617,7 @@ public class BackupMaker {
         }
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         // 若没有文件变更则不进行本次增量备份
-        if (increFilePaths.size() == 0 && deletedPaths.size() == 0) {
+        if (increEntryInfos.isEmpty() && deletedPaths.isEmpty()) {
             ConsoleSender.toConsole("No new files found, skip this incremental backup.");
             return true;
         }
@@ -627,7 +627,7 @@ public class BackupMaker {
         String deletedFileContent = String.join("\n", deletedPaths) + "\n";
         Files.write(new File(deletedRecordPath).toPath(), deletedFileContent.getBytes());
         // 把deleted.files文件也加入压缩包
-        increFilePaths.add(new ZipFilePath(deletedRecordPath, "deleted.files"));
+        increEntryInfos.add(new ZipEntryInfo(deletedRecordPath, "deleted.files"));
         // 增量备份序号
         String increBackupId = rec.getLastIncreBackupId();
         if (increBackupId.equals("")) {
@@ -660,7 +660,7 @@ public class BackupMaker {
                     putOffIncreBackup(rec);
                     return false;
                 }
-                if (!client.streamCompressAndUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
+                if (!client.streamCompressAndUpload(increEntryInfos.toArray(new ZipEntryInfo[0]), remotePath, true)) {
                     // 流式压缩上传如果失败就指数退避
                     putOffIncreBackup(rec);
                     return false;
@@ -677,7 +677,7 @@ public class BackupMaker {
             // 输出文件路径
             String tempOutputFilePath = pluginTempPath + File.separator + "incre" + increBackupId + ".zip";
             // 执行压缩
-            if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), tempOutputFilePath, true))
+            if (!Utils.zipSpecificFiles(increEntryInfos.toArray(new ZipEntryInfo[0]), tempOutputFilePath, true))
                 return false;
             // 3. 上传
             ConsoleSender.toConsole("Uploading Incremental Backup...");
