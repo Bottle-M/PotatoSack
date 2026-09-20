@@ -26,7 +26,7 @@ import java.util.Map;
  * [ uint32 存储格式版本号 ] [ uint64 存储最后修改时间戳 ] [ uint64 文件数量 ]
  * [ 文件最后修改时间表 (uint64 * N) ] [ 文件哈希表 (uint64 * N) ]
  * [ 文件路径字符串长度表 (uint16 * N) ] [ 紧凑的文件路径字符串表 (byte[]) ]
- * [ mca 数据部分 (varint[1024] * mcaLen) ]
+ * [ mca 数据部分 (varint[1024] * mcaLen, varint 为无符号 LEB128) ]
  * </pre>
  *
  * <p>记录文件是一个 zstd 帧，不做任何未压缩格式的兼容。
@@ -87,7 +87,7 @@ public class DirFileRecord {
      * 从 {@link #getRecordFile()} 指定的文件读入记录，覆写当前内存中的内容
      *
      * @throws IOException 文件不存在、被占用，或存储格式版本号不受支持时抛出
-     * @apiNote mca 数据部分的 varint 数组在载入时就应展开成 int[] 时间戳
+     * @apiNote mca 数据部分的 varint 数组在载入时就应展开成 long[] 时间戳
      * @implNote 缓冲只加在 ZstdInputStream <b>外面</b>，不要加在它和文件之间:
      * 本方法的读取几乎全是单字节调用（uint64 每字段 8 次、varint 每字节 1 次），
      * 而解压流每次单字节 read() 都有状态检查和方法调用链的固定开销，外面这层省的就是它
@@ -198,15 +198,15 @@ public class DirFileRecord {
                 out.write(entry.relativePath.getBytes(StandardCharsets.UTF_8));
             // 8. mca 数据部分: 按 .mca 文件出现的顺序，每个一个 varint[1024]
             for (FileEntry mcaEntry : mcaEntries) {
-                int[] chunkTimes = mcaEntry.mcaChunkTimes;
+                long[] chunkTimes = mcaEntry.mcaChunkTimes;
                 if (chunkTimes == null)
-                    chunkTimes = new int[MCA_CHUNK_COUNT]; // 没读到区块时间戳就当作全 0
+                    chunkTimes = new long[MCA_CHUNK_COUNT]; // 没读到区块时间戳就当作全 0
                 if (chunkTimes.length != MCA_CHUNK_COUNT) {
                     throw new IOException("Invalid chunk timestamp array length for " + mcaEntry.relativePath
                             + ": " + chunkTimes.length + ", expected " + MCA_CHUNK_COUNT);
                 }
-                for (int chunkTime : chunkTimes)
-                    writeVarInt(out, chunkTime);
+                for (long chunkTime : chunkTimes)
+                    writeVarLong(out, chunkTime);
             }
         }
     }
@@ -325,10 +325,14 @@ public class DirFileRecord {
         private long hash;
 
         /**
-         * 仅 `.mca` 文件有: 1024 个区块的最后变更时间戳（即 `.mca` 文件头的前 4 KiB）
+         * 仅 `.mca` 文件有: 1024 个区块的最后变更时间戳（即 `.mca` 文件头后 4 KiB 的时间戳表）
          * <p>非 `.mca` 文件此字段为 null，此时在 mca 数据部分中不占位置</p>
+         * <p>这些值在 `.mca` 里是 <b>32 位无符号</b>的秒级 epoch，所以取值落在 `[0, 2^32)`。
+         * 这里用 long 存是为了让它在 2038 年之后（`>= 2^31`）仍然是有意义的正数:
+         * `.mca` 的那个字段本身是 32 位的，越过 2^31 之后 Minecraft 自己也会出问题（MC-177378），
+         * 但那种值仍然能原样读出来，用 long 就不必关心它到底是正还是负。</p>
          */
-        private int[] mcaChunkTimes;
+        private long[] mcaChunkTimes;
 
         /**
          * 构造函数
@@ -338,7 +342,7 @@ public class DirFileRecord {
          * @param hash          文件内容的 XXH3_64 哈希
          * @param mcaChunkTimes 仅 `.mca` 文件: 1024 个区块的最后变更时间戳，非 `.mca` 传 null
          */
-        public FileEntry(String relativePath, long lastModified, long hash, int[] mcaChunkTimes) {
+        public FileEntry(String relativePath, long lastModified, long hash, long[] mcaChunkTimes) {
             this.relativePath = relativePath;
             this.lastModified = lastModified;
             this.hash = hash;
@@ -369,11 +373,11 @@ public class DirFileRecord {
             this.hash = hash;
         }
 
-        public int[] getMcaChunkTimes() {
+        public long[] getMcaChunkTimes() {
             return mcaChunkTimes;
         }
 
-        public void setMcaChunkTimes(int[] mcaChunkTimes) {
+        public void setMcaChunkTimes(long[] mcaChunkTimes) {
             this.mcaChunkTimes = mcaChunkTimes;
         }
     }
@@ -499,37 +503,41 @@ public class DirFileRecord {
     }
 
     /**
-     * 写出一个 varint（LEB128，和 Minecraft 的 VarInt 编码一致）
+     * 写出一个变长无符号整数（LEB128）
      *
      * @param out   输出流
-     * @param value 数值，按非负数处理
+     * @param value 数值，按<b>无符号</b>处理: 编码结果只取决于低 64 位的位模式
      * @throws IOException 写出失败时抛出
+     * @implNote 对 `[0, 2^32)` 范围内的值，本方法与按 32 位编码产生的字节<b>完全相同</b>。
+     * 区块时间戳就来自 `.mca` 头部的 32 位无符号秒级 epoch，因此把时间戳从 int 改成 long
+     * 不会改变已写出记录文件的字节，新旧记录文件可以互相读
      */
-    private static void writeVarInt(OutputStream out, int value) throws IOException {
-        while ((value & ~0x7F) != 0) {
-            out.write((value & 0x7F) | 0x80);
+    private static void writeVarLong(OutputStream out, long value) throws IOException {
+        while ((value & ~0x7FL) != 0) {
+            out.write((int) (value & 0x7F) | 0x80);
             value >>>= 7;
         }
-        out.write(value);
+        out.write((int) value);
     }
 
     /**
-     * 读入一个 varint（LEB128）
+     * 读入一个变长无符号整数（LEB128）
      *
      * @param in 输入流
-     * @return 读到的数值
+     * @return 读到的数值，按<b>无符号</b>解释
      * @throws IOException 编码非法或流提前结束时抛出
+     * @implNote 最多 10 字节（64 位）；第 10 字节还带延续位就认为文件损坏
      */
-    private static int readVarInt(InputStream in) throws IOException {
-        int value = 0;
+    private static long readVarLong(InputStream in) throws IOException {
+        long value = 0;
         int shift = 0;
         while (true) {
             int b = readByte(in);
-            value |= (b & 0x7F) << shift;
+            value |= (long) (b & 0x7F) << shift;
             if ((b & 0x80) == 0)
                 return value;
             shift += 7;
-            if (shift > 28)
+            if (shift > 63)
                 throw new IOException("Corrupted record file: varint is too long.");
         }
     }
@@ -541,10 +549,10 @@ public class DirFileRecord {
      * @return 长度为 {@link #MCA_CHUNK_COUNT} 的数组
      * @throws IOException 流提前结束时抛出
      */
-    private static int[] readMcaChunkTimes(InputStream in) throws IOException {
-        int[] chunkTimes = new int[MCA_CHUNK_COUNT];
+    private static long[] readMcaChunkTimes(InputStream in) throws IOException {
+        long[] chunkTimes = new long[MCA_CHUNK_COUNT];
         for (int i = 0; i < MCA_CHUNK_COUNT; i++)
-            chunkTimes[i] = readVarInt(in);
+            chunkTimes[i] = readVarLong(in);
         return chunkTimes;
     }
 
@@ -555,7 +563,7 @@ public class DirFileRecord {
         private final String relativePath;
         private final long lastModified;
         private final long hash;
-        private int[] mcaChunkTimes;
+        private long[] mcaChunkTimes;
 
         private RawEntry(String relativePath, long lastModified, long hash) {
             this.relativePath = relativePath;

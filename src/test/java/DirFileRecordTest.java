@@ -38,16 +38,20 @@ public class DirFileRecordTest {
         longPath.append("data.dat");
         record.putEntry(new DirFileRecord.FileEntry(longPath.toString(), 1726600000001L, -1L, null));
         // .mca 文件: 1024 个区块时间戳，含 0（稀疏）、小值和大值（检验 varint 边界）
-        int[] chunkTimes = new int[DirFileRecord.MCA_CHUNK_COUNT];
+        long[] chunkTimes = new long[DirFileRecord.MCA_CHUNK_COUNT];
         for (int i = 0; i < chunkTimes.length; i++) {
             if (i % 37 == 0)
-                chunkTimes[i] = random.nextInt(Integer.MAX_VALUE); // 1..2^31-1，varint 边界
+                chunkTimes[i] = random.nextInt(Integer.MAX_VALUE); // 1..2^31-1，5 字节 varint
             else if (i % 11 == 0)
                 chunkTimes[i] = 127; // 1 字节 varint 上界
             else if (i % 5 == 0)
                 chunkTimes[i] = 128; // 需要 2 字节
             // 其余保持 0
         }
+        // .mca 头部那个字段是 32 位无符号的秒级 epoch，2038 年之后会越过 2^31。
+        // 放两个超出 int 范围的值，确认 64 位 varint 能原样往返（这是把时间戳改成 long 的原因）
+        chunkTimes[1] = 3_000_000_000L;
+        chunkTimes[2] = 4_294_967_295L; // 2^32 - 1，.mca 那个字段的取值上界
         record.putEntry(new DirFileRecord.FileEntry("world/region/r.0.0.mca", 1726600000999L, 987654321L, chunkTimes));
         // 路径中含非 ASCII，检验 UTF-8 编解码
         record.putEntry(new DirFileRecord.FileEntry("world/一些中文目录/说明.txt", 1726600000002L, 42L, null));
@@ -99,7 +103,7 @@ public class DirFileRecordTest {
         DirFileRecord record = new DirFileRecord(recordFile);
         // 区块时间戳全 0: 未压缩时 mca 部分是 1024 字节（varint 的意义），压缩后应当大幅缩小
         record.putEntry(new DirFileRecord.FileEntry("world/region/r.0.0.mca", 1L, 1L,
-                new int[DirFileRecord.MCA_CHUNK_COUNT]));
+                new long[DirFileRecord.MCA_CHUNK_COUNT]));
         record.save();
 
         // 1. 解压出来应当就是原来的载荷: uint32 版本号打头
