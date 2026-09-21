@@ -397,7 +397,7 @@ public class Utils {
                         zos.write(buffer, 0, len);
                     }
                     // .mca 走 delta 转换时，写进 zip 的是 McaDeltaInputStream 转换后的字节，上面 crc32 攒的已经不是原文件的内容了，
-                    // 所以改用它自己算出的那份【原始文件】的 CRC
+                    // 所以改用 McaDeltaInputStream 自己根据源文件算出的那份【原始文件】的 CRC
                     checksumBefore = in instanceof McaDeltaInputStream delta ? delta.sourceCRC32() : crc32.getValue();
                     break; // 读取成功，跳出重试循环
                 } catch (IOException e) {
