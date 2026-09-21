@@ -5,7 +5,6 @@ import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.tasks.entities.BackupRecord;
-import indi.somebottle.potatosack.tasks.entities.DirFileRecords;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
 import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.*;
@@ -254,26 +253,15 @@ public class BackupMaker {
      * 写入本地的 _备份路径标识.bin
      *
      * @param backupConfPath 配置的备份路径字符串
-     * @param rec            目录文件记录 DirFileRecords 对象
+     * @param entries        该备份路径下所有文件的记录条目（键为相对服务端根目录的路径）
      * @throws IOException IO异常
      */
-    public void writeDirFileRecords(String backupConfPath, DirFileRecords rec) throws IOException {
-        rec.setFileUpdateTime(Utils.timestamp());
-        Files.write(getDirFileRecordsFile(backupConfPath).toPath(), gson.toJson(rec).getBytes());
-    }
-
-    /**
-     * 写入本地的 _备份路径标识.bin
-     *
-     * @param backupConfPath 配置的备份路径字符串
-     * @param recList        Map<文件相对服务端根目录的路径, 文件哈希>
-     * @throws IOException IO异常
-     */
-    public void writeDirFileRecords(String backupConfPath, Map<String, String> recList) throws IOException {
-        DirFileRecords rec = new DirFileRecords();
-        rec.setFileUpdateTime(Utils.timestamp());
-        rec.setLastFileHashes(recList);
-        writeDirFileRecords(backupConfPath, rec);
+    public void writeDirFileRecords(String backupConfPath, Map<String, DirFileRecord.FileEntry> entries) throws IOException {
+        DirFileRecord rec = new DirFileRecord(getDirFileRecordsFile(backupConfPath));
+        for (DirFileRecord.FileEntry entry : entries.values())
+            rec.putEntry(entry);
+        // fileUpdateTime 由 save() 自己刷新
+        rec.save();
     }
 
     /**
@@ -305,15 +293,15 @@ public class BackupMaker {
     }
 
     /**
-     * 获得备份路径对应的目录下数据哈希记录（_备份路径标识.bin）
+     * 获得备份路径对应的备份记录（_备份路径标识.bin）
      *
      * @param backupConfPath 配置的备份路径字符串
-     * @return DirFileRecords 对象
+     * @return 已经 load() 过的 DirFileRecord；连文件都没法新建时返回 null
      * @throws IOException IO异常
-     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _备份路径标识.bin。如果连文件都没法新建就会返回 null。
+     * @apiNote 如果本地不存在，会从云端拉取；拉取不成功会自动建立一个新的空记录。
      */
     @SuppressWarnings("ResultOfMethodCallIgnored")
-    public DirFileRecords getDirFileRecords(String backupConfPath) throws IOException {
+    public DirFileRecord getDirFileRecords(String backupConfPath) throws IOException {
         File dirFileRecordsFile = getDirFileRecordsFile(backupConfPath);
         if (!dirFileRecordsFile.exists()) {
             // 如果本地没有则尝试从云端拉取
@@ -322,19 +310,17 @@ public class BackupMaker {
                 // 如果云端也没有则创建新文件
                 if (!dirFileRecordsFile.getParentFile().exists()) // 要先把必要的目录给建立了
                     dirFileRecordsFile.getParentFile().mkdirs();
-                // 在本地新建文件
-                if (dirFileRecordsFile.createNewFile()) {
-                    writeDirFileRecords(backupConfPath, new HashMap<>());
-                } else {
+                // 在本地新建一个空记录并落盘
+                new DirFileRecord(dirFileRecordsFile).save();
+                if (!dirFileRecordsFile.exists()) {
                     // 若文件都没法新建，返回 null
                     return null;
                 }
             }
         }
-        // 读入路径文件哈希记录文件 json
-        String dirFileRecordsJson = new String(Files.readAllBytes(dirFileRecordsFile.toPath()));
-        // 解析成配置对象
-        return gson.fromJson(dirFileRecordsJson, DirFileRecords.class);
+        DirFileRecord rec = new DirFileRecord(dirFileRecordsFile);
+        rec.load();
+        return rec;
     }
 
     /**
@@ -438,21 +424,28 @@ public class BackupMaker {
         List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
         // 加载 .potatosackignore（若存在）；解析失败则本次备份失败（严格）
         IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
-        // 1. 扫描各备份目录生成包含每个文件最后哈希值的 _备份路径标识.bin
+        // 1. 扫描各备份目录: 一遍遍历同时得到「_备份路径标识.bin 的内容」和「本次要打包的条目」
         long scanStartTime = System.currentTimeMillis();
+        List<ZipEntryInfo> backupEntries = new ArrayList<>();
+        // 暂存各备份路径的新记录，待上传成功后再写入硬盘。
+        // 若在扫描时就写入，一旦后续压缩/上传失败或进程退出，本地记录已经前移，而对应的全量备份并不存在，
+        // 那些未再变化的文件会被判为"已备份"而漏掉
+        Map<String, Map<String, DirFileRecord.FileEntry>> newEntriesByPath = new LinkedHashMap<>();
         for (String backupConfPath : backupConfPaths) {
-            // 扫描备份目录下的所有文件，计算文件哈希（为增量备份做准备），跳过被忽略的文件/目录
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
-            // _备份路径标识.bin 中存放待备份数据目录中所有文件的最后哈希值
-            writeDirFileRecords(backupConfPath, currentFileHashes);
+            // 全量备份: 旧记录传空 Map，于是所有文件都被当作"新文件"，全部打包。
+            // 这也意味着全量备份会把整个世界重新哈希一遍、重建记录，是 mtime 快路径的逃生口
+            ScanUtils.ScanResult scan = ScanUtils.scanBackupPath(
+                    Utils.resolveBackupConfPath(backupConfPath), new HashMap<>(), ignorer);
+            backupEntries.addAll(scan.changed);
+            // _备份路径标识.bin 中存放该备份路径下所有文件的哈希、最后修改时间，以及 .mca 的区块时间戳
+            newEntriesByPath.put(backupConfPath, scan.entries);
         }
         // 统计扫描和计算哈希所需的时间 T
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         String currFullBackupId = getNextFullBackupId(rec);
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
-        // 扫描 backupConfPaths 对应目录的所有文件，转换为 ZipEntryInfo 对象数组
-        ZipEntryInfo[] backupZipEntryInfos = Utils.scanPeerDirsToZipEntryInfos(backupConfPaths.toArray(new String[0]), ignorer);
+        ZipEntryInfo[] backupZipEntryInfos = backupEntries.toArray(new ZipEntryInfo[0]);
         if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
@@ -498,6 +491,11 @@ public class BackupMaker {
                 putOffFullBackup(rec);
                 return false;
             }
+        }
+        // 上传成功后再把各备份路径的新记录写入硬盘（写入前若上传失败/中断，旧记录原样保留，
+        // 后续增量仍以最近一次成功的备份为基线，不会漏掉本次未上传的变更）
+        for (Map.Entry<String, Map<String, DirFileRecord.FileEntry>> entry : newEntriesByPath.entrySet()) {
+            writeDirFileRecords(entry.getKey(), entry.getValue());
         }
         // 如果备份成功了就重置指数退避计算器
         fullBackupBackoffCalculator.reset();
@@ -583,37 +581,21 @@ public class BackupMaker {
         List<String> deletedPaths = new ArrayList<>();
         // 所有有变动的文件（文件绝对路径 + 包内相对路径；有基线的 .mca 还会带上区块时间戳）
         List<ZipEntryInfo> increEntryInfos = new ArrayList<>();
-        // 暂存各备份路径的新哈希，待上传成功后再写入硬盘（避免上传失败/中断时覆盖旧记录，导致下次增量漏掉本次未上传的变更）
-        Map<String, Map<String, String>> newHashesByPath = new LinkedHashMap<>();
-        // 1. 扫描每个备份目录找到有差异的文件
+        // 暂存各备份路径的新记录，待上传成功后再写入硬盘（避免上传失败/中断时覆盖旧记录，导致下次增量漏掉本次未上传的变更）
+        Map<String, Map<String, DirFileRecord.FileEntry>> newEntriesByPath = new LinkedHashMap<>();
+        // 1. 扫描每个备份目录，比对旧记录找到有差异的文件
         long scanStartTime = System.currentTimeMillis();
         for (String backupConfPath : backupConfPaths) {
-            // 扫描指定目录下的所有文件，计算哈希值（为增量备份做准备），跳过被忽略的文件/目录
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
-            // 获得上一次增量备份时的文件哈希值
-            DirFileRecords prevDirFileRec = getDirFileRecords(backupConfPath);
-            Map<String, String> prevLastFileHashes = prevDirFileRec.getLastFileHashes();
-            // 旧记录中过滤掉现已忽略的条目，避免它们被误当作“删除”写入 deleted.files（透明移出备份宇宙）
-            prevLastFileHashes = Utils.filterIgnoredHashes(prevLastFileHashes, ignorer);
-            // 找到被删除的文件的路径
-            deletedPaths.addAll(
-                    Utils.getDeletedFilePaths(prevLastFileHashes, currentFileHashes)
-            );
-            // 找到发生变动的文件的绝对路径
-            for (String key : currentFileHashes.keySet()) {
-                // 新记录中新出现的文件 or 新记录中的文件哈希相比旧记录有变动
-                // key 其实是文件的相对路径
-                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(currentFileHashes.get(key)))
-                    increEntryInfos.add( // 添加到增量文件列表
-                            new ZipEntryInfo(
-                                    // 获得文件绝对路径以便Zip打包, key 就是文件相对于服务端根目录的相对路径
-                                    Utils.pathAbsToServer(key),
-                                    key
-                            )
-                    );
-            }
-            // 暂存新哈希，待上传成功后再落盘
-            newHashesByPath.put(backupConfPath, currentFileHashes);
+            // 获得上一次备份时该路径的记录
+            DirFileRecord prevRec = getDirFileRecords(backupConfPath);
+            // 一遍遍历同时完成: 按 mtime/哈希剪枝、找出变动的文件、给变动的 .mca 挂上旧记录的区块时间戳。
+            // scanBackupPath 内部会先把旧记录里"现已忽略"的条目过滤掉，这里不用自己处理
+            ScanUtils.ScanResult scan = ScanUtils.scanBackupPath(
+                    Utils.resolveBackupConfPath(backupConfPath), prevRec.getEntries(), ignorer);
+            increEntryInfos.addAll(scan.changed);
+            deletedPaths.addAll(scan.deleted);
+            // 暂存新记录，待上传成功后再落盘
+            newEntriesByPath.put(backupConfPath, scan.entries);
         }
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         // 若没有文件变更则不进行本次增量备份
@@ -686,8 +668,8 @@ public class BackupMaker {
                 return false;
             }
         }
-        // 上传成功后再把各备份路径的新哈希记录写入硬盘（写入前若上传失败/中断，不会覆盖旧记录）
-        for (Map.Entry<String, Map<String, String>> entry : newHashesByPath.entrySet()) {
+        // 上传成功后再把各备份路径的新记录写入硬盘（写入前若上传失败/中断，不会覆盖旧记录）
+        for (Map.Entry<String, Map<String, DirFileRecord.FileEntry>> entry : newEntriesByPath.entrySet()) {
             writeDirFileRecords(entry.getKey(), entry.getValue());
         }
         // 如果成功了就重置指数退避计算器

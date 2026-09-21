@@ -11,6 +11,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -55,6 +59,11 @@ public class DirFileRecord {
      * 单个文件记录数上限，防止读到损坏的文件数量字段后试图分配超大数组
      */
     private static final long MAX_FILE_COUNT = 100_000_000L;
+
+    /**
+     * {@link #save()} 落盘时临时文件的后缀，正式文件名加上它即为临时文件名
+     */
+    private static final String TEMP_FILE_SUFFIX = ".tmp";
 
     /**
      * 记录文件本身（`_备份路径标识`）的 File 对象
@@ -154,10 +163,16 @@ public class DirFileRecord {
      *
      * @throws IOException 写出失败时抛出
      * @apiNote 写入时应顺带刷新记录文件的最后修改时间戳
-     * @implNote 压缩流下面不加 BufferedOutputStream: ZstdOutputStream 自带块缓冲，
+     * @implNote 落盘分两步: 先写同目录下的 `<记录文件名>.tmp`，全部写完后再原子替换正式文件。
+     * 之所以不直接覆盖正式文件: 写到一半崩溃或磁盘满会留下半份损坏的记录，
+     * 而记录文件损坏后下次启动 {@link #load()} 会直接抛异常。
+     * 临时文件与正式文件同目录，是为了让 ATOMIC_MOVE 落在同一个文件系统上。
+     * <p>写失败时临时文件会残留（下次 {@link #save()} 直接覆盖它），正式记录保持上一份完整内容。</p>
+     *
+     * <p>压缩流下面不加 BufferedOutputStream: ZstdOutputStream 自带块缓冲，
      * 会先把未压缩数据攒进内部缓冲、攒够一块才压缩并向底层流写一次，
      * 所以底层流拿到的本来就是大块写入，再套一层实测无差别（15.5 ms vs 16.1 ms），
-     * 且两者输出字节数完全相同
+     * 且两者输出字节数完全相同</p>
      */
     public void save() throws IOException {
         // 每次落盘都刷新记录文件的最后修改时间戳，外部不需要自己维护它
@@ -168,7 +183,9 @@ public class DirFileRecord {
             if (parent != null && !parent.exists() && !parent.mkdirs())
                 throw new IOException("Cannot create directory for record file: " + parent);
         }
-        try (OutputStream out = new ZstdOutputStream(new FileOutputStream(recordFile))) {
+        // 先写同目录下的临时文件，避免中途失败留下半份损坏的正式记录
+        Path tempPath = recordFile.toPath().resolveSibling(recordFile.getName() + TEMP_FILE_SUFFIX);
+        try (OutputStream out = new ZstdOutputStream(new FileOutputStream(tempPath.toFile()))) {
             // 以下各步与格式中的字段一一对应
             // 1. 存储格式版本号
             writeUint32(out, STORAGE_FORMAT_VERSION);
@@ -208,6 +225,14 @@ public class DirFileRecord {
                 for (long chunkTime : chunkTimes)
                     writeVarLong(out, chunkTime);
             }
+        }
+        // 写完整了才替换正式文件；ATOMIC_MOVE 保证替换本身不会出现"半个文件"
+        try {
+            Files.move(tempPath, recordFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            // 极少数文件系统（例如部分网络盘）不支持原子移动，退化为普通替换
+            Files.move(tempPath, recordFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -391,8 +416,11 @@ public class DirFileRecord {
      *
      * @param relativePath 文件相对路径
      * @return 是 `.mca` 则返回 true
+     * @apiNote 凡是需要判断"这个文件要不要记区块时间戳 / 要不要做增量 delta"的地方都用它。
+     * 放在这里而不是 {@link McaDeltaInputStream}，是为了避免和那边已经引用的
+     * {@link #MCA_CHUNK_COUNT} 形成双向依赖。
      */
-    private static boolean isMcaPath(String relativePath) {
+    public static boolean isMcaPath(String relativePath) {
         return relativePath.toLowerCase(Locale.ROOT).endsWith(".mca");
     }
 

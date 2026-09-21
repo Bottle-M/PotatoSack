@@ -1,5 +1,8 @@
 package indi.somebottle.potatosack.utils;
 
+import com.dynatrace.hash4j.hashing.HashStream64;
+import com.dynatrace.hash4j.hashing.Hasher64;
+import com.dynatrace.hash4j.hashing.Hashing;
 import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
 import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
@@ -29,6 +32,12 @@ import java.util.zip.ZipOutputStream;
 @SuppressWarnings("BusyWait")
 public class Utils {
     /**
+     * 用于计算文件哈希的 XXH3_64 实例
+     * <p>Hasher 本身是无状态的，可以共享；每次哈希文件从它取一个 {@link HashStream64}（那个才是有状态的）</p>
+     */
+    private static final Hasher64 XXH3_64 = Hashing.xxh3_64();
+
+    /**
      * 获得当前的秒级时间戳
      *
      * @return 秒级时间戳 (UNIX 时间戳)
@@ -52,47 +61,40 @@ public class Utils {
     }
 
     /**
-     * 计算文件的 MD5 哈希值
+     * 计算文件的 XXH3_64 哈希值
      *
-     * @param file 文件File对象
-     * @return 哈希值（32位十六进制字符串），若无法读取则返回空字符串 ""
+     * @param file 文件 File 对象
+     * @return 64 位哈希值（按无符号处理）
+     * @throws IOException 文件读不了（被锁定等），且退避重试次数耗尽时抛出
+     * @apiNote <p>读文件遇到锁定时会指数退避重试，与 {@link #zipSpecificFilesUtil} 一致；
+     * 扫描时应当捕获异常并<b>跳过实在无法读取的文件</b>，不要让整个备份失败
+     * —— Windows 下的 `session.lock` 就是典型的读不了的文件。</p>
      */
-    public static String fileMD5(File file) {
+    public static long fileXXH3_64(File file) throws IOException {
         ExponentialBackoffCalculator backoffCalc = new ExponentialBackoffCalculator(1000); // 基础退避 1s
         int retry = 0;
         while (true) {
-            try (FileInputStream fis = new FileInputStream(file)) {
-                MessageDigest md5 = MessageDigest.getInstance("MD5");
+            try (InputStream fis = new FileInputStream(file)) {
+                HashStream64 hashStream = XXH3_64.hashStream();
                 byte[] buffer = new byte[16384]; // 16K的数据缓冲区
                 int readLen;
-                // 流式读入文件计算哈希
                 while ((readLen = fis.read(buffer)) != -1) {
-                    md5.update(buffer, 0, readLen);
+                    hashStream.putBytes(buffer, 0, readLen);
                 }
-                // 转换为十六进制字符串返回，确保前导零不会丢失
-                byte[] digest = md5.digest();
-                StringBuilder sb = new StringBuilder(32);
-                for (byte b : digest) {
-                    sb.append(String.format("%02x", b));
-                }
-                return sb.toString();
+                return hashStream.getAsLong();
             } catch (IOException e) {
                 // 文件被锁定（Windows 下常见）或其它 IO 错误，进行有限重试
-                if (retry < Constants.FILE_READ_MAX_RETRY) {
-                    retry++;
-                    try {
-                        Thread.sleep(backoffCalc.getNextBackoffTime(Constants.FILE_READ_MAX_BACKOFF_MS));
-                        backoffCalc.backoff(); // 退避时间翻倍: 1s → 2s → 4s
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                    }
-                } else {
-                    ConsoleSender.logWarn("Cannot read file " + file.getAbsolutePath() + ", skipping: " + e.getMessage());
-                    return "";
+                if (retry >= Constants.FILE_READ_MAX_RETRY) {
+                    throw e;
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
-                return "";
+                retry++;
+                try {
+                    Thread.sleep(backoffCalc.getNextBackoffTime(Constants.FILE_READ_MAX_BACKOFF_MS));
+                    backoffCalc.backoff(); // 退避时间翻倍: 1s → 2s → 4s
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while hashing " + file, ie);
+                }
             }
         }
     }
@@ -284,87 +286,6 @@ public class Utils {
             return file;
         }
         return new File(PotatoSack.worldContainerDir, path);
-    }
-
-    /**
-     * 遍历获取指定目录下所有文件的目前哈希值
-     *
-     * @param srcDir 待扫描目录（File对象）
-     * @param ignorer 用于跳过被忽略的文件/目录（目录命中即剪枝，不递归）
-     * @param res    （递归用） 调用时传入null即可
-     * @return Map(String - > 文件最后哈希值)对象
-     * @throws IOException 如果在访问文件时发生IO错误
-     */
-    public static Map<String, String> getCurrentFileHashes(File srcDir, IgnoreMatcher ignorer, Map<String, String> res) throws IOException {
-        if (res == null)
-            res = new HashMap<>();
-        File[] files = srcDir.listFiles();
-        if (files == null)
-            return res;
-        for (File file : files) {
-            if (file.isFile()) {
-                // 获得相对服务器根目录的路径，比如 /root/server/world/region 转换为 world/region
-                String relativePath = pathRelativeToServer(file);
-                // 命中 ignore 规则的文件跳过（不计入哈希）
-                if (ignorer.isIgnored(relativePath, false))
-                    continue;
-                // 计算文件哈希；若文件被锁定无法读取（如 Windows 下的 session.lock），
-                // fileMD5 会打印 WARN 并返回 ""，此时跳过该文件不加入哈希记录
-                String hash = Utils.fileMD5(file);
-                if (!hash.isEmpty()) {
-                    res.put(relativePath, hash);
-                }
-            } else if (file.isDirectory()) {
-                // 仅在存在 ignore 规则时才计算相对路径判断是否剪枝，避免无规则时的额外开销
-                if (!ignorer.isEmpty() && ignorer.isIgnored(pathRelativeToServer(file), true))
-                    continue; // 命中 ignore 的目录直接剪枝，不递归
-                // 是目录则继续
-                getCurrentFileHashes(file, ignorer, res);
-            }
-        }
-        return res;
-    }
-
-    /**
-     * 获得两个lastFileHashes Map的差集
-     *
-     * @param oldMap 旧记录Map<文件相对服务器根目录的路径, 文件哈希>
-     * @param newMap 新记录Map<文件相对服务器根目录的路径, 文件哈希>
-     * @return 被删除的文件路径列表 String List
-     * @apiNote 用于找出两个增量备份间被删除的文件
-     */
-    public static List<String> getDeletedFilePaths(Map<String, String> oldMap, Map<String, String> newMap) {
-        List<String> res = new ArrayList<>();
-        for (String key : oldMap.keySet()) {
-            if (!newMap.containsKey(key)) {
-                // 旧记录中的某个文件未出现在新记录中，被删除，加入结果中
-                res.add(key);
-            }
-        }
-        return res;
-    }
-
-    /**
-     * 从哈希记录中移除被 ignore 的条目（用于增量备份时清理旧记录，
-     * 避免之前备份过、现已忽略的文件被误当作“删除”写入 deleted.files）
-     *
-     * @param hashes 哈希记录，可为 null
-     * @param ignorer IgnoreMatcher
-     * @return 过滤后的 Map；若无规则或入参为 null 则原样返回
-     */
-    public static Map<String, String> filterIgnoredHashes(Map<String, String> hashes, IgnoreMatcher ignorer) {
-        if (hashes == null || ignorer.isEmpty()) {
-            return hashes;
-        }
-        Map<String, String> filtered = new HashMap<>();
-        for (Map.Entry<String, String> entry : hashes.entrySet()) {
-            // 用 isIgnored（内置祖先遍历）：既匹配文件自身，也匹配“位于被忽略目录之下”的文件（与扫描期目录剪枝一致），
-            // 避免旧记录中此类文件被误当作删除
-            if (!ignorer.isIgnored(entry.getKey(), false)) {
-                filtered.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return filtered;
     }
 
     /**
@@ -564,64 +485,6 @@ public class Utils {
         return false;
     }
 
-
-    /**
-     * （递归方法） 扫描某个目录下所有文件，转换为 ZipEntryInfo
-     *
-     * @param srcDir        源目录 File 对象
-     * @param ignorer        用于跳过被忽略的文件/目录（目录命中即剪枝）
-     * @param parentDirPath 该目录相对于服务端根的相对路径（作为 zip 内路径前缀，空串表示服务端根）
-     * @return List<ZipEntryInfo>
-     */
-    private static List<ZipEntryInfo> dirFilesToZipEntryInfos(File srcDir, IgnoreMatcher ignorer, String parentDirPath) throws Exception {
-        List<ZipEntryInfo> entryInfos = new ArrayList<>();
-        // 列出 srcDir 目录下的文件
-        File[] files = srcDir.listFiles();
-        if (files == null) {
-            throw new Exception("Error: " + srcDir + " is not a directory, this should not happen!");
-        }
-        for (File file : files) {
-            // 如果是目录，这就是当前扫描到的目录路径，否则就是文件的路径
-            String currentDirOrFilePath = (parentDirPath.equals("") ? "" : (parentDirPath + "/")) + file.getName();
-            // 命中 ignore 规则的文件/目录跳过（目录即剪枝，不递归）
-            if (ignorer.isIgnored(currentDirOrFilePath, file.isDirectory()))
-                continue;
-            if (file.isDirectory()) {
-                // 如果是目录就递归扫描文件
-                entryInfos.addAll(dirFilesToZipEntryInfos(file, ignorer, currentDirOrFilePath));
-            } else {
-                // 如果是文件就转换为 ZipEntryInfo
-                entryInfos.add(new ZipEntryInfo(
-                        Utils.pathAbsToServer(currentDirOrFilePath),
-                        currentDirOrFilePath
-                ));
-            }
-        }
-        return entryInfos;
-    }
-
-
-    /**
-     * 指定多个备份目录，扫描这些目录下的所有文件，组成 ZipEntryInfo[]
-     *
-     * @param srcDirPaths String[] ，指定要打包的备份目录路径（绝对或相对服务端根）
-     * @param ignorer      用于跳过被忽略的文件/目录
-     * @return ZipEntryInfo[]
-     */
-    public static ZipEntryInfo[] scanPeerDirsToZipEntryInfos(String[] srcDirPaths, IgnoreMatcher ignorer) {
-        List<ZipEntryInfo> res = new ArrayList<>();
-        try {
-            // 遍历每个目录
-            for (String path : srcDirPaths) {
-                File srcDir = resolveBackupConfPath(path);
-                // 以该目录相对于服务端根的路径作为 zip 内路径前缀，保证嵌套路径也能正确还原
-                res.addAll(dirFilesToZipEntryInfos(srcDir, ignorer, pathRelativeToServer(srcDir)));
-            }
-        } catch (Exception e) {
-            ConsoleSender.logError("Transformation of backup path to zip file paths failed: " + e.getMessage());
-        }
-        return res.toArray(new ZipEntryInfo[0]);
-    }
 
     /**
      * 找出其世界目录与任一配置的备份路径有交叠（相等、或互为父子目录）、且未被整体忽略的已加载世界名

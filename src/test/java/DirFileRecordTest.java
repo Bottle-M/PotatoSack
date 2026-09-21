@@ -11,6 +11,7 @@ import java.util.Random;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -155,5 +156,42 @@ public class DirFileRecordTest {
         assertTrue(all.length > 4);
         Files.write(recordFile.toPath(), Arrays.copyOf(all, 3));
         new DirFileRecord(recordFile).load();
+    }
+
+    @Test
+    public void testSaveGoesThroughTempFileAndLeavesNoResidue() throws Exception {
+        // save() 是"写临时文件 + 原子替换"，这里确认临时文件不会残留，
+        // 且上一次写失败残留的临时文件会被下一次 save() 覆盖而不是被当成正式记录
+        File recordFile = File.createTempFile("_test_record_atomic", "");
+        assertTrue(recordFile.delete());
+        File tempFile = recordFile.toPath().resolveSibling(recordFile.getName() + ".tmp").toFile();
+
+        // 伪造一个上次失败残留的临时文件
+        Files.write(tempFile.toPath(), new byte[]{1, 2, 3, 4});
+
+        DirFileRecord record = new DirFileRecord(recordFile);
+        record.putEntry(new DirFileRecord.FileEntry("world/level.dat", 1L, 2L, null));
+        record.save();
+
+        assertFalse("save() 成功后不应残留临时文件", tempFile.exists());
+        DirFileRecord loaded = new DirFileRecord(recordFile);
+        loaded.load();
+        assertEquals(1, loaded.getFileCount());
+        assertEquals(1L, loaded.getEntry("world/level.dat").getLastModified());
+
+        // 覆盖写一份新记录: 旧条目要被整体替换掉，且同样不留临时文件
+        DirFileRecord second = new DirFileRecord(recordFile);
+        second.putEntry(new DirFileRecord.FileEntry("world/level.dat", 2L, 3L, null));
+        second.putEntry(new DirFileRecord.FileEntry("world/region/r.0.0.mca", 4L, 5L,
+                new long[DirFileRecord.MCA_CHUNK_COUNT]));
+        second.save();
+
+        assertFalse("覆盖写成功后不应残留临时文件", tempFile.exists());
+        loaded = new DirFileRecord(recordFile);
+        loaded.load();
+        assertEquals(2, loaded.getFileCount());
+        assertEquals(2L, loaded.getEntry("world/level.dat").getLastModified());
+
+        assertTrue(recordFile.delete());
     }
 }
