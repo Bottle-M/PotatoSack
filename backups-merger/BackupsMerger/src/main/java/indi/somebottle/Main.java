@@ -2,8 +2,7 @@ package indi.somebottle;
 
 import com.google.gson.Gson;
 
-import javax.swing.*;
-import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.JFileChooser;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,10 +14,6 @@ import java.util.Scanner;
 public class Main {
     public static void main(String[] args) {
         final String executionDir = System.getProperty("user.dir");
-        final JFrame frame = new JFrame("Potato Sack");
-        frame.setAlwaysOnTop(true); // 保持焦点在窗口上
-        frame.setVisible(false); // 不显示这个窗口
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         // JSON 解析器
         Gson gson = new Gson();
         // 临时目录
@@ -43,18 +38,34 @@ public class Main {
                 System.out.println("Bye!");
                 throw new Utils.ExitException(0);
             }
-            JFileChooser dirChooser = new JFileChooser();
+
+            /*
+             * Swing 组件应该在 Event Dispatch Thread (EDT) 上创建和显示。
+             * 这里不再创建一个“不可见 + alwaysOnTop”的 JFrame 当 owner：Windows（尤其从 Git Bash/mintty
+             * 启动时）首次初始化 AWT/Swing 时，这种 owner 组合更容易出现异常的窗口生命周期/返回结果。
+             * 同时直接把 executionDir 传给 JFileChooser 构造器，避免先扫描 Windows 默认目录，再立即切目录。
+             */
+            File initialDirectory = new File(executionDir);
+            FileChooserUtils.Result directoryChoice = FileChooserUtils.showBackupDirectoryChooser(initialDirectory);
             File selectedDir;
-            dirChooser.setDialogTitle("Choose a directory that contains a group of backups.");
-            dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            dirChooser.setMultiSelectionEnabled(false);
-            dirChooser.setCurrentDirectory(new File(executionDir));
-            int result = dirChooser.showOpenDialog(frame);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                selectedDir = dirChooser.getSelectedFile();
+            if (directoryChoice.returnCode() == JFileChooser.APPROVE_OPTION) {
+                selectedDir = directoryChoice.selectedFile();
+                if (selectedDir == null) {
+                    System.err.println("[FileChooser] APPROVE_OPTION was returned, but selected file is null.");
+                    FileChooserUtils.printDiagnostics("backup directory chooser", initialDirectory,
+                            directoryChoice.returnCode());
+                    throw new Utils.ExitException(1);
+                }
                 System.out.println("Selected directory: " + selectedDir.getAbsolutePath());
+            } else if (directoryChoice.returnCode() == JFileChooser.CANCEL_OPTION) {
+                System.out.println("Directory selection canceled, exit.");
+                throw new Utils.ExitException(1);
             } else {
-                System.out.println("No directory selected, exit.");
+                // ERROR_OPTION (-1) 或其它非预期返回值，需要把环境信息打出来，便于定位 Windows/Git Bash 问题。
+                System.err.println("[FileChooser] Failed to choose a directory: "
+                        + FileChooserUtils.describeResult(directoryChoice.returnCode()));
+                FileChooserUtils.printDiagnostics("backup directory chooser", initialDirectory,
+                        directoryChoice.returnCode());
                 throw new Utils.ExitException(1);
             }
             if (!selectedDir.isDirectory()) {
@@ -146,23 +157,38 @@ public class Main {
             }
             // 让用户选择把压缩包输出到哪里
             System.out.println("Save the merged backup as...");
-            dirChooser.setDialogTitle("Save the merged backup as...");
-            dirChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-            // 预设一个默认的路径
-            dirChooser.setSelectedFile(new File(tmpDir.getParentFile(), "merged.zip"));
-            dirChooser.setFileFilter(new FileNameExtensionFilter("ZIP files", "zip"));
+            File suggestedOutputFile = new File(tmpDir.getParentFile(), "merged.zip");
             File zipOutputFile;
             while (true) {
-                if (dirChooser.showSaveDialog(frame) == JFileChooser.APPROVE_OPTION) {
-                    zipOutputFile = dirChooser.getSelectedFile();
-                    if (zipOutputFile.exists()) {
-                        if (zipOutputFile.isFile())
-                            System.out.println("The file " + zipOutputFile.getAbsolutePath() + " already exists! Please retry.");
-                        else
-                            break;
-                    } else {
-                        break;
+                FileChooserUtils.Result saveChoice = FileChooserUtils.showSaveFileChooser(suggestedOutputFile);
+                if (saveChoice.returnCode() == JFileChooser.APPROVE_OPTION) {
+                    zipOutputFile = saveChoice.selectedFile();
+                    if (zipOutputFile == null) {
+                        System.err.println("[FileChooser] APPROVE_OPTION was returned, but selected file is null.");
+                        FileChooserUtils.printDiagnostics("save file chooser", suggestedOutputFile,
+                                saveChoice.returnCode());
+                        throw new Utils.ExitException(1);
                     }
+                    if (zipOutputFile.exists()) {
+                        if (zipOutputFile.isFile()) {
+                            System.out.println("The file " + zipOutputFile.getAbsolutePath()
+                                    + " already exists! Please retry.");
+                            // 下次仍从刚才用户选择的位置打开，方便直接改文件名。
+                            suggestedOutputFile = zipOutputFile;
+                            continue;
+                        }
+                    }
+                    break;
+                } else if (saveChoice.returnCode() == JFileChooser.CANCEL_OPTION) {
+                    // 在 Cancel 时明确退出，避免无法结束程序
+                    System.out.println("Save canceled, exit.");
+                    throw new Utils.ExitException(1);
+                } else {
+                    System.err.println("[FileChooser] Failed to choose output path: "
+                            + FileChooserUtils.describeResult(saveChoice.returnCode()));
+                    FileChooserUtils.printDiagnostics("save file chooser", suggestedOutputFile,
+                            saveChoice.returnCode());
+                    throw new Utils.ExitException(1);
                 }
             }
             if (zipOutputFile.isDirectory()) {
@@ -179,6 +205,14 @@ public class Main {
             System.out.println("Done! The merged backup has been saved as " + zipOutputFile.getAbsolutePath());
         } catch (Utils.ExitException e) {
             exitCode = e.getExitCode();
+        } catch (Throwable e) {
+            // 打印运行环境和完整堆栈，便于现场定位问题
+            exitCode = 1;
+            System.err.println("\nUnexpected error: " + e.getClass().getName()
+                    + (e.getMessage() == null ? "" : ": " + e.getMessage()));
+            FileChooserUtils.printRuntimeDiagnostics();
+            e.printStackTrace(System.err);
+            System.err.flush();
         } finally {
             // 删除临时目录
             System.out.print("Cleaning up temp files...");
@@ -188,8 +222,6 @@ public class Main {
             } else {
                 System.out.println("Done");
             }
-            // 关闭空窗口，退出进程
-            frame.dispose();
             System.gc();
             try {
                 Thread.sleep(1000);
@@ -248,4 +280,3 @@ public class Main {
         }
     }
 }
-

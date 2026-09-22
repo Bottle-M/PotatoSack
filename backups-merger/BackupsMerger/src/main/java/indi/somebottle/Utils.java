@@ -138,6 +138,7 @@ public class Utils {
                     File mergedFile = null;
                     try {
                         // 先落盘，才能判断条目到底是 delta 还是原样存储的 .mca
+                        // ZipInputStream.read(byte[], int, int) 是当前 ZIP 条目数据读完时返回 -1，不是整个 ZIP 流的 EOF
                         tmpFile = spoolEntry(zipIn, currFile);
                         if (isMcaPath(fileName) && McaDeltaMerger.hasMagic(tmpFile)) {
                             // delta 必须应用到一个已经存在的完整区域文件上
