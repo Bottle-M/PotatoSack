@@ -6,6 +6,9 @@ import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Scanner;
 
@@ -129,32 +132,17 @@ public class Main {
                 throw new Utils.ExitException(1);
             }
             System.out.println("Merging incremental backup...");
-            // 在全量备份的基础上覆盖解压增量备份
+            // 在全量备份的基础上应用增量备份:
+            // - 增量 zip 里的 .mca 可能是原样存储的完整区域文件，也可能是 PSMCA delta，由 Utils 分流处理
+            // - 每个增量里所有的 zip 条目处理完之后，再按 deleted.files 清单删除文件
             for (int i = 0; i <= mergeIncreUntil; i++) {
                 File increBackupFile = new File(selectedDir, "incre" + increHistory.get(i).getId() + ".zip");
-                if (!Utils.unzip(increBackupFile, unzipDir)) {
-                    System.out.println("Failed to unzip incremental backup " + increBackupFile.getAbsolutePath());
+                if (!Utils.mergeIncrementalZip(increBackupFile, unzipDir)) {
+                    System.out.println("Failed to merge incremental backup " + increBackupFile.getAbsolutePath());
                     throw new Utils.ExitException(1);
                 }
                 // 解压完后根据 deleted.files 清单删除文件
-                File deletedRecordFile = new File(unzipDir, "deleted.files");
-                if (deletedRecordFile.exists()) {
-                    // 读出被删除的文件，进行删除
-                    String[] deletedFilePaths = Utils.readLines(deletedRecordFile);
-                    for (String deletedFilePath : deletedFilePaths) {
-                        File deletedFile = new File(unzipDir, deletedFilePath);
-                        if (deletedFile.exists()) {
-                            System.out.println("\tDeleting " + deletedFile.getAbsolutePath());
-                            if (!deletedFile.delete()) {
-                                System.out.println("!!WARNING!! Failed to delete file " + deletedFile.getAbsolutePath());
-                            }
-                        }
-                    }
-                }
-                // 最后删掉 deleted.files
-                if (!deletedRecordFile.delete()) {
-                    System.out.println("!!WARNING!! Failed to delete file " + deletedRecordFile.getAbsolutePath());
-                }
+                applyDeletedFilesSafely(unzipDir, new File(unzipDir, "deleted.files"));
             }
             // 让用户选择把压缩包输出到哪里
             System.out.println("Save the merged backup as...");
@@ -210,6 +198,53 @@ public class Main {
             }
             // 最后按 exitCode 退出
             System.exit(exitCode);
+        }
+    }
+
+    /**
+     * 按 deleted.files 清单删除文件，然后删掉清单本身
+     *
+     * <p>清单里每行是一个相对于服务端根目录的路径。这里会对路径做规范化，拒绝绝对路径、`..` 穿越
+     * 以及指向恢复目录本身的条目，避免清单被写坏时误删恢复目录之外的文件。</p>
+     *
+     * @param unzipDir          恢复目录
+     * @param deletedRecordFile deleted.files 文件
+     */
+    static void applyDeletedFilesSafely(File unzipDir, File deletedRecordFile) {
+        if (!deletedRecordFile.isFile())
+            return;
+        Path root = unzipDir.getAbsoluteFile().toPath().normalize();
+        // 读出被删除的文件，进行删除
+        String[] deletedFilePaths = Utils.readLines(deletedRecordFile);
+        for (String deletedFilePath : deletedFilePaths) {
+            Path resolved;
+            try {
+                resolved = root.resolve(deletedFilePath).normalize();
+            } catch (InvalidPathException e) {
+                System.out.println("!!WARNING!! Ignoring invalid path in deleted.files: " + deletedFilePath);
+                continue;
+            }
+            if (resolved.equals(root) || !resolved.startsWith(root)) {
+                System.out.println("!!WARNING!! Ignoring unsafe path in deleted.files: " + deletedFilePath);
+                continue;
+            }
+            File deletedFile = resolved.toFile();
+            if (!deletedFile.exists())
+                continue;
+            System.out.println("\tDeleting " + deletedFile.getAbsolutePath());
+            try {
+                Files.deleteIfExists(deletedFile.toPath());
+            } catch (IOException e) {
+                System.out.println("!!WARNING!! Failed to delete file " + deletedFile.getAbsolutePath()
+                        + ": " + e.getMessage());
+            }
+        }
+        // 最后删掉 deleted.files（它在该增量中不是被删除的文件，只是清单本身）
+        try {
+            Files.deleteIfExists(deletedRecordFile.toPath());
+        } catch (IOException e) {
+            System.out.println("!!WARNING!! Failed to delete file " + deletedRecordFile.getAbsolutePath()
+                    + ": " + e.getMessage());
         }
     }
 }
