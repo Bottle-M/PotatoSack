@@ -310,8 +310,11 @@ public class Utils {
                         Path rootPath = Path.of(rootDir.toURI());
                         Path filePath = Path.of(file.toURI());
                         Path relativePath = rootPath.relativize(filePath);
-                        System.out.println("\tZipping: " + relativePath);
-                        zos.putNextEntry(new ZipEntry(relativePath.toString()));
+                        // zip 条目名必须用正斜杠: Windows 上 Path.toString() 用反斜杠，
+                        // 那种包在 Linux 上解压会变成名为 "world\region\x.mca" 的单层文件
+                        String entryName = relativePath.toString().replace(File.separatorChar, '/');
+                        System.out.println("\tZipping: " + entryName);
+                        zos.putNextEntry(new ZipEntry(entryName));
                         try (FileInputStream fis = new FileInputStream(file)) {
                             byte[] buffer = new byte[16384];
                             int len;

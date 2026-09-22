@@ -5,17 +5,20 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import static indi.somebottle.RegionFixtures.ChunkState;
@@ -311,6 +314,35 @@ public class IncrementalZipMergeTest {
         assertTrue(restoreDir.mkdirs());
         assertFalse(Utils.unzip(new File(root, "missing.zip"), restoreDir));
         assertFalse(Utils.mergeIncrementalZip(new File(root, "missing.zip"), restoreDir));
+    }
+
+    // ------------------------------------------------------------------ 输出压缩包
+
+    @Test
+    public void testZippedEntryNamesUseForwardSlashes() throws Exception {
+        // Windows 上 Path.toString() 用反斜杠作分隔符，如果直接拿它当 zip 条目名，
+        // 在 Linux 上解压会得到一个名为 "world\region\r.0.0.mca" 的单层文件，服务端读不到。
+        File root = tmp.newFolder();
+        File restoreDir = new File(root, "restore");
+        File regionDir = file(restoreDir, "world/region");
+        assertTrue(regionDir.mkdirs());
+        Files.write(file(regionDir, "r.0.0.mca").toPath(),
+                region().chunk(0, 1, 100, chunkData(0, 1)).build());
+        Files.write(file(restoreDir, "level.dat").toPath(), text("LEVEL"));
+
+        File mergedZip = new File(root, "merged.zip");
+        assertTrue(Utils.zip(restoreDir.listFiles(), mergedZip, restoreDir));
+
+        List<String> names = new ArrayList<>();
+        try (ZipInputStream zipIn = new ZipInputStream(new FileInputStream(mergedZip))) {
+            ZipEntry entry;
+            while ((entry = zipIn.getNextEntry()) != null)
+                names.add(entry.getName());
+        }
+        assertTrue("应当包含正斜杠形式的条目名: " + names, names.contains("world/region/r.0.0.mca"));
+        assertTrue("根目录下的文件也应当存在: " + names, names.contains("level.dat"));
+        for (String name : names)
+            assertFalse("zip 条目名必须使用正斜杠: " + name, name.contains("\\"));
     }
 
     // ------------------------------------------------------------------ 测试辅助
