@@ -294,7 +294,7 @@ public final class McaDeltaMerger {
                     payloadOut.write(copyBuf, 0, n);
                     copied += n;
                 }
-                chunks.put(index, DeltaChunk.present(sectorCount, payloadOffset, payloadLength));
+                chunks.put(index, DeltaChunk.present(sectorCount, payloadOffset));
                 payloadOffset += payloadLength;
             }
             if (in.getCount() != fileLength) {
@@ -531,27 +531,24 @@ public final class McaDeltaMerger {
     /**
      * delta 里的一个区块
      *
-     * @param sectorCount   扇区数，0 表示删除
+     * @param sectorCount   扇区数，0 表示删除；复制 payload 时的长度由它推出（{@code sectorCount * 4096}）
      * @param payloadOffset payload 在临时文件中的偏移
-     * @param payloadLength payload 长度（{@code sectorCount * 4096}）
      */
     static final class DeltaChunk {
         final int sectorCount;
         final long payloadOffset;
-        final long payloadLength;
 
-        private DeltaChunk(int sectorCount, long payloadOffset, long payloadLength) {
+        private DeltaChunk(int sectorCount, long payloadOffset) {
             this.sectorCount = sectorCount;
             this.payloadOffset = payloadOffset;
-            this.payloadLength = payloadLength;
         }
 
         static DeltaChunk deleted() {
-            return new DeltaChunk(0, 0, 0);
+            return new DeltaChunk(0, 0);
         }
 
-        static DeltaChunk present(int sectorCount, long payloadOffset, long payloadLength) {
-            return new DeltaChunk(sectorCount, payloadOffset, payloadLength);
+        static DeltaChunk present(int sectorCount, long payloadOffset) {
+            return new DeltaChunk(sectorCount, payloadOffset);
         }
     }
 
