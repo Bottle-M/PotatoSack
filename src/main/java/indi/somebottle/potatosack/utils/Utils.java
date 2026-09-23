@@ -142,19 +142,19 @@ public class Utils {
         return -1;
     }
 
-    /**
-     * 将代表数值的 Object 对象转换为 long
-     *
-     * @param obj Object
-     * @return long
-     */
-    public static long objToLong(Object obj) {
-        if (obj instanceof Integer) {
-            return (long) (Integer) obj;
-        } else {
-            return (long) obj;
-        }
-    }
+//    /**
+//     * 将代表数值的 Object 对象转换为 long
+//     *
+//     * @param obj Object
+//     * @return long
+//     */
+//    public static long objToLong(Object obj) {
+//        if (obj instanceof Integer) {
+//            return (long) (Integer) obj;
+//        } else {
+//            return (long) obj;
+//        }
+//    }
 
     /**
      * 从文件中指定位置开始读取指定字节数
@@ -369,56 +369,29 @@ public class Utils {
             if (!quiet)
                 System.out.println("[Verbose] Add file: " + entry.filePath + " -> " + entry.entryPath);
             File file = new File(entry.filePath);
-            // 如果待压缩文件不存在，则忽略 20240722
-            // 可能在文件列表到开始压缩文件这段时间内，这个文件被删除了
+            // 如果待压缩文件不存在，不应该继续 20260923
+            // 因为扫描时已把此文件写入待备份的新记录，不能静默跳过
             if (!file.exists()) {
-                ConsoleSender.logWarn("(Unexpected!) File " + entry.filePath + " not found while compressing, it may have been deleted, ignored.");
-                continue;
+                throw new IOException("(Unexpected!) File disappeared after scan: " + entry.filePath);
             }
             zos.putNextEntry(new ZipEntry(entry.entryPath));
             // 先记录在读取文件前的时间戳，以及文件大小
             long fileModifiedTimeBefore = file.lastModified();
             long fileSizeBefore = file.length();
-            // 尝试打开并读取文件，遇到锁定时指数退避重试
-            ExponentialBackoffCalculator backoffCalc = new ExponentialBackoffCalculator(1000); // 基础退避 1s
-            int retry = 0;
-            boolean fileSkipped = false;
-            // 读取过程中对【原始文件】算出的 CRC32，读取成功时赋值
-            long checksumBefore = -1;
-            while (retry <= Constants.FILE_READ_MAX_RETRY) {
-                try (InputStream in = openInputStream4Zip(entry, file)) {
-                    // 1 MiB 大小的读取缓冲区
-                    byte[] buffer = new byte[1048576]; // 读出文件
-                    int len;
-                    while ((len = in.read(buffer)) > 0) {
-                        // 计算 CRC
-                        crc32.update(buffer, 0, len);
-                        // 写入
-                        zos.write(buffer, 0, len);
-                    }
-                    // .mca 走 delta 转换时，写进 zip 的是 McaDeltaInputStream 转换后的字节，上面 crc32 攒的已经不是原文件的内容了，
-                    // 所以改用 McaDeltaInputStream 自己根据源文件算出的那份【原始文件】的 CRC
-                    checksumBefore = in instanceof McaDeltaInputStream delta ? delta.sourceCRC32() : crc32.getValue();
-                    break; // 读取成功，跳出重试循环
-                } catch (IOException e) {
-                    // 文件被锁定（Windows 下常见）或其它 IO 错误
-                    if (retry < Constants.FILE_READ_MAX_RETRY) {
-                        retry++;
-                        try {
-                            Thread.sleep(backoffCalc.getNextBackoffTime(Constants.FILE_READ_MAX_BACKOFF_MS));
-                            backoffCalc.backoff(); // 退避时间翻倍: 1s → 2s → 4s
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                        }
-                    } else {
-                        ConsoleSender.logWarn("Cannot read file " + entry.filePath + ", skipping: " + e.getMessage());
-                        fileSkipped = true;
-                        break;
-                    }
+            long checksumBefore; // 读取过程中对【原始文件】算出的 CRC32
+            try (InputStream in = openInputStream4Zip(entry, file)) {
+                byte[] buffer = new byte[1048576];
+                int len;
+                while ((len = in.read(buffer)) > 0) {
+                    crc32.update(buffer, 0, len);
+                    zos.write(buffer, 0, len);
                 }
-            }
-            if (fileSkipped) {
-                continue; // 跳过该文件，处理下一个
+                // .mca 走 delta 转换时，写进 zip 的是 McaDeltaInputStream 转换后的字节，上面 crc32 攒的已经不是原文件的内容了，
+                // 所以改用 McaDeltaInputStream 自己根据源文件算出的那份【原始文件】的 CRC
+                checksumBefore = in instanceof McaDeltaInputStream delta ? delta.sourceCRC32() : crc32.getValue();
+            } catch (IOException e) {
+                // 读取一旦失败，当前 ZIP 条目可能已有部分字节写入，必须放弃整个 ZIP，由外层从新的 ZipOutputStream 重试，不能在同一条目中追加第二次读取
+                throw new IOException("Cannot completely read file while creating zip: " + entry.filePath, e);
             }
             // 文件读取，并压缩写入 Zip 后，再次检查文件时间戳、文件大小
             // 同时再读取文件一遍，重新计算校验和，检查校验和是否一致
