@@ -422,9 +422,12 @@ public class Config {
      * @see #reload()
      */
     private void inspectConfig() {
+        String pluginVersion = getPluginVersion();
         if (config.get(KEYS.VERSION) == null) {
             // 版本号配置项不存在，说明是旧版本的配置文件，设置默认版本号为 "legacy"
             config.set(KEYS.VERSION, "legacy");
+        }else if (!pluginVersion.equals(config.getString(KEYS.VERSION))) {
+            config.set(KEYS.VERSION, pluginVersion);
         }
         if (config.get(KEYS.CLIENT.USE) == null) {
             config.set(KEYS.CLIENT.USE, "onedrive");
