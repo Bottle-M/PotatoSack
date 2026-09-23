@@ -12,7 +12,10 @@ import org.bukkit.plugin.Plugin;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.SimpleDateFormat;
@@ -155,6 +158,22 @@ public class Utils {
 //            return (long) obj;
 //        }
 //    }
+
+    /**
+     * 原子移动文件（如果没法原子移动就普通移动）
+     *
+     * @param srcPath 源路径
+     * @param destPath 目标路径
+     * @throws IOException 无法移动时抛出
+     */
+    public static void moveRecordFile(Path srcPath, Path destPath) throws IOException {
+        try {
+            Files.move(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(srcPath, destPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
 
     /**
      * 从文件中指定位置开始读取指定字节数
