@@ -175,6 +175,9 @@ public class DirFileRecord {
      * 且两者输出字节数完全相同</p>
      */
     public void save() throws IOException {
+        // entries 是哈希表，扫描顺序不定
+        // 因此要用 ArrayList 生成一个快照，固定本次写出的条目顺序，确保各个数据在不同表间按索引对齐
+        List<FileEntry> fileEntries = new ArrayList<>(entries.values());
         // 每次落盘都刷新记录文件的最后修改时间戳，外部不需要自己维护它
         fileUpdateTime = Utils.timestamp();
         if (!recordFile.exists()) {
@@ -192,16 +195,16 @@ public class DirFileRecord {
             // 2. 记录文件的最后修改时间戳
             writeUint64(out, fileUpdateTime);
             // 3. 文件数量
-            writeUint64(out, entries.size());
+            writeUint64(out, fileEntries.size());
             // 4. 文件最后修改时间表
-            for (FileEntry entry : entries.values())
+            for (FileEntry entry : fileEntries)
                 writeUint64(out, entry.lastModified);
             // 5. 文件哈希表
-            for (FileEntry entry : entries.values())
+            for (FileEntry entry : fileEntries)
                 writeUint64(out, entry.hash);
             // 6. 文件路径字符串长度表 + 7. 紧凑的文件路径字符串表
             List<FileEntry> mcaEntries = new ArrayList<>();
-            for (FileEntry entry : entries.values()) {
+            for (FileEntry entry : fileEntries) {
                 byte[] pathBytes = entry.relativePath.getBytes(StandardCharsets.UTF_8);
                 if (pathBytes.length > 0xFFFF) {
                     // uint16 存不下，现实中不可能出现
@@ -211,7 +214,7 @@ public class DirFileRecord {
                 if (isMcaPath(entry.relativePath))
                     mcaEntries.add(entry);
             }
-            for (FileEntry entry : entries.values())
+            for (FileEntry entry : fileEntries)
                 out.write(entry.relativePath.getBytes(StandardCharsets.UTF_8));
             // 8. mca 数据部分: 按 .mca 文件出现的顺序，每个一个 varint[1024]
             for (FileEntry mcaEntry : mcaEntries) {
