@@ -1,8 +1,9 @@
 package indi.somebottle.potatosack.clients.s3;
 
 import indi.somebottle.potatosack.utils.ConsoleSender;
-import indi.somebottle.potatosack.utils.Constants;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -15,7 +16,6 @@ import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -35,13 +35,9 @@ import java.util.List;
  * </ul>
  * </p>
  * <p>
- * 重试分两层：SDK 自身的标准重试策略负责单次请求的瞬时错误；
- * 应用层额外保留 {@link Constants#MAX_STREAMED_CHUNK_UPLOAD_RETRY} 次完整重试，
- * 重试时使用相同的 part number 和相同的字节范围，因此缓冲区在该 part 成功前不会被复用。
- * </p>
- * <p>
- * 注意：uploadPart(int, byte[], int) 只对 IO 类失败进行重试，
- * part 数量超过上限属于确定性错误，不会重试而是直接失败。
+ * 单个请求的瞬时错误完全交给 AWS SDK 的 STANDARD retry strategy 处理。
+ * 本类不再额外做应用层 part retry，避免把鉴权失败、参数错误、NoSuchUpload 等确定性错误重复发送。
+ * part 数量超过上限同样属于确定性错误，应立即失败。
  * </p>
  */
 public class S3MultipartUploader {
@@ -59,44 +55,6 @@ public class S3MultipartUploader {
      * 分片大小，16 MiB
      */
     public static final int PART_SIZE = 16 * 1024 * 1024;
-
-    /**
-     * 应用层 part 上传重试的等待时间（毫秒）
-     * <p>
-     * 可通过系统属性 {@code potatosack.s3.part-retry-wait-ms} 覆盖，默认 10 秒。
-     * 该属性主要用于单元测试（设为 0 可避免测试等待），正常运行时无需设置。
-     * </p>
-     */
-    private static volatile long partRetryWaitMs = resolvePartRetryWaitMs();
-
-    /**
-     * 读取 part 重试等待时间，非法值回退到默认 10 秒
-     *
-     * @return 等待毫秒数
-     */
-    private static long resolvePartRetryWaitMs() {
-        String configured = System.getProperty("potatosack.s3.part-retry-wait-ms");
-        if (configured != null) {
-            try {
-                long value = Long.parseLong(configured.trim());
-                if (value >= 0) {
-                    return value;
-                }
-            } catch (NumberFormatException ignored) {
-                // 忽略非法配置，使用默认值
-            }
-        }
-        return 10000L;
-    }
-
-    /**
-     * 设置 part 重试等待时间（供测试使用）
-     *
-     * @param waitMs 等待毫秒数
-     */
-    static void setPartRetryWaitMs(long waitMs) {
-        partRetryWaitMs = waitMs;
-    }
 
     /**
      * 底层 SDK 客户端
@@ -155,8 +113,12 @@ public class S3MultipartUploader {
                 .key(key)
                 .contentType("application/octet-stream")
                 .build();
-        CreateMultipartUploadResponse response = sdkClient.createMultipartUpload(request);
-        this.uploadId = response.uploadId();
+        try {
+            CreateMultipartUploadResponse response = sdkClient.createMultipartUpload(request);
+            this.uploadId = response.uploadId();
+        } catch (S3Exception | SdkClientException e) {
+            throw new IOException("Failed to create multipart upload for " + key + ": " + e.getMessage(), e);
+        }
         ConsoleSender.toConsole("S3 multipart upload started. Key: " + key + ", uploadId: " + uploadId);
     }
 
@@ -180,24 +142,23 @@ public class S3MultipartUploader {
      * @throws TooManyPartsException 超过上限时抛出
      */
     private static void checkPartNumber(int partNumber) throws TooManyPartsException {
-        if (partNumber > S3_MAX_PART_COUNT) {
-            throw new TooManyPartsException("Part number " + partNumber + " exceeds the S3 limit of "
-                    + S3_MAX_PART_COUNT + " parts. Please increase the part size or split the file.");
+        if (partNumber < 1 || partNumber > S3_MAX_PART_COUNT) {
+            throw new TooManyPartsException("Part number " + partNumber + " is outside the S3 valid range 1.."
+                    + S3_MAX_PART_COUNT + ".");
         }
     }
 
     /**
-     * 上传一个 part，并在失败时进行有限次数的应用层重试
+     * 上传一个 part。请求级瞬时错误由 AWS SDK 的 STANDARD retry strategy 负责。
      * <p>
-     * 通过 {@code bodySupplier} 为每一次尝试（含应用层重试与 SDK 自身重试）构造全新的输入流，
-     * 保证请求体可以被完整重放，同时避免把整个 part 复制到堆内存中。
-     * 重试始终使用相同的 part number 和相同的字节范围，成功后只记录一个 ETag。
+     * {@code bodySupplier} 能为 SDK 的每次请求重放提供全新的输入流，
+     * 保证相同的 part number 始终读取相同的字节范围，同时避免把整个 part 复制到堆内存中。
      * </p>
      *
      * @param partNumber   part number，从 1 开始连续递增
      * @param length       本次上传的字节数，必须大于 0
      * @param bodySupplier 每次尝试时构造请求体输入流的工厂
-     * @throws IOException           所有重试都失败时抛出
+     * @throws IOException           SDK 请求最终失败时抛出
      * @throws TooManyPartsException part number 超过 S3 上限时抛出（确定性错误，不重试）
      */
     public void uploadPart(int partNumber, long length, PartBodySupplier bodySupplier)
@@ -206,38 +167,23 @@ public class S3MultipartUploader {
             return;
         }
         checkPartNumber(partNumber);
-        IOException lastError = null;
-        for (int retry = 0; retry <= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY; retry++) {
-            try {
-                UploadPartRequest request = UploadPartRequest.builder()
-                        .bucket(bucket)
-                        .key(key)
-                        .uploadId(uploadId)
-                        .partNumber(partNumber)
-                        .contentLength(length)
-                        .build();
-                UploadPartResponse response = sdkClient.uploadPart(request,
-                        RequestBody.fromContentProvider(bodySupplier, length, "application/octet-stream"));
-                String eTag = response.eTag();
-                completedParts.add(CompletedPart.builder().partNumber(partNumber).eTag(eTag).build());
-                uploadedBytes += length;
-                ConsoleSender.toConsole("S3 upload part " + partNumber + " succeeded. Chunk: " + length
-                        + " byte(s), uploaded total: " + uploadedBytes + " byte(s)");
-                return;
-            } catch (Exception e) {
-                lastError = new IOException("Failed to upload part " + partNumber + " of " + key + ": " + e.getMessage(), e);
-                if (retry < Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
-                    ConsoleSender.logWarn("S3 part " + partNumber + " upload failed (" + e.getMessage()
-                            + "), retrying with the same byte range...(" + (retry + 1) + "/"
-                            + Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY + ")");
-                    waitBeforePartRetry();
-                    if (Thread.currentThread().isInterrupted()) {
-                        throw new IOException("Interrupted while retrying part " + partNumber + " of " + key, lastError);
-                    }
-                }
-            }
+        try {
+            UploadPartRequest request = UploadPartRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .uploadId(uploadId)
+                    .partNumber(partNumber)
+                    .contentLength(length)
+                    .build();
+            UploadPartResponse response = sdkClient.uploadPart(request,
+                    RequestBody.fromContentProvider(bodySupplier, length, "application/octet-stream"));
+            completedParts.add(CompletedPart.builder().partNumber(partNumber).eTag(response.eTag()).build());
+            uploadedBytes += length;
+            ConsoleSender.toConsole("S3 upload part " + partNumber + " succeeded. Chunk: " + length
+                    + " byte(s), uploaded total: " + uploadedBytes + " byte(s)");
+        } catch (RuntimeException e) {
+            throw new IOException("Failed to upload part " + partNumber + " of " + key + ": " + e.getMessage(), e);
         }
-        throw lastError == null ? new IOException("Failed to upload part " + partNumber + " of " + key) : lastError;
     }
 
     /**
@@ -327,51 +273,6 @@ public class S3MultipartUploader {
         return uploadedBytes;
     }
 
-    /**
-     * 获得已完成 part 的只读视图，供测试检查 ETag 收集结果
-     *
-     * @return 已完成的 part 列表（按 part number 升序）
-     */
-    public List<CompletedPart> getCompletedParts() {
-        List<CompletedPart> parts = new ArrayList<>(completedParts);
-        parts.sort((a, b) -> a.partNumber().compareTo(b.partNumber()));
-        return Collections.unmodifiableList(parts);
-    }
-
-    /**
-     * 判断本次 multipart upload 是否已经进入终态
-     *
-     * @return 已完成或已 abort 时返回 true
-     */
-    public boolean isTerminated() {
-        return terminated;
-    }
-
-    /**
-     * 获得本次 multipart upload 的 uploadId
-     *
-     * @return uploadId
-     */
-    public String getUploadId() {
-        return uploadId;
-    }
-
-    /**
-     * part 重试前的等待
-     */
-    private void waitBeforePartRetry() {
-        long waitMs = partRetryWaitMs;
-        if (waitMs <= 0) {
-            return;
-        }
-        try {
-            ConsoleSender.toConsole("Failed to upload S3 part, retrying in " + (waitMs / 1000) + " seconds...");
-            Thread.sleep(waitMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            ConsoleSender.logWarn("Interrupted while waiting before an S3 part retry.");
-        }
-    }
 
     /**
      * part 数量超过 S3 上限时抛出的异常
@@ -388,7 +289,7 @@ public class S3MultipartUploader {
     /**
      * part 请求体输入流工厂
      * <p>
-     * SDK 在应用层重试和内部重试时都可能重新读取请求体，因此每次都要返回一个全新的输入流，
+     * SDK 在内部 retry 时可能重新读取请求体，因此每次都要返回一个全新的输入流，
      * 且要能从相同的起始位置重新读取相同的字节范围。
      * </p>
      */

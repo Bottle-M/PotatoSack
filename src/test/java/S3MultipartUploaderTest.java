@@ -1,6 +1,5 @@
 import indi.somebottle.potatosack.clients.s3.S3FileUploader;
 import indi.somebottle.potatosack.clients.s3.S3MultipartUploader;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadResponse;
@@ -39,16 +38,6 @@ import static org.junit.Assert.fail;
  * </p>
  */
 public class S3MultipartUploaderTest {
-    /**
-     * 把 part 重试等待时间设为 0，避免单元测试真的等待 10 秒
-     */
-    @BeforeClass
-    public static void disablePartRetryWait() throws Exception {
-        java.lang.reflect.Field field = S3MultipartUploader.class.getDeclaredField("partRetryWaitMs");
-        field.setAccessible(true);
-        field.setLong(null, 0L);
-    }
-
     /**
      * 假的 SDK 客户端，记录调用并可按需注入失败
      */
@@ -220,7 +209,9 @@ public class S3MultipartUploaderTest {
         byte[] buffer = new byte[8];
         uploader.uploadPart(1, buffer.length, body(buffer, buffer.length));
         uploader.uploadPart(2, buffer.length, body(buffer, buffer.length));
-        List<CompletedPart> parts = uploader.getCompletedParts();
+        uploader.completeUpload();
+        // 不再暴露 uploader 内部 completedParts；验证真正提交给 S3 的完成请求。
+        List<CompletedPart> parts = fake.submittedParts.get(0);
         assertEquals(2, parts.size());
         assertEquals(Integer.valueOf(1), parts.get(0).partNumber());
         assertEquals("etag-1", parts.get(0).eTag());
@@ -241,7 +232,9 @@ public class S3MultipartUploaderTest {
         uploader.uploadPart(2, small.length, body(small, small.length));
         uploader.completeUpload();
         assertEquals(Arrays.asList((long) S3MultipartUploader.PART_SIZE, 1024L), fake.uploadedPartLengths);
-        assertTrue(uploader.isTerminated());
+        // complete 后已进入终态；再次 abort 不应发送请求。
+        uploader.abort();
+        assertTrue(fake.abortedUploadIds.isEmpty());
     }
 
     @Test
@@ -270,40 +263,40 @@ public class S3MultipartUploaderTest {
     // ==================== 重试 ====================
 
     @Test
-    public void testUploadPartRetriesWithSamePartNumberAndRange() throws Exception {
+    public void testUploadPartDoesNotApplicationRetryFailure() throws Exception {
         FakeS3 fake = new FakeS3();
         S3MultipartUploader uploader = newUploader(fake);
         byte[] buffer = new byte[16];
-        // 第一次上传失败一次，应用层重试应当成功
+        // Fake SDK 绕过 AWS SDK 自己的 retry；uploader 层不应再次调用 uploadPart。
         fake.failNextUploadParts = 1;
-        uploader.uploadPart(1, buffer.length, body(buffer, buffer.length));
-        assertEquals(1, uploader.getUploadedPartCount());
-        assertEquals(16L, uploader.getUploadedBytes());
-        // 成功后只记录一个 ETag
-        assertEquals(1, uploader.getCompletedParts().size());
-        assertEquals("etag-1", uploader.getCompletedParts().get(0).eTag());
+        try {
+            uploader.uploadPart(1, buffer.length, body(buffer, buffer.length));
+            fail("part 上传失败时应当抛出 IOException");
+        } catch (IOException e) {
+            assertTrue(e.getMessage().contains("Failed to upload part 1"));
+        }
+        assertEquals(1, fake.readBodyLengths.size());
+        assertTrue(fake.uploadedPartNumbers.isEmpty());
+        assertEquals(0, uploader.getUploadedPartCount());
+        assertEquals(0L, uploader.getUploadedBytes());
     }
 
     @Test
-    public void testRequestBodyIsRecreatedForEveryAttempt() throws Exception {
-        FakeS3 fake = new FakeS3();
-        S3MultipartUploader uploader = newUploader(fake);
+    public void testPartBodySupplierCanReplaySameRange() throws Exception {
         byte[] buffer = new byte[16];
         final int[] supplierCalls = {0};
         S3MultipartUploader.PartBodySupplier supplier = () -> {
             supplierCalls[0]++;
             return new ByteArrayInputStream(buffer);
         };
-        // 第一次尝试会失败，应用层重试后成功
-        fake.failNextUploadParts = 1;
-        uploader.uploadPart(1, buffer.length, supplier);
-        // 每次读取请求体都必须重新构造输入流，保证请求体可重放
-        assertTrue("请求体工厂应被多次调用，实际 " + supplierCalls[0] + " 次", supplierCalls[0] >= 2);
-        assertEquals(2, fake.readBodyLengths.size());
-        // 两次读取拿到的都是完整的 16 字节，说明重试使用了相同的字节范围
-        assertEquals(Arrays.asList(16, 16), fake.readBodyLengths);
-        assertEquals(1, uploader.getUploadedPartCount());
-        assertEquals("etag-1", uploader.getCompletedParts().get(0).eTag());
+
+        // AWS SDK retry 时会再次向 ContentStreamProvider 请求新流。
+        try (InputStream first = supplier.newStream();
+             InputStream second = supplier.newStream()) {
+            assertEquals(16, first.readAllBytes().length);
+            assertEquals(16, second.readAllBytes().length);
+        }
+        assertEquals(2, supplierCalls[0]);
     }
 
     // ==================== abort 语义 ====================
@@ -323,7 +316,9 @@ public class S3MultipartUploaderTest {
         }
         // complete 失败后必须 abort，不能遗留未完成的 multipart upload
         assertEquals(Arrays.asList("upload-1"), fake.abortedUploadIds);
-        assertTrue(uploader.isTerminated());
+        // complete 失败后也已进入终态；再次 abort 不应发送第二次请求。
+        uploader.abort();
+        assertEquals(1, fake.abortedUploadIds.size());
     }
 
     @Test
@@ -420,7 +415,7 @@ public class S3MultipartUploaderTest {
             raf.setLength(64L);
         }
         FakeS3 fake = new FakeS3();
-        // 模拟 part 上传持续失败（超过应用层重试次数），最终必须 abort
+        // 模拟 part 上传最终失败；请求级 retry 由真实 AWS SDK 负责，uploader 收到失败后必须 abort
         fake.failNextUploadParts = 100;
         S3FileUploader uploader = new S3FileUploader(fake.client(), "test-bucket", "key", tempFile);
         assertFalse(uploader.upload());

@@ -2,11 +2,8 @@ import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.clients.s3.entities.S3Item;
 import org.junit.Test;
 
-import java.time.Instant;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -15,15 +12,11 @@ import static org.junit.Assert.assertTrue;
 public class S3ItemTest {
     @Test
     public void testFileItem() {
-        Instant lastModified = Instant.parse("2024-01-04T00:00:00Z");
-        S3Item item = S3Item.file("full.zip", "my/backups/PotatoSack/020240104000001/full.zip",
-                12345L, "etag-value", lastModified);
+        S3Item item = S3Item.file("full.zip", "my/backups/PotatoSack/020240104000001/full.zip", 12345L);
         assertFalse(item.isFolder());
         assertEquals("full.zip", item.getName());
         assertEquals(12345L, item.getSize());
         assertEquals("my/backups/PotatoSack/020240104000001/full.zip", item.getKey());
-        assertEquals("etag-value", item.getETag());
-        assertEquals(lastModified, item.getLastModified());
     }
 
     @Test
@@ -35,8 +28,6 @@ public class S3ItemTest {
         // 虚拟目录大小为 0
         assertEquals(0L, item.getSize());
         assertEquals("PotatoSack/020240104000001", item.getKey());
-        assertNull(item.getETag());
-        assertNull(item.getLastModified());
     }
 
     @Test
@@ -60,13 +51,13 @@ public class S3ItemTest {
     @Test
     public void testDownloadUrlIsEmptyByContract() {
         // 对象通常是私有的，下载通过 sdkClient.getObject 完成，因此约定返回空字符串
-        assertEquals("", S3Item.file("a.zip", "a.zip", 1L, null, null).getDownloadUrl());
+        assertEquals("", S3Item.file("a.zip", "a.zip", 1L).getDownloadUrl());
         assertEquals("", S3Item.folder("d", "d").getDownloadUrl());
     }
 
     @Test
     public void testImplementsFileItem() {
-        FileItem item = S3Item.file("a.zip", "a.zip", 1L, null, null);
+        FileItem item = S3Item.file("a.zip", "a.zip", 1L);
         assertFalse(item.isFolder());
         assertEquals("a.zip", item.getName());
         assertEquals(1L, item.getSize());
@@ -75,7 +66,7 @@ public class S3ItemTest {
     @Test
     public void testZeroByteFileIsStillAFile() {
         // 零字节文件必须是文件而不是目录，避免空对象被误判为虚拟目录
-        S3Item item = S3Item.file("empty.json", "PotatoSack/020240104000001/empty.json", 0L, "d41d8", null);
+        S3Item item = S3Item.file("empty.json", "PotatoSack/020240104000001/empty.json", 0L);
         assertFalse(item.isFolder());
         assertEquals(0L, item.getSize());
     }

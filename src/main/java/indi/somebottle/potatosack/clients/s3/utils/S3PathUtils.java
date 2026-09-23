@@ -72,20 +72,6 @@ public class S3PathUtils {
     }
 
     /**
-     * 判断 key 是否为目录 marker（以 {@code /} 结尾的零字节对象）
-     * <p>
-     * 部分 S3-compatible 服务或工具会为目录创建这种 marker object，
-     * 列表时需要把它们识别为目录并隐藏，避免同一目录同时以文件形式出现。
-     * </p>
-     *
-     * @param key object key
-     * @return 是否为目录 marker
-     */
-    public static boolean isDirMarker(String key) {
-        return key != null && key.endsWith("/");
-    }
-
-    /**
      * 校验一个 key 能否安全地作为操作目标
      * <p>
      * 要求规范化后非空，否则调用方可能把操作范围扩大整个 bucket。

@@ -84,7 +84,8 @@ public class S3FileUploader {
         if (fileSize <= 0) {
             return 0;
         }
-        return (fileSize + S3MultipartUploader.PART_SIZE - 1) / S3MultipartUploader.PART_SIZE;
+        return fileSize / S3MultipartUploader.PART_SIZE
+                + (fileSize % S3MultipartUploader.PART_SIZE == 0 ? 0 : 1);
     }
 
     /**
@@ -100,7 +101,7 @@ public class S3FileUploader {
         S3MultipartUploader uploader = null;
         try {
             long partCount = partCountOf(fileSize);
-            // 超过 S3 的 part 数量上限时提前失败，不发起 multipart upload
+            // 超过 S3 的 part 数量上限时会直接失败，不发起 multipart upload
             uploader = new S3MultipartUploader(sdkClient, bucket, key, partCount);
             long offset = 0;
             int partNumber = 1;
@@ -133,7 +134,7 @@ public class S3FileUploader {
      * 有界文件输入流
      * <p>
      * 从本地文件的指定偏移开始，最多读取指定长度。每次调用 {@link #create()} 都会打开一个新的
-     * {@link RandomAccessFile}，因此请求体可以被完整重放（应用层重试与 SDK 内部重试都能重新读取）。
+     * {@link RandomAccessFile}，因此 AWS SDK 内部 retry 时请求体可以从相同范围完整重放。
      * </p>
      */
     private static class BoundedFileInputStream extends BoundedInputStream {

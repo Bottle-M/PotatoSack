@@ -2,8 +2,6 @@ package indi.somebottle.potatosack.clients.s3.entities;
 
 import indi.somebottle.potatosack.clients.base.entities.FileItem;
 
-import java.time.Instant;
-
 /**
  * S3 项目实体
  * <p>
@@ -33,32 +31,18 @@ public class S3Item implements FileItem {
     private final long size;
 
     /**
-     * object 的 ETag，仅用于诊断，可能为 null
-     */
-    private final String eTag;
-
-    /**
-     * 最后修改时间，仅用于诊断，可能为 null
-     */
-    private final Instant lastModified;
-
-    /**
      * 构造 S3 项目
      *
      * @param name         basename（不带前缀和结尾 {@code /}）
      * @param key          完整 object key 或虚拟目录 prefix
      * @param folder       是否为目录
      * @param size         大小（字节数）
-     * @param eTag         ETag，可为 null
-     * @param lastModified 最后修改时间，可为 null
      */
-    public S3Item(String name, String key, boolean folder, long size, String eTag, Instant lastModified) {
+    public S3Item(String name, String key, boolean folder, long size) {
         this.name = name;
         this.key = key;
         this.folder = folder;
         this.size = size;
-        this.eTag = eTag;
-        this.lastModified = lastModified;
     }
 
     /**
@@ -67,12 +51,10 @@ public class S3Item implements FileItem {
      * @param name         basename
      * @param key          完整 object key
      * @param size         大小（字节数）
-     * @param eTag         ETag，可为 null
-     * @param lastModified 最后修改时间，可为 null
      * @return 文件类型的 S3Item
      */
-    public static S3Item file(String name, String key, long size, String eTag, Instant lastModified) {
-        return new S3Item(name, key, false, size, eTag, lastModified);
+    public static S3Item file(String name, String key, long size) {
+        return new S3Item(name, key, false, size);
     }
 
     /**
@@ -86,7 +68,7 @@ public class S3Item implements FileItem {
      * @return 目录类型的 S3Item，大小为 0
      */
     public static S3Item folder(String name, String prefix) {
-        return new S3Item(name, prefix, true, 0L, null, null);
+        return new S3Item(name, prefix, true, 0L);
     }
 
     @Override
@@ -125,24 +107,6 @@ public class S3Item implements FileItem {
      */
     public String getKey() {
         return key;
-    }
-
-    /**
-     * 获得 object 的 ETag
-     *
-     * @return ETag，虚拟目录或未知时为 null
-     */
-    public String getETag() {
-        return eTag;
-    }
-
-    /**
-     * 获得最后修改时间
-     *
-     * @return 最后修改时间，虚拟目录或未知时为 null
-     */
-    public Instant getLastModified() {
-        return lastModified;
     }
 
     @Override

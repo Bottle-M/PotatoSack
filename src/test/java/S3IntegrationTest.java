@@ -1,12 +1,16 @@
+import indi.somebottle.potatosack.clients.base.entities.FileItem;
+import indi.somebottle.potatosack.clients.s3.S3Client;
 import indi.somebottle.potatosack.clients.s3.S3FileUploader;
 import indi.somebottle.potatosack.clients.s3.S3MultipartUploader;
 import indi.somebottle.potatosack.clients.s3.S3StreamedZipUploader;
 import indi.somebottle.potatosack.clients.s3.utils.S3PathUtils;
 import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
+import indi.somebottle.potatosack.utils.Config;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.bukkit.configuration.file.YamlConfiguration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -33,6 +37,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.URI;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
@@ -42,6 +47,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import sun.misc.Unsafe;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -329,7 +335,7 @@ public class S3IntegrationTest {
         S3MultipartUploader uploader = new S3MultipartUploader(sdkClient, bucket(), key, 1);
         byte[] payload = new byte[1024];
         try {
-            // part number 设为 0 会被 S3 拒绝，从而触发应用层重试并最终失败
+            // part number 0 会在发请求前被本地校验拒绝。
             uploader.uploadPart(0, payload.length, () -> new java.io.ByteArrayInputStream(payload));
             uploader.completeUpload();
         } catch (Exception expected) {
@@ -353,9 +359,6 @@ public class S3IntegrationTest {
         putString(backupPrefix + "/backup.json", "record");
         putString(backupPrefix + "/incre000001.zip", "incre");
         putString(backupPrefix + "/nested/deep.bin", "deep");
-        // 模拟服务端已存在的目录 marker
-        sdkClient.putObject(PutObjectRequest.builder().bucket(bucket()).key(backupPrefix + "/").build(),
-                RequestBody.fromBytes(new byte[0]));
         // 同级的另一组备份不应被误删
         String siblingPrefix = key("PotatoSack/020240105000002");
         putString(siblingPrefix + "/full.zip", "keep");
@@ -373,6 +376,53 @@ public class S3IntegrationTest {
         // 重复删除同一个 prefix 必须幂等成功
         deleteByPrefix(backupPrefix + "/");
         cleanup();
+    }
+
+    /**
+     * PotatoSack S3Client 契约：真正通过插件 client 覆盖 upload/get/list/download/recursive delete。
+     */
+    @Test
+    public void testPotatoSackS3ClientContract() throws Exception {
+        cleanup();
+        S3Client client = new S3Client(inMemoryS3Config());
+        try {
+            String remoteDir = "PotatoSack/client-contract";
+            String remoteFile = remoteDir + "/payload.bin";
+            byte[] content = "potatosack-client-contract".getBytes(StandardCharsets.UTF_8);
+
+            File source = File.createTempFile("potatosack-it-client-upload", ".bin");
+            source.deleteOnExit();
+            Files.write(source.toPath(), content);
+            assertTrue("S3Client.uploadFile 应成功",
+                    client.uploadFile(source.getAbsolutePath(), remoteFile));
+
+            FileItem item = client.getItem(remoteFile);
+            assertNotNull("S3Client.getItem 应返回刚上传的对象", item);
+            assertFalse(item.isFolder());
+            assertEquals("payload.bin", item.getName());
+            assertEquals(content.length, item.getSize());
+
+            List<FileItem> listed = client.listItems(remoteDir);
+            assertEquals(1, listed.size());
+            assertEquals("payload.bin", listed.get(0).getName());
+            assertFalse(listed.get(0).isFolder());
+
+            File downloaded = File.createTempFile("potatosack-it-client-download", ".bin");
+            downloaded.deleteOnExit();
+            assertTrue("S3Client.downloadFile 应成功",
+                    client.downloadFile(remoteFile, downloaded.getAbsolutePath()));
+            assertArrayEqualsWithMessage(content, Files.readAllBytes(downloaded.toPath()));
+
+            // 增加孙子对象，验证 deleteItem 走 S3Client 自己的递归删除，而不是测试内复制算法。
+            putString(key(remoteDir + "/nested/deep.bin"), "deep");
+            assertTrue("S3Client.deleteItem 应递归删除整个 prefix", client.deleteItem(remoteDir));
+            assertTrue("删除后对象应不存在", client.getItem(remoteFile) == null);
+            assertTrue("删除后虚拟目录应不存在", client.getItem(remoteDir) == null);
+            assertTrue("重复删除不存在 prefix 应幂等成功", client.deleteItem(remoteDir));
+        } finally {
+            client.shutdown();
+            cleanup();
+        }
     }
 
     /**
@@ -414,6 +464,33 @@ public class S3IntegrationTest {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 构造不依赖 Bukkit 插件实例的内存 Config，仅供集成测试创建真实 PotatoSack S3Client。
+     * Config 的生产构造函数会访问插件数据目录，因此测试通过 Unsafe 跳过构造函数，
+     * 只注入 S3Client 实际读取的 YamlConfiguration。
+     */
+    private static Config inMemoryS3Config() throws Exception {
+        Field unsafeField = Unsafe.class.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        Unsafe unsafe = (Unsafe) unsafeField.get(null);
+        Config config = (Config) unsafe.allocateInstance(Config.class);
+
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set(Config.KEYS.CLIENT.BASE_DIR, BASE_DIR);
+        yaml.set(Config.KEYS.CLIENT.S3.ENDPOINT, System.getenv(ENV_ENDPOINT));
+        yaml.set(Config.KEYS.CLIENT.S3.REGION, System.getenv(ENV_REGION));
+        yaml.set(Config.KEYS.CLIENT.S3.BUCKET, bucket());
+        yaml.set(Config.KEYS.CLIENT.S3.ACCESS_KEY, System.getenv(ENV_ACCESS_KEY));
+        yaml.set(Config.KEYS.CLIENT.S3.SECRET_KEY, System.getenv(ENV_SECRET_KEY));
+        yaml.set(Config.KEYS.CLIENT.S3.SESSION_TOKEN, "");
+        yaml.set(Config.KEYS.CLIENT.S3.PATH_STYLE_ACCESS, true);
+
+        Field configField = Config.class.getDeclaredField("config");
+        configField.setAccessible(true);
+        configField.set(config, yaml);
+        return config;
+    }
 
     private static void putString(String key, String content) {
         sdkClient.putObject(PutObjectRequest.builder().bucket(bucket()).key(key)

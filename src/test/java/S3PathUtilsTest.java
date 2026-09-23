@@ -56,14 +56,6 @@ public class S3PathUtilsTest {
     }
 
     @Test
-    public void testIsDirMarker() {
-        assertEquals(true, S3PathUtils.isDirMarker("a/b/"));
-        assertEquals(false, S3PathUtils.isDirMarker("a/b"));
-        assertEquals(false, S3PathUtils.isDirMarker(""));
-        assertEquals(false, S3PathUtils.isDirMarker(null));
-    }
-
-    @Test
     public void testRequireNonRoot() {
         assertEquals("a/b", S3PathUtils.requireNonRoot("/a/b/"));
         assertEquals("a", S3PathUtils.requireNonRoot("a"));

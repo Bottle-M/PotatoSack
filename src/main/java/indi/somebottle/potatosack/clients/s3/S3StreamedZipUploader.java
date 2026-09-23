@@ -31,7 +31,7 @@ import java.util.zip.ZipOutputStream;
  * </p>
  * <p>
  * 压缩冲突、网络错误、线程中断或 close 过程异常都会 abort，不会遗留未完成的 multipart upload。
- * 每次整体重试都会新建 uploadId，不复用已经失败或已 abort 的 upload。
+ * 只有源文件读写冲突会触发整份 ZIP 重做；每次重做都会新建 uploadId。网络请求级 retry 由 AWS SDK 负责。
  * </p>
  *
  * @see S3MultipartUploader
@@ -86,7 +86,8 @@ public class S3StreamedZipUploader {
                     try {
                         Utils.zipSpecificFilesUtil(zout, entries, quiet);
                     } catch (Utils.ZipRWConflictException e) {
-                        // 打包过程中文件被改动，本次压缩作废，按整体重试处理
+                        // 冲突后禁止 close() 时 flush 最后一块；multipart 由 finally abort。
+                        stream.terminate();
                         ConsoleSender.logWarn(e.getMessage());
                         throw e;
                     }
@@ -104,13 +105,18 @@ public class S3StreamedZipUploader {
                 }
                 ConsoleSender.logError("S3 compression / upload gave up after a read-write conflict: " + e.getMessage());
                 return false;
-            } catch (IOException | S3MultipartUploader.TooManyPartsException e) {
-                ConsoleSender.logError("S3 compression / upload failed: " + e.getMessage());
-                if (zipRetryCnt < Constants.ZIP_MAX_RETRY_COUNT) {
-                    ConsoleSender.toConsole("Retrying S3 compression / upload anew...("
-                            + (zipRetryCnt + 1) + "/" + Constants.ZIP_MAX_RETRY_COUNT + ")");
-                    continue;
+            } catch (S3MultipartUploader.TooManyPartsException e) {
+                // 容量上限是确定性错误；重新压缩相同数据不会改变结果。
+                ConsoleSender.logError("S3 compression / upload rejected: " + e.getMessage());
+                return false;
+            } catch (IOException e) {
+                // OutputStream 只能抛 IOException；若根因是 part 数量超限，仍按确定性容量错误处理。
+                if (e.getCause() instanceof S3MultipartUploader.TooManyPartsException) {
+                    ConsoleSender.logError("S3 compression / upload rejected: " + e.getCause().getMessage());
+                    return false;
                 }
+                // 请求级瞬时网络错误由 AWS SDK 自身重试；这里不重做整份 ZIP。
+                ConsoleSender.logError("S3 compression / upload failed: " + e.getMessage());
                 e.printStackTrace();
                 return false;
             } finally {
@@ -161,14 +167,9 @@ public class S3StreamedZipUploader {
         private int nextPartNumber = 1;
 
         /**
-         * 流是否已经关闭
+         * 流是否已进入终态。terminate 与正常 close 都会置为 true，后续写入/关闭均为空操作
          */
-        private boolean streamClosed = false;
-
-        /**
-         * 是否已标记作废（打包冲突 / 上传失败），作废后 close 不会完成上传
-         */
-        private boolean terminated = false;
+        private boolean closed = false;
 
         UploadOutputStream(S3MultipartUploader uploader) {
             this.uploader = uploader;
@@ -199,8 +200,7 @@ public class S3StreamedZipUploader {
          * 标记本流作废，后续 close 不会完成 multipart upload
          */
         void terminate() {
-            terminated = true;
-            streamClosed = true;
+            closed = true;
             buffer = null;
         }
 
@@ -213,7 +213,7 @@ public class S3StreamedZipUploader {
 
         @Override
         public void write(int b) throws IOException {
-            if (streamClosed || terminated || buffer == null) {
+            if (closed || buffer == null) {
                 return;
             }
             if (writePos >= buffer.length) {
@@ -230,7 +230,7 @@ public class S3StreamedZipUploader {
 
         @Override
         public void write(byte[] b, int off, int len) throws IOException {
-            if (streamClosed || terminated || buffer == null || len <= 0) {
+            if (closed || buffer == null || len <= 0) {
                 return;
             }
             int remaining = len;
@@ -256,11 +256,6 @@ public class S3StreamedZipUploader {
             }
         }
 
-        @Override
-        public void write(byte[] b) throws IOException {
-            write(b, 0, b.length);
-        }
-
         /**
          * 上传缓冲区，失败时把本流标记为作废并向上抛出，避免 close 时再次上传已失败的数据
          */
@@ -279,15 +274,13 @@ public class S3StreamedZipUploader {
 
         @Override
         public void close() throws IOException {
-            if (streamClosed) {
+            if (closed) {
                 return;
             }
-            streamClosed = true;
+            closed = true;
             try {
-                if (!terminated) {
-                    // 上传最后一个非空 part，即使它小于 5 MiB 也允许（ZIP 可能整体不到一个 part）
-                    flushBufferAsPart();
-                }
+                // 上传最后一个非空 part，即使它小于 5 MiB 也允许（ZIP 可能整体不到一个 part）
+                flushBufferAsPart();
             } catch (S3MultipartUploader.TooManyPartsException e) {
                 // close() 只能抛出 IOException，这里包装后向上传播
                 terminate();

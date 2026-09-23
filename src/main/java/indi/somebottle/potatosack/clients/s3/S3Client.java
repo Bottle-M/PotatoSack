@@ -17,6 +17,7 @@ import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
 import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.retry.RetryMode;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -60,7 +61,7 @@ import java.util.List;
  *   <li>目录的存在性由 {@code key + "/"} 下是否存在子 object 决定；</li>
  *   <li>列表通过 {@code delimiter = "/"} 返回直接子对象与 {@code CommonPrefixes}；</li>
  *   <li>删除按 prefix 递归批量删除所有子对象；</li>
- *   <li>若服务端已存在目录 marker object，列表时会将其识别为目录并隐藏，避免同名文件与目录同时出现。</li>
+ *   <li>目录语义只由 prefix / delimiter / CommonPrefixes 表达，不对某类 object 做额外的“目录 marker”分类。</li>
  * </ul>
  * </p>
  * <p>
@@ -101,9 +102,20 @@ public class S3Client extends Client {
     private static final int DOWNLOAD_BUFFER_SIZE = 8192;
 
     /**
-     * 默认 region
+     * S3 建连超时。不要复用 OkHttp 常量：AWS SDK 的 HTTP timeout 语义与 OkHttp 不完全相同。
      */
-    public static final String DEFAULT_REGION = "us-east-1";
+    private static final Duration S3_CONNECTION_TIMEOUT = Duration.ofSeconds(20);
+
+    /**
+     * S3 socket 读超时。multipart part 可能通过较慢的远端链路传输，因此比普通 API 请求更宽松。
+     */
+    private static final Duration S3_SOCKET_TIMEOUT = Duration.ofMinutes(2);
+
+    /**
+     * 单个 S3 API 调用（包含 SDK 内部 retry）的总上限。
+     * 16 MiB part 在慢上行环境中也应有足够时间完成，避免沿用 OkHttp 的短 call timeout。
+     */
+    private static final Duration S3_API_CALL_TIMEOUT = Duration.ofMinutes(10);
 
     /**
      * 小文件上传使用的 Content-Type
@@ -132,11 +144,6 @@ public class S3Client extends Client {
      * 是否配置了自定义 endpoint
      */
     private final boolean hasCustomEndpoint;
-
-    /**
-     * 是否使用 path-style 访问
-     */
-    private final boolean pathStyleAccess;
 
     /**
      * 构造 S3 客户端
@@ -174,17 +181,9 @@ public class S3Client extends Client {
         requireNonEmpty(bucketConfig, Config.KEYS.CLIENT.S3.BUCKET);
         requireNonEmpty(accessKey, Config.KEYS.CLIENT.S3.ACCESS_KEY);
         requireNonEmpty(secretKey, Config.KEYS.CLIENT.S3.SECRET_KEY);
-        // 三段式临时凭证必须同时提供 session token，避免签名与凭证类型不匹配
-        if (!sessionToken.isEmpty() && (accessKey.isEmpty() || secretKey.isEmpty())) {
-            throw new ClientInitializationException("S3 temporary credentials are incomplete: "
-                    + Config.KEYS.CLIENT.S3.SESSION_TOKEN + " is set, but "
-                    + Config.KEYS.CLIENT.S3.ACCESS_KEY + " / " + Config.KEYS.CLIENT.S3.SECRET_KEY + " are missing.");
-        }
-
         this.bucket = bucketConfig;
         this.region = regionConfig;
         this.hasCustomEndpoint = !endpoint.isEmpty();
-        this.pathStyleAccess = usePathStyle;
 
         // ---------------- 2. 构造静态凭证 ----------------
         AwsCredentialsProvider credentialsProvider;
@@ -208,8 +207,8 @@ public class S3Client extends Client {
                 .pathStyleAccessEnabled(usePathStyle)
                 .build();        // URLConnection 是唯一引入的 HTTP 传输实现，见 pom.xml 中对 netty-nio-client / apache-client 的排除
         UrlConnectionHttpClient.Builder httpClientBuilder = UrlConnectionHttpClient.builder()
-                .connectionTimeout(Duration.ofSeconds(Constants.OKHTTP_CONNECT_TIMEOUT))
-                .socketTimeout(Duration.ofSeconds(Constants.OKHTTP_READ_TIMEOUT));
+                .connectionTimeout(S3_CONNECTION_TIMEOUT)
+                .socketTimeout(S3_SOCKET_TIMEOUT);
         // 注意：SDK 的 builder 类型不写成 S3Client.S3ClientBuilder，
         // 否则会优先解析到本插件自己的 S3Client 类而找不到嵌套类型
         software.amazon.awssdk.services.s3.S3ClientBuilder builder =
@@ -225,8 +224,7 @@ public class S3Client extends Client {
                         .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
                         .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
                         .overrideConfiguration(o -> o
-                                .apiCallTimeout(Duration.ofSeconds(Constants.OKHTTP_CALL_TIMEOUT))
-                                .apiCallAttemptTimeout(Duration.ofSeconds(Constants.OKHTTP_WRITE_TIMEOUT))
+                                .apiCallTimeout(S3_API_CALL_TIMEOUT)
                                 // 使用 SDK 标准的指数退避重试策略（含请求级重试）
                                 .retryStrategy(RetryMode.STANDARD));
         if (hasCustomEndpoint) {
@@ -259,22 +257,31 @@ public class S3Client extends Client {
         // 日志只输出非敏感信息
         ConsoleSender.logInfo("S3 client initialized. bucket: " + bucket + ", region: " + region
                 + ", custom endpoint: " + (hasCustomEndpoint ? endpoint : "<AWS default>")
-                + ", path-style access: " + pathStyleAccess);
+                + ", path-style access: " + usePathStyle);
 
-        // ---------------- 4. 最小权限的 bucket 可访问性探测 ----------------
-        verifyBucketAccessible();
-
-        // ---------------- 5. 准备数据前缀（虚拟目录，不创建 marker object） ----------------
-        String dataFolderPath = buildFullPath(Constants.APP_DATA_FOLDER);
         try {
-            if (!ensureFolderExists(dataFolderPath)) {
-                throw new IOException("Failed to prepare S3 data prefix: " + dataFolderPath);
+            // ---------------- 4. 最小权限的 bucket 可访问性探测 ----------------
+            verifyBucketAccessible();
+
+            // ---------------- 5. 准备数据前缀（虚拟目录，不创建 marker object） ----------------
+            String dataFolderPath = buildFullPath(Constants.APP_DATA_FOLDER);
+            try {
+                if (!ensureFolderExists(dataFolderPath)) {
+                    throw new IOException("Failed to prepare S3 data prefix: " + dataFolderPath);
+                }
+            } catch (IllegalArgumentException e) {
+                throw new ClientInitializationException("Invalid S3 data prefix '" + dataFolderPath
+                        + "' derived from " + Config.KEYS.CLIENT.BASE_DIR + ": " + e.getMessage(), e);
             }
-        } catch (IllegalArgumentException e) {
-            throw new ClientInitializationException("Invalid S3 data prefix '" + dataFolderPath
-                    + "' derived from " + Config.KEYS.CLIENT.BASE_DIR + ": " + e.getMessage(), e);
+            ConsoleSender.toConsole("S3 data prefix is ready: " + S3PathUtils.toDirPrefix(S3PathUtils.normalize(dataFolderPath)));
+        } catch (IOException | RuntimeException e) {
+            try {
+                builtClient.close();
+            } catch (Exception closeError) {
+                e.addSuppressed(closeError);
+            }
+            throw e;
         }
-        ConsoleSender.toConsole("S3 data prefix is ready: " + S3PathUtils.toDirPrefix(S3PathUtils.normalize(dataFolderPath)));
     }
 
     /**
@@ -329,11 +336,10 @@ public class S3Client extends Client {
                     for (S3Object object : response.contents()) {
                         String childName = objectChildNameOf(object.key(), prefix);
                         if (childName == null) {
-                            // 明显不属于当前 prefix，或就是 prefix 自身的目录 marker，跳过
+                            // 明显不属于当前 prefix，或就是 prefix 自身，跳过
                             continue;
                         }
-                        items.add(S3Item.file(childName, object.key(), object.size() == null ? 0L : object.size(),
-                                object.eTag(), object.lastModified()));
+                        items.add(S3Item.file(childName, object.key(), object.size() == null ? 0L : object.size()));
                     }
                 }
                 if (response.commonPrefixes() != null) {
@@ -352,24 +358,23 @@ public class S3Client extends Client {
         } catch (S3Exception e) {
             throw new IOException("Failed to list S3 objects. bucket: " + bucket + ", prefix: "
                     + describePrefix(prefix) + ", status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            throw new IOException("Failed to list S3 objects. bucket: " + bucket + ", prefix: "
+                    + describePrefix(prefix) + ", client error: " + e.getMessage(), e);
         }
         return items;
     }
 
     /**
-     * 从子 key 中解析出相对于父 prefix 的 basename
-     * <p>
-     * 同时完成以下过滤：
-     * <ul>
-     *   <li>把以 {@code /} 结尾的目录 marker object 识别为目录并隐藏（返回 null），
-     *       避免同一目录同时以文件形式出现；</li>
-     *   <li>过滤掉不是当前 prefix 直接子项的 key（含 prefix 自身）。</li>
-     * </ul>
-     * </p>
+     * 从子 key 中解析出相对于父 prefix 的 basename。
      *
-     * @param childKey 子 object key 或 common prefix
+     * <p>目录由 ListObjectsV2 的 {@code delimiter = "/"} 和 {@code CommonPrefixes}
+     * 表达；普通 object 不再按“目录 marker”做额外分类。这里仅过滤 prefix 自身、
+     * 非当前 prefix 的 key，以及不是直接子项的防御性异常结果。</p>
+     *
+     * @param childKey 子 object key
      * @param prefix   父目录 prefix（可能为空，代表 bucket 根）
-     * @return 相对 basename（不带结尾 {@code /}）；应被过滤时返回 null
+     * @return 相对名称；非直接子项或 prefix 自身返回 null
      */
     private static String objectChildNameOf(String childKey, String prefix) {
         if (childKey == null || childKey.equals(prefix)) {
@@ -382,13 +387,9 @@ public class S3Client extends Client {
         if (relative.isEmpty()) {
             return null;
         }
-        // 仅保留直接子项：delimiter 已保证这一点，这里再兜一层
+        // delimiter 已负责把子目录汇总到 CommonPrefixes；这里仅作防御性兜底。
         int firstSlash = relative.indexOf('/');
-        if (firstSlash >= 0 && firstSlash != relative.length() - 1) {
-            return null;
-        }
-        if (S3PathUtils.isDirMarker(relative)) {
-            // 目录 marker，隐藏，由 CommonPrefixes 负责表达该目录
+        if (firstSlash >= 0) {
             return null;
         }
         return relative;
@@ -396,10 +397,8 @@ public class S3Client extends Client {
 
     /**
      * 从 S3 CommonPrefix 中解析当前目录下的直接子目录名
-     * <p>
-     * CommonPrefix 的尾斜杠是 delimiter 语义的一部分，不能像普通 object
-     * 的目录 marker 一样过滤掉；这里会先去掉尾斜杠，再返回目录 basename。
-     * </p>
+     * <p>CommonPrefix 的尾斜杠是 delimiter 语义的一部分；这里会先去掉尾斜杠，
+     * 再返回目录 basename。</p>
      */
     private static String commonPrefixChildNameOf(String childPrefix, String prefix) {
         if (childPrefix == null || childPrefix.equals(prefix)) {
@@ -450,17 +449,12 @@ public class S3Client extends Client {
         try {
             HeadObjectRequest request = HeadObjectRequest.builder().bucket(bucket).key(key).build();
             HeadObjectResponse response = sdkClient.headObject(request);
-            if (S3PathUtils.isDirMarker(key)) {
-                // 服务端已存在目录 marker，按目录返回
-                return S3Item.folder(lastSegmentOf(S3PathUtils.normalize(key)), S3PathUtils.normalize(key));
-            }
             return S3Item.file(lastSegmentOf(key), key,
-                    response.contentLength() == null ? 0L : response.contentLength(),
-                    response.eTag(), response.lastModified());
+                    response.contentLength() == null ? 0L : response.contentLength());
         } catch (NoSuchKeyException e) {
             // 精确对象不存在，继续判断虚拟目录
         } catch (S3Exception e) {
-            if (!isNotFound(e)) {
+            if (!isObjectNotFound(e)) {
                 throw new IOException("Failed to head S3 object. bucket: " + bucket + ", key: " + key
                         + ", status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
             }
@@ -483,10 +477,8 @@ public class S3Client extends Client {
                 return S3Item.folder(lastSegmentOf(key), key);
             }
         } catch (S3Exception e) {
-            if (!isNotFound(e)) {
-                throw new IOException("Failed to check S3 prefix existence. bucket: " + bucket + ", prefix: "
-                        + key + "/, status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
-            }
+            throw new IOException("Failed to check S3 prefix existence. bucket: " + bucket + ", prefix: "
+                    + key + "/, status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
         } catch (Exception e) {
             throw new IOException("Failed to check S3 prefix existence. bucket: " + bucket + ", prefix: " + key
                     + "/, reason: " + e.getMessage(), e);
@@ -541,12 +533,15 @@ public class S3Client extends Client {
             ConsoleSender.logWarn("S3 download failed, object no longer exists. key: " + key);
             return false;
         } catch (S3Exception e) {
-            if (isNotFound(e)) {
+            if (isObjectNotFound(e)) {
                 ConsoleSender.logWarn("S3 download failed, object no longer exists. key: " + key);
                 return false;
             }
             throw new IOException("Failed to download S3 object. bucket: " + bucket + ", key: " + key
                     + ", status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            throw new IOException("Failed to download S3 object. bucket: " + bucket + ", key: " + key
+                    + ", client error: " + e.getMessage(), e);
         }
     }
 
@@ -590,6 +585,10 @@ public class S3Client extends Client {
         } catch (S3Exception e) {
             ConsoleSender.logError("S3 upload failed. bucket: " + bucket + ", key: " + key
                     + ", status: " + describeStatus(e) + ", message: " + e.getMessage());
+            return false;
+        } catch (SdkClientException e) {
+            ConsoleSender.logError("S3 upload failed. bucket: " + bucket + ", key: " + key
+                    + ", client error: " + e.getMessage());
             return false;
         }
     }
@@ -643,7 +642,6 @@ public class S3Client extends Client {
      *   <li>每批最多 1000 个 key，使用 DeleteObjects 批量删除，不为每个子对象单独发 DELETE；</li>
      *   <li>只要 DeleteObjectsResponse 中出现任意单项错误，整体返回失败并记录 key/code/message；</li>
      *   <li>没有匹配对象时按幂等删除成功处理，便于重试旧备份清理；</li>
-     *   <li>目录 marker object 也会被一并清理，不会遗留 {@code backupId/} marker。</li>
      * </ul>
      * </p>
      * <p>
@@ -669,7 +667,7 @@ public class S3Client extends Client {
         keysToDelete.add(key);
         String prefix = S3PathUtils.toDirPrefix(key);
         try {
-            // 分页列出所有以该 prefix 开头的 object（含目录 marker）
+            // 分页列出所有以该 prefix 开头的 object
             String continuationToken = null;
             do {
                 ListObjectsV2Request request = ListObjectsV2Request.builder()
@@ -701,6 +699,9 @@ public class S3Client extends Client {
         } catch (S3Exception e) {
             throw new IOException("Failed to delete S3 objects. bucket: " + bucket + ", key: " + key
                     + ", status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            throw new IOException("Failed to delete S3 objects. bucket: " + bucket + ", key: " + key
+                    + ", client error: " + e.getMessage(), e);
         }
     }
 
@@ -732,6 +733,9 @@ public class S3Client extends Client {
         } catch (S3Exception e) {
             throw new IOException("Failed to batch delete S3 objects. bucket: " + bucket + ", count: " + keys.size()
                     + ", status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
+        } catch (SdkClientException e) {
+            throw new IOException("Failed to batch delete S3 objects. bucket: " + bucket + ", count: " + keys.size()
+                    + ", client error: " + e.getMessage(), e);
         }
     }
 
@@ -790,7 +794,7 @@ public class S3Client extends Client {
                 throw new ClientInitializationException("Access denied to S3 bucket '" + bucket + "' (" + endpointDescription()
                         + "). Please check " + Config.KEYS.CLIENT.S3.ACCESS_KEY + " / "
                         + Config.KEYS.CLIENT.S3.SECRET_KEY + " / " + Config.KEYS.CLIENT.S3.SESSION_TOKEN
-                        + " and make sure the credentials have s3:ListBucket / s3:HeadBucket permission on this bucket.", e);
+                        + " and make sure the credentials have s3:ListBucket permission on this bucket.", e);
             }
             if (status == 404) {
                 throw new ClientInitializationException("S3 bucket '" + bucket + "' configured in "
@@ -798,9 +802,9 @@ public class S3Client extends Client {
                         + ". Please check the bucket name and " + Config.KEYS.CLIENT.S3.ENDPOINT + ".", e);
             }
             if (status == 301 || status == 400) {
-                throw new ClientInitializationException("S3 bucket '" + bucket + "' is not reachable with region '"
-                        + region + "' (" + Config.KEYS.CLIENT.S3.REGION + "). "
-                        + "The region must match the bucket's real region. Status: " + describeStatus(e), e);
+                throw new ClientInitializationException("S3 bucket '" + bucket + "' is not reachable with the current region / endpoint / signing configuration. "
+                        + "Configured region: '" + region + "' (" + Config.KEYS.CLIENT.S3.REGION + "). Status: "
+                        + describeStatus(e), e);
             }
             throw new ClientInitializationException("Failed to access S3 bucket '" + bucket + "' (" + endpointDescription()
                     + "). Status: " + describeStatus(e) + ", message: " + e.getMessage(), e);
@@ -894,12 +898,12 @@ public class S3Client extends Client {
      * @param e S3 异常
      * @return 是否为 not-found
      */
-    private static boolean isNotFound(S3Exception e) {
-        if (e.statusCode() == 404) {
-            return true;
-        }
+    private static boolean isObjectNotFound(S3Exception e) {
         String code = e.awsErrorDetails() == null ? null : e.awsErrorDetails().errorCode();
-        return "NoSuchKey".equals(code) || "NotFound".equals(code) || "NoSuchBucket".equals(code);
+        if (e instanceof NoSuchBucketException || "NoSuchBucket".equals(code)) {
+            return false;
+        }
+        return e.statusCode() == 404 || "NoSuchKey".equals(code) || "NotFound".equals(code);
     }
 
     /**
