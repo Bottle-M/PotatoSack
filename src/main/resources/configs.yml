@@ -3,6 +3,7 @@ version: '${project.version}'
 
 client:
     # Choose the Cloud Storage Service Provider you want to use.
+    # Supported values: onedrive / dropbox / s3
     use: onedrive
     # Base directory path for storing backups in cloud storage (default: empty, meaning root directory)
     # Example: if set to "my/backups", data will be stored at "my/backups/PotatoSack/..."
@@ -32,6 +33,33 @@ client:
         app-key:
         app-secret:
         refresh-token:
+    # S3 / S3-compatible object storage Configuration (AWS S3, QCloud COS, Aliyun OSS, ...)
+    # Note: Only static credentials (access key / secret key, optionally with a session token) are supported.
+    # Note: Required IAM permissions on the target bucket:
+    #       s3:ListBucket, s3:GetObject, s3:PutObject, s3:AbortMultipartUpload, s3:DeleteObject
+    s3:
+        # Custom endpoint. Leave it empty to use the AWS S3 endpoint selected by the SDK according to "region".
+        # For MinIO / other self-hosted services, fill in the full endpoint including the scheme, e.g.
+        #   endpoint: "http://127.0.0.1:9000"
+        #   endpoint: "https://minio.example.com"
+        endpoint: ""
+        # Region used for signing. It must match the signature configuration of the server.
+        # AWS S3 users should set it to the real region of the bucket; most S3-compatible services
+        # accept the default value "us-east-1" (MinIO's default region is also us-east-1).
+        region: "us-east-1"
+        # The object storage bucket name.
+        # The plugin stores data under "<base-dir>/PotatoSack/..." inside this bucket.
+        bucket: ""
+        # Access Key
+        access-key: ""
+        # Secret Key
+        secret-key: ""
+        # Session token, only needed for temporary credentials. Leave it empty for normal AK/SK.
+        session-token: ""
+        # Whether to use path-style access (http://endpoint/bucket/key) instead of
+        # virtual-hosted-style access (http://bucket.endpoint/key).
+        # MinIO and most custom endpoints require true; AWS S3 itself usually keeps false.
+        path-style-access: false
 
 # The number of full backups to keep, actually it refers to "groups of backups" to keep.
 # Note: "A group of backups" consists of a full backup and a set of incremental backups following it (before the next full backup).

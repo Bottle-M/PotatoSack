@@ -15,6 +15,7 @@
     <properties>
         <java.version>1.8</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <aws.sdk.version>2.31.78</aws.sdk.version>
     </properties>
     <url>https://github.com/Bottle-M</url>
 
@@ -107,6 +108,33 @@
             <groupId>com.dynatrace.hash4j</groupId>
             <artifactId>hash4j</artifactId>
             <version>0.30.0</version>
+        </dependency>
+        <!-- AWS SDK for Java v2（仅引入 S3 模块）。版本由上方 aws.sdk.version 属性锁定；
+             S3 模块所需的其他 SDK 子模块会由其传递依赖自动引入 -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.sdk.version}</version>
+            <exclusions>
+                <!-- S3 客户端只使用 url-connection-client 作为 HTTP 传输实现。
+                     下面两个可选的传输实现会被 SDK 默认传递引入，排除它们可以保证
+                     只存在一种 HTTP 实现，同时避免把 Netty / aws-crt（19 MB）/
+                     Apache HttpClient 一并打入插件 JAR -->
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- S3 客户端使用的同步 HTTP 传输实现（基于 URLConnection） -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${aws.sdk.version}</version>
         </dependency>
     </dependencies>
 </project>
