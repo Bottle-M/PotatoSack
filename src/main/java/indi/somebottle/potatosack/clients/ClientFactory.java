@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.clients;
 import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.clients.dropbox.DropboxClient;
 import indi.somebottle.potatosack.clients.onedrive.OneDriveClient;
+import indi.somebottle.potatosack.clients.s3.S3Client;
 import indi.somebottle.potatosack.utils.Config;
 
 /**
@@ -16,6 +17,7 @@ import indi.somebottle.potatosack.utils.Config;
  * <ul>
  *   <li>{@code "onedrive"} - Microsoft OneDrive 客户端</li>
  *   <li>{@code "dropbox"} - Dropbox 客户端</li>
+ *   <li>{@code "s3"} - AWS S3 / 兼容 S3 的对象存储客户端</li>
  * </ul>
  * </p>
  * <p>
@@ -30,6 +32,7 @@ import indi.somebottle.potatosack.utils.Config;
  * @see Client
  * @see indi.somebottle.potatosack.clients.onedrive.OneDriveClient
  * @see indi.somebottle.potatosack.clients.dropbox.DropboxClient
+ * @see indi.somebottle.potatosack.clients.s3.S3Client
  */
 public class ClientFactory {
     /**
@@ -38,8 +41,11 @@ public class ClientFactory {
      * 根据指定的客户端类型字符串（不区分大小写），创建并返回对应的云存储客户端对象。
      * 客户端会使用提供的配置对象进行初始化。
      * </p>
+     * <p>
+     * 注意：各客户端所需的配置校验集中在对应客户端的构造函数中进行，工厂不重复校验。
+     * </p>
      *
-     * @param type   云存储客户端类型（不区分大小写），支持 {@code "onedrive"} 和 {@code "dropbox"}
+     * @param type   云存储客户端类型（不区分大小写），支持 {@code "onedrive"}、{@code "dropbox"} 和 {@code "s3"}
      * @param config 配置对象，包含客户端初始化所需的认证信息和其他配置
      * @return 初始化完成的云存储客户端实例
      * @throws IllegalArgumentException 当传入不支持的客户端类型时抛出
@@ -54,6 +60,8 @@ public class ClientFactory {
                 return new OneDriveClient(config);
             case "dropbox":
                 return new DropboxClient(config);
+            case "s3":
+                return new S3Client(config);
             default:
                 throw new IllegalArgumentException("Unsupported client type: " + type);
         }

@@ -72,7 +72,7 @@ public class Config {
          */
         interface CLIENT {
             /**
-             * 使用的云存储类型（如 "onedrive" 或 "dropbox"）
+             * 使用的云存储类型（如 "onedrive"、"dropbox" 或 "s3"）
              */
             String USE = "client.use";
 
@@ -128,6 +128,57 @@ public class Config {
                  * Dropbox OAuth2 刷新令牌
                  */
                 String REFRESH_TOKEN = "client.dropbox.refresh-token";
+            }
+
+            /**
+             * S3 / 兼容 S3 的客户端配置
+             * <p>
+             * 目前只支持静态凭证（AK/SK，可选 session token），
+             * 不实现 STS AssumeRole、Web Identity 和实例角色等动态凭证链。
+             * </p>
+             */
+            interface S3 {
+                /**
+                 * 自定义 endpoint
+                 * <p>
+                 * 留空时由 AWS SDK 根据 region 选择 AWS S3 endpoint；
+                 * 使用 MinIO 等自建或其他兼容服务时必须填写，且要带 http:// 或 https:// 前缀。
+                 * </p>
+                 */
+                String ENDPOINT = "client.s3.endpoint";
+
+                /**
+                 * 签名所用区域（region），需要与服务端签名配置匹配
+                 */
+                String REGION = "client.s3.region";
+
+                /**
+                 * 对象存储桶（bucket）名称
+                 */
+                String BUCKET = "client.s3.bucket";
+
+                /**
+                 * 访问密钥 ID
+                 */
+                String ACCESS_KEY = "client.s3.access-key";
+
+                /**
+                 * 访问密钥 Secret
+                 */
+                String SECRET_KEY = "client.s3.secret-key";
+
+                /**
+                 * 临时凭证的 session token，普通 AK/SK 留空
+                 */
+                String SESSION_TOKEN = "client.s3.session-token";
+
+                /**
+                 * 是否使用 path-style 访问
+                 * <p>
+                 * MinIO 及部分自定义 endpoint 通常需要设置为 true。
+                 * </p>
+                 */
+                String PATH_STYLE_ACCESS = "client.s3.path-style-access";
             }
         }
 
@@ -401,6 +452,27 @@ public class Config {
         }
         if (config.get(KEYS.CLIENT.DROPBOX.REFRESH_TOKEN) == null) {
             config.set(KEYS.CLIENT.DROPBOX.REFRESH_TOKEN, "");
+        }
+        if (config.get(KEYS.CLIENT.S3.ENDPOINT) == null) {
+            config.set(KEYS.CLIENT.S3.ENDPOINT, "");
+        }
+        if (config.get(KEYS.CLIENT.S3.REGION) == null) {
+            config.set(KEYS.CLIENT.S3.REGION, "us-east-1");
+        }
+        if (config.get(KEYS.CLIENT.S3.BUCKET) == null) {
+            config.set(KEYS.CLIENT.S3.BUCKET, "");
+        }
+        if (config.get(KEYS.CLIENT.S3.ACCESS_KEY) == null) {
+            config.set(KEYS.CLIENT.S3.ACCESS_KEY, "");
+        }
+        if (config.get(KEYS.CLIENT.S3.SECRET_KEY) == null) {
+            config.set(KEYS.CLIENT.S3.SECRET_KEY, "");
+        }
+        if (config.get(KEYS.CLIENT.S3.SESSION_TOKEN) == null) {
+            config.set(KEYS.CLIENT.S3.SESSION_TOKEN, "");
+        }
+        if (config.get(KEYS.CLIENT.S3.PATH_STYLE_ACCESS) == null) {
+            config.set(KEYS.CLIENT.S3.PATH_STYLE_ACCESS, false);
         }
         if (config.get(KEYS.MAX_FULL_BACKUPS_RETAINED) == null) {
             config.set(KEYS.MAX_FULL_BACKUPS_RETAINED, 10);
