@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
@@ -104,7 +105,8 @@ public class Main {
                 throw new Utils.ExitException(1);
             }
             // 再扫描有没有缺失增量备份 incre*.zip
-            List<BackupRecord.IncreBackupHistoryItem> increHistory = backupRecord.getIncreBackupsHistory();
+            List<BackupRecord.IncreBackupHistoryItem> increHistory =
+                    discoverAvailableIncrementals(selectedDir, backupRecord.getIncreBackupsHistory());
             for (BackupRecord.IncreBackupHistoryItem item : increHistory) {
                 File increBackupFile = new File(selectedDir, "incre" + item.getId() + ".zip");
                 if (!increBackupFile.exists()) {
@@ -121,7 +123,10 @@ public class Main {
                 // 有增量备份的话，让用户选择一直合并到哪份增量备份
                 System.out.println("Incremental backups: ");
                 for (int i = 0; i < increHistory.size(); i++) {
-                    System.out.println("\t" + (i + 1) + ". incre" + increHistory.get(i).getId() + " - Time: " + Utils.timestampToDate(increHistory.get(i).getTime()));
+                    BackupRecord.IncreBackupHistoryItem item = increHistory.get(i);
+                    String time = item.getTime() == 0 ? " (not listed in backup.json)" :
+                            " - Time: " + Utils.timestampToDate(item.getTime());
+                    System.out.println("\t" + (i + 1) + ". incre" + item.getId() + time);
                 }
                 System.out.println("Up to which incremental backup do you want to merge? Type the number before the option and press enter: ");
                 int selected;
@@ -231,6 +236,42 @@ public class Main {
             // 最后按 exitCode 退出
             System.exit(exitCode);
         }
+    }
+
+    /**
+     * 寻找可用的增量备份
+     *
+     * backup.json 上传失败时，已完成上传的下一份增量 ZIP 可能未存入历史记录
+     *
+     * @param groupDir 备份组目录
+     * @param declared backup.json 中声明存在的增量备份 zip
+     * @return 实际存在的增量备份项
+     */
+    static List<BackupRecord.IncreBackupHistoryItem> discoverAvailableIncrementals(
+            File groupDir, List<BackupRecord.IncreBackupHistoryItem> declared) {
+        List<BackupRecord.IncreBackupHistoryItem> available =
+                declared == null ? new ArrayList<>() : new ArrayList<>(declared);
+        long next = 1;
+        if (!available.isEmpty()) {
+            // backup.json 有可用的增量备份
+            try {
+                // 检查最后一个声明的 .zip 文件的下一个增量备份存不存在（上传失败时可能最后一个增量 zip 没有成果写入 backup.json 元数据）
+                next = Long.parseLong(available.get(available.size() - 1).getId()) + 1;
+            } catch (NumberFormatException e) {
+                return available;
+            }
+        }
+        while (next > 0) {
+            // 如果存在 backup.json 中遗漏的增量备份 zip 就算入。
+            String id = String.format("%06d", next);
+            if (!new File(groupDir, "incre" + id + ".zip").isFile())
+                break;
+            BackupRecord.IncreBackupHistoryItem item = new BackupRecord.IncreBackupHistoryItem();
+            item.setId(id);
+            available.add(item);
+            next++;
+        }
+        return available;
     }
 
     /**

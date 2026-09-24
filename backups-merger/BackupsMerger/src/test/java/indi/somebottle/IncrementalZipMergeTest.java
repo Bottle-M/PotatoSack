@@ -30,7 +30,6 @@ import static indi.somebottle.RegionFixtures.isDelta;
 import static indi.somebottle.RegionFixtures.parseRegion;
 import static indi.somebottle.RegionFixtures.region;
 import static indi.somebottle.RegionFixtures.stateOf;
-import static indi.somebottle.RegionFixtures.timestampTable;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -49,6 +48,23 @@ public class IncrementalZipMergeTest {
 
     @Rule
     public final TemporaryFolder tmp = new TemporaryFolder();
+
+    @Test
+    public void testUnlistedUploadedIncrementalsAreSelectableInOrder() throws Exception {
+        File group = tmp.newFolder();
+        BackupRecord.IncreBackupHistoryItem first = new BackupRecord.IncreBackupHistoryItem();
+        first.setId("000001");
+        first.setTime(100);
+        Files.write(new File(group, "incre000001.zip").toPath(), new byte[0]);
+        Files.write(new File(group, "incre000002.zip").toPath(), new byte[0]);
+        Files.write(new File(group, "incre000004.zip").toPath(), new byte[0]);
+        List<BackupRecord.IncreBackupHistoryItem> discovered =
+                Main.discoverAvailableIncrementals(group, List.of(first));
+        assertEquals(2, discovered.size());
+        assertEquals("000002", discovered.get(1).getId());
+        assertEquals(0, discovered.get(1).getTime());
+        assertEquals(2, Main.discoverAvailableIncrementals(group, null).size());
+    }
 
     // ------------------------------------------------------------------ 主流程
 
@@ -73,7 +89,7 @@ public class IncrementalZipMergeTest {
                 "world/level.dat", text("LEVEL")));
 
         // 增量 1: delta .mca（改一个区块、删一个区块）+ 新的 .mcc + 普通文件
-        byte[] deltaBytes = delta(chunk(5, 3, chunkData(55, 3)), del(1));
+        byte[] deltaBytes = delta(chunk(5, 3, 5001, chunkData(55, 3)), del(1, 2001));
         File incre1Zip = zip(groupDir, "incre000001.zip", entries(
                 REGION, deltaBytes,
                 "world/region/r.0.0.mcc", text("MCC-NEW"),
@@ -98,8 +114,10 @@ public class IncrementalZipMergeTest {
         assertEquals("delta 里删除的区块应当消失", ChunkState.DELETED, stateOf(state, 1));
         assertEquals("delta 里改动的区块应当生效", new ChunkState(3, chunkData(55, 3)), stateOf(state, 5));
         assertEquals("未出现在 delta 里的区块沿用基线", new ChunkState(1, chunkData(0, 1)), stateOf(state, 0));
-        assertArrayEquals("时间戳表沿用基线（delta 不携带新时间戳）",
-                timestampTable(fullRegion), timestampTable(afterFirst));
+        long[] timestamps = RegionFixtures.timesOf(afterFirst);
+        assertEquals(1000L, timestamps[0]);
+        assertEquals(2001L, timestamps[1]);
+        assertEquals(5001L, timestamps[5]);
         assertEquals("MCC-NEW", new String(read(file(restoreDir, "world/region/r.0.0.mcc")), StandardCharsets.UTF_8));
         assertEquals("EXTRA", new String(read(file(restoreDir, "world/data/extra.txt")), StandardCharsets.UTF_8));
 
@@ -118,7 +136,7 @@ public class IncrementalZipMergeTest {
     }
 
     @Test
-    public void testOldFormatRawOnlyBackupGroupStillMerges() throws Exception {
+    public void testRawOnlyBackupGroupStillMerges() throws Exception {
         File root = tmp.newFolder();
         File restoreDir = new File(root, "restore");
         assertTrue(restoreDir.mkdirs());
@@ -130,7 +148,7 @@ public class IncrementalZipMergeTest {
 
         assertTrue(Utils.unzip(fullZip, restoreDir));
         assertTrue(Utils.mergeIncrementalZip(increZip, restoreDir));
-        assertArrayEquals("旧格式（全部 raw .mca）应当与改造前行为一致", increRegion, read(file(restoreDir, REGION)));
+        assertArrayEquals("完整 .mca 条目应当原样覆盖", increRegion, read(file(restoreDir, REGION)));
         assertEquals("motd=B", new String(read(file(restoreDir, "server.properties")), StandardCharsets.UTF_8));
         assertNoTempFilesLeft(restoreDir);
     }
