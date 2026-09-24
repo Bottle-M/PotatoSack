@@ -34,7 +34,7 @@ import static org.junit.Assert.fail;
  * <p>
  * 不访问网络：用一个记录调用的假 SDK 客户端（JDK 动态代理）替代真实的
  * {@code software.amazon.awssdk.services.s3.S3Client}，覆盖 part number 规则、
- * ETag 收集、最后小 part、10,000 part 上限与 abort 语义。
+ * ETag 收集、请求体重放时的流关闭、最后小 part、10,000 part 上限与 abort 语义。
  * </p>
  */
 public class S3MultipartUploaderTest {
@@ -50,6 +50,7 @@ public class S3MultipartUploaderTest {
         int failNextUploadParts = 0;
         boolean failComplete = false;
         boolean failAbort = false;
+        boolean replayRequestBody = false;
         int createdUploads = 0;
 
         final InvocationHandler handler = (proxy, method, args) -> {
@@ -69,8 +70,17 @@ public class S3MultipartUploaderTest {
                     // 用于验证 PartBodySupplier 每次都能提供可重放的请求体
                     software.amazon.awssdk.core.sync.RequestBody requestBody =
                             (software.amazon.awssdk.core.sync.RequestBody) args[1];
-                    try (InputStream bodyStream = requestBody.contentStreamProvider().newStream()) {
-                        readBodyLengths.add(bodyStream.readAllBytes().length);
+                    if (replayRequestBody) {
+                        // 第一次的流故意不在这里关闭；provider 在创建第二个流前必须负责关闭它。
+                        InputStream firstStream = requestBody.contentStreamProvider().newStream();
+                        readBodyLengths.add(firstStream.readAllBytes().length);
+                        try (InputStream secondStream = requestBody.contentStreamProvider().newStream()) {
+                            readBodyLengths.add(secondStream.readAllBytes().length);
+                        }
+                    } else {
+                        try (InputStream bodyStream = requestBody.contentStreamProvider().newStream()) {
+                            readBodyLengths.add(bodyStream.readAllBytes().length);
+                        }
                     }
                     if (failNextUploadParts > 0) {
                         failNextUploadParts--;
@@ -168,7 +178,7 @@ public class S3MultipartUploaderTest {
         assertEquals(2L, S3FileUploader.partCountOf(partSize + 1));
         assertEquals(2L, S3FileUploader.partCountOf(partSize * 2));
         assertEquals(3L, S3FileUploader.partCountOf(partSize * 2 + 1));
-        // 10,000 个 part 恰好覆盖 10000 * 16 MiB
+        // 10,000 个 part 恰好覆盖 10000 * 32 MiB
         assertEquals(10000L, S3FileUploader.partCountOf(partSize * 10000L));
         assertEquals(10001L, S3FileUploader.partCountOf(partSize * 10000L + 1));
         // 分片必须大于 S3 对非最后 part 的 5 MiB 下限
@@ -299,6 +309,34 @@ public class S3MultipartUploaderTest {
         assertEquals(2, supplierCalls[0]);
     }
 
+    @Test
+    public void testUploadPartClosesPreviousStreamBeforeSdkReplay() throws Exception {
+        FakeS3 fake = new FakeS3();
+        fake.replayRequestBody = true;
+        S3MultipartUploader uploader = newUploader(fake);
+        byte[] buffer = new byte[16];
+        final int[] openedStreams = {0};
+        final int[] closedStreams = {0};
+        S3MultipartUploader.PartBodySupplier supplier = () -> {
+            openedStreams[0]++;
+            return new ByteArrayInputStream(buffer) {
+                @Override
+                public void close() throws IOException {
+                    closedStreams[0]++;
+                    super.close();
+                }
+            };
+        };
+
+        uploader.uploadPart(1, buffer.length, supplier);
+        uploader.completeUpload();
+
+        assertEquals(2, openedStreams[0]);
+        // 第一个流由 provider 在重放前关闭，第二个流由 SDK（此处为 FakeS3）在请求结束时关闭。
+        assertEquals(2, closedStreams[0]);
+        assertEquals(Arrays.asList(16, 16), fake.readBodyLengths);
+    }
+
     // ==================== abort 语义 ====================
 
     @Test
@@ -399,7 +437,7 @@ public class S3MultipartUploaderTest {
         FakeS3 fake = new FakeS3();
         S3FileUploader uploader = new S3FileUploader(fake.client(), "test-bucket", "key", tempFile);
         assertTrue(uploader.upload());
-        // 两个 part：16 MiB + 7 字节
+        // 两个 part：32 MiB + 7 字节
         assertEquals(Arrays.asList((long) S3MultipartUploader.PART_SIZE, 7L), fake.uploadedPartLengths);
         assertEquals(Arrays.asList(1, 2), fake.uploadedPartNumbers);
         assertEquals(1, fake.submittedParts.size());

@@ -3,6 +3,7 @@ package indi.somebottle.potatosack.clients.s3;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.http.ContentStreamProvider;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
@@ -30,7 +31,7 @@ import java.util.List;
  * <ul>
  *   <li>part number 从 1 开始连续递增；</li>
  *   <li>part 数量上限为 S3 的 10000；</li>
- *   <li>除最后一个 part 外，每个 part 不得小于 5 MiB，因此分片大小取 16 MiB；</li>
+ *   <li>除最后一个 part 外，每个 part 不得小于 5 MiB，因此分片大小取 32 MiB；</li>
  *   <li>上传成功后按 part number 顺序收集 ETag，供 CompleteMultipartUpload 使用。</li>
  * </ul>
  * </p>
@@ -52,9 +53,9 @@ public class S3MultipartUploader {
     public static final int S3_MAX_PART_COUNT = 10000;
 
     /**
-     * 分片大小，16 MiB
+     * 分片大小，32 MiB
      */
-    public static final int PART_SIZE = 16 * 1024 * 1024;
+    public static final int PART_SIZE = 32 * 1024 * 1024;
 
     /**
      * 底层 SDK 客户端
@@ -131,7 +132,8 @@ public class S3MultipartUploader {
     private static void checkPartCount(long partCount) throws TooManyPartsException {
         if (partCount > S3_MAX_PART_COUNT) {
             throw new TooManyPartsException("File is split into " + partCount + " parts, which exceeds the S3 limit of "
-                    + S3_MAX_PART_COUNT + " parts. Please increase the part size or split the file.");
+                    + S3_MAX_PART_COUNT + " parts. With fixed 32 MiB parts, this client only supports one object up to "
+                    + "312.5 GiB.");
         }
     }
 
@@ -175,8 +177,12 @@ public class S3MultipartUploader {
                     .partNumber(partNumber)
                     .contentLength(length)
                     .build();
+            // SDK 失败重试时会重新读取这个 part，每次会通过 newStream 创建新的输入流，
+            // fromInputStreamSupplier 返回的包装器会在创建新流前关掉旧流，避免重试时一直占用文件句柄。
+            ContentStreamProvider replayableBody =
+                    ContentStreamProvider.fromInputStreamSupplier(bodySupplier::newStream);
             UploadPartResponse response = sdkClient.uploadPart(request,
-                    RequestBody.fromContentProvider(bodySupplier, length, "application/octet-stream"));
+                    RequestBody.fromContentProvider(replayableBody, length, "application/octet-stream"));
             completedParts.add(CompletedPart.builder().partNumber(partNumber).eTag(response.eTag()).build());
             uploadedBytes += length;
             ConsoleSender.toConsole("S3 upload part " + partNumber + " succeeded. Chunk: " + length
@@ -290,7 +296,8 @@ public class S3MultipartUploader {
      * part 请求体输入流工厂
      * <p>
      * SDK 在内部 retry 时可能重新读取请求体，因此每次都要返回一个全新的输入流，
-     * 且要能从相同的起始位置重新读取相同的字节范围。
+     * 且要能从相同的起始位置重新读取相同的字节范围。调用方不需要管理前一个流。
+     * {@link #uploadPart(int, long, PartBodySupplier)} 会通过 SDK 的 provider 包装器在重放前关闭它。
      * </p>
      */
     @FunctionalInterface
