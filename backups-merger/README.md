@@ -2,15 +2,13 @@
 
 A tool to merge **a group of backups** into a full backup.
 
-> **Which version do I need?** Since PotatoSack 3.0.0, an incremental backup stores only the changed chunks of a
-> `.mca` file (it still looks like a `.mca`, but the content is in PotatoSack's `PSMCA` delta format), so you need
-> **BackupsMerger 1.1.0 or newer** to restore such a backup group. Older versions only copy `.mca` entries verbatim
-> and would leave an unreadable file in your world. Backup groups made by older PotatoSack versions (increments
-> holding complete `.mca` files) can still be merged normally.
+> **Which version do I need?** Since PotatoSack 3.0.0, an incremental backup stores **only the changed chunks** of a
+> `.mca` file (it still looks like a `.mca`, but the content is in PotatoSack's `PSMCA` delta format), so you need **BackupsMerger 1.1.0 or newer** to restore PotatoSack 3.0.0 backup groups.   
+> BackupsMerger still supports merging old incremental backups (before 3.0.0) that store the complete region files.  
 
 ## Usage
 
-1. Download `BackupsMerger*.jar` at [here](https://github.com/Bottle-M/PotatoSack/releases/latest).  
+1. Download `BackupsMerger*.jar` at [here](https://github.com/Bottle-M/PotatoSack/releases/tag/backups-merger-v1.1.0).  
 2. Download the group of backups you want to restore from the cloud backup directory, unzip them and extract the directory structure as shown below.    
 
     ```text
@@ -26,7 +24,7 @@ A tool to merge **a group of backups** into a full backup.
     └── incre000005.zip  
     ```
 
-    > The `_*.bin` files are the directory record files of the plugin (`.json` files before PotatoSack 3.0.0). BackupsMerger does **not** read them; merging only needs `backup.json` and the zip archives.
+    > The `_*.bin` files are the directory record files of the plugin (they're `.json` files before PotatoSack 3.0.0). BackupsMerger does **not** read them; merging only needs `backup.json` and the zip archives.
 
 3. Execute `java -jar BackupsMerger*.jar`。
 
@@ -52,29 +50,25 @@ A tool to merge **a group of backups** into a full backup.
 
 | Entry in the archive | Behaviour |
 | --- | --- |
-| Ordinary files (`.dat`, `.mcc`, …) | extracted and overwritten as-is |
-| `.mca` holding a complete region file (always the case in `full.zip`; also the case for old versions or when the producer fell back to storing it as-is) | extracted and overwritten as-is |
+| Ordinary files (`.dat`, `.mcc`, ...) | extracted and overwritten as-is |
+| `.mca` holding a complete region file (always the case in `full.zip`; also the case when the producer fell back to storing it as-is) | extracted and overwritten as-is |
 | `.mca` starting with `PSMCA\0` (the 3.0.0 incremental delta format, holding only the changed chunks) | applied onto the region file already restored from the earlier backups, then rewritten as a complete Anvil region file |
-| `deleted.files` | every path listed in it is deleted after the other entries of that increment have been merged; the list itself is removed afterwards |
+| `deleted.files` | every path listed in it is deleted after the other entries of that increment have been merged; the list itself is removed afterwards and will not be left in the final merged `.zip` |
 
 * Only the chunks recorded in a delta are replaced; chunks that are absent from it keep their previous state.
 * A chunk recorded with `0` sectors is removed from the region file.
-* A delta carries no new chunk timestamps, so the 4 KiB timestamp table of the region file header is preserved
-  from the baseline as-is.
-* `.mcc` files are handled as plain files: the stub of such an out-of-band chunk in the `.mca` is copied together
-  with the chunk data.
-* Every `.mca` is written to a temporary file first and then moved over the target file, so a failure never leaves a
-  half-written region file. The temporary files live in the tool's own work directory, which is deleted on exit.
+* `.mcc` files are treated as ordinary files: within `.mca`, a special stub is kept for an external chunk such as `.mcc` to mark that the chunk is external.  
+* Every `.mca` is written to a temporary file first and then moved over the target file (mostly atomically), so a failure won't leave a half-written region file. 
 
 ## Troubleshooting
 
 | Message | Meaning |
 | --- | --- |
-| `Full backup contains an incremental (PSMCA) region entry: …` | `full.zip` holds a delta `.mca`. A full backup must store region files as-is, so this backup group is inconsistent — download it again. |
-| `Incremental region entry … is a PSMCA delta, but there is no baseline region file at …` | this increment needs a region file restored by the earlier backups as its baseline. Check that you selected the right backup group and that `full.zip` contains that region file. |
-| `Invalid delta file …: payload of chunk #N … is truncated` / `… trailing byte(s) …` / `… appears more than once` | that increment is damaged (incomplete upload/download). Download the `incre*.zip` again. |
-| `Invalid base region file …` | the `.mca` already present in the working directory is not a complete region file. |
-| `Refusing zip entry: …` | the archive contains an entry (an absolute path, or one containing `..`) that would be written outside of the working directory; merging stops. |
-| `Ignoring unsafe path in deleted.files: …` | a `deleted.files` line points outside of the restore directory; that line is skipped. |
+| `Full backup contains an incremental (PSMCA) region entry: ...` | `full.zip` holds a delta `.mca`. A full backup must store region files as-is, so this backup group is wrong. |
+| `Incremental region entry ... is a PSMCA delta, but there is no baseline region file at ...` | this increment needs a region file restored by the earlier backups as its baseline. This may be due to corrupted backup data. |
+| `Invalid delta file ...: payload of chunk #N ... is truncated` / `... trailing byte(s) ...` / `... appears more than once` | that increment is damaged (incomplete upload/download). Download the `incre*.zip` again. |
+| `Invalid base region file ...` | the `.mca` already present in the working directory is not a complete region file. |
+| `Refusing zip entry: ...` | the archive contains an entry (an absolute path, or one containing `..`) that would be written outside of the working directory; merging stops. |
+| `Ignoring unsafe path in deleted.files: ...` | a `deleted.files` line points outside of the restore directory; that line is skipped. |
 
 If merging fails, the program reports the error and produces no output archive.

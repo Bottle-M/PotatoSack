@@ -184,7 +184,6 @@ For detailed guidance on obtaining the required key, secret, and refresh-token f
 
 * [OneDrive](./memos/onedrive-guide.md)  
 * [Dropbox](./memos/dropbox-guide.md)  
-* [S3 / S3-compatible](./memos/s3-guide.md)  
 
 ## Ignoring Specific Files From Backup
 

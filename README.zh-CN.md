@@ -179,7 +179,6 @@ paths: [ ]
 
 * [OneDrive](./memos/onedrive-guide.md)  
 * [Dropbox](./memos/dropbox-guide.md)  
-* [S3 / 兼容 S3 的对象存储](./memos/s3-guide.md)  
 
 ## 忽略特定文件的备份
 
