@@ -24,7 +24,7 @@ import java.io.RandomAccessFile;
  * </ol>
  * </p>
  * <p>
- * 分片大小为 {@link S3MultipartUploader#PART_SIZE}（16 MiB），大于 S3 对非最后一个 part
+ * 分片大小为 {@link S3MultipartUploader#PART_SIZE}（32 MiB），大于 S3 对非最后一个 part
  * 的 5 MiB 最小限制；最后一个 part 允许小于该值。
  * </p>
  *

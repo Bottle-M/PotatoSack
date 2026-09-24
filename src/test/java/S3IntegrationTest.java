@@ -248,7 +248,7 @@ public class S3IntegrationTest {
     }
 
     /**
-     * 大文件 multipart：大于 16 MiB 的文件成功完成，所有 part 正确合并
+     * 大文件 multipart：大于 32 MiB 的文件成功完成，所有 part 正确合并
      */
     @Test
     public void testLargeFileMultipartUpload() throws Exception {
@@ -256,7 +256,7 @@ public class S3IntegrationTest {
         String key = key("PotatoSack/large/full.zip");
         File localFile = File.createTempFile("potatosack-it-large", ".zip");
         localFile.deleteOnExit();
-        // 16 MiB + 3 MiB：至少 2 个 part
+        // 32 MiB + 3 MiB：至少 2 个 part
         long size = S3MultipartUploader.PART_SIZE + 3L * 1024 * 1024;
         try (RandomAccessFile raf = new RandomAccessFile(localFile, "rw")) {
             for (long offset = 0; offset < size; offset += 1024 * 1024) {

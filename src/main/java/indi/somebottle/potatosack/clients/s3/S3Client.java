@@ -113,7 +113,7 @@ public class S3Client extends Client {
 
     /**
      * 单个 S3 API 调用（包含 SDK 内部 retry）的总上限。
-     * 16 MiB part 在慢上行环境中也应有足够时间完成，避免沿用 OkHttp 的短 call timeout。
+     * 32 MiB part 在慢上行环境中也应有足够时间完成
      */
     private static final Duration S3_API_CALL_TIMEOUT = Duration.ofMinutes(10);
 

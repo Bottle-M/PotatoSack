@@ -37,6 +37,8 @@ client:
     # Note: Only static credentials (access key / secret key, optionally with a session token) are supported.
     # Note: Required IAM permissions on the target bucket:
     #       s3:ListBucket, s3:GetObject, s3:PutObject, s3:AbortMultipartUpload, s3:DeleteObject
+    # Note: S3 uploads use fixed 32 MiB parts (up to 10,000 parts), so one backup object is limited
+    #       to about 312.5 GiB. Archives approaching hundreds of GiB are not recommended.
     s3:
         # Custom endpoint. Leave it empty to use the AWS S3 endpoint selected by the SDK according to "region".
         # For MinIO / other self-hosted services, fill in the full endpoint including the scheme, e.g.
@@ -89,7 +91,7 @@ stop-full-backup-when-no-player: false
 
 # Whether to upload files while compressing them. (Time-space trade-off)
 # Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
-# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (Each chunk of zip file is only about 15.625 MiB)
+# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (About 15.625 MiB per chunk for OneDrive/Dropbox and 32 MiB for S3.)
 use-streaming-compression-upload: false
 
 # The directory paths that you would like to make backups, can be absolute or relative (relative to server root) paths, example:
