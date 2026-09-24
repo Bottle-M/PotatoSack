@@ -158,7 +158,10 @@ public class Main {
                     throw new Utils.ExitException(1);
                 }
                 // 解压完后根据 deleted.files 清单删除文件
-                applyDeletedFilesSafely(unzipDir, new File(unzipDir, "deleted.files"));
+                if (!applyDeletedFilesSafely(unzipDir, new File(unzipDir, "deleted.files"))) {
+                    System.out.println("Failed to apply deleted.files for " + increBackupFile.getAbsolutePath());
+                    throw new Utils.ExitException(1);
+                }
             }
             // 让用户选择把压缩包输出到哪里
             System.out.println("Save the merged backup as...");
@@ -282,10 +285,11 @@ public class Main {
      *
      * @param unzipDir          恢复目录
      * @param deletedRecordFile deleted.files 文件
+     * @return 是否成功删除清单中的文件以及清单本身
      */
-    static void applyDeletedFilesSafely(File unzipDir, File deletedRecordFile) {
+    static boolean applyDeletedFilesSafely(File unzipDir, File deletedRecordFile) {
         if (!deletedRecordFile.isFile())
-            return;
+            return true;
         Path root = unzipDir.getAbsoluteFile().toPath().normalize();
         // 读出被删除的文件，进行删除
         String[] deletedFilePaths = Utils.readLines(deletedRecordFile);
@@ -310,6 +314,7 @@ public class Main {
             } catch (IOException e) {
                 System.out.println("!!WARNING!! Failed to delete file " + deletedFile.getAbsolutePath()
                         + ": " + e.getMessage());
+                return false;
             }
         }
         // 最后删掉 deleted.files（它在该增量中不是被删除的文件，只是清单本身）
@@ -318,6 +323,8 @@ public class Main {
         } catch (IOException e) {
             System.out.println("!!WARNING!! Failed to delete file " + deletedRecordFile.getAbsolutePath()
                     + ": " + e.getMessage());
+            return false;
         }
+        return true;
     }
 }

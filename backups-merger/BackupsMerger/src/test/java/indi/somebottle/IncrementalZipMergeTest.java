@@ -279,6 +279,24 @@ public class IncrementalZipMergeTest {
         assertTrue("恢复目录本身不能被删除", restoreDir.isDirectory());
     }
 
+    @Test
+    public void testDeletedFilesManifestReportsDeletionFailure() throws Exception {
+        File root = tmp.newFolder();
+        File restoreDir = new File(root, "restore");
+        assertTrue(restoreDir.mkdirs());
+
+        File nonEmptyDirectory = new File(restoreDir, "directory");
+        assertTrue(nonEmptyDirectory.mkdirs());
+        Files.write(new File(nonEmptyDirectory, "child.txt").toPath(), text("keep me"));
+        File manifest = file(restoreDir, "deleted.files");
+        Files.write(manifest.toPath(), text("directory\n"));
+
+        assertFalse("清单中的文件删除失败时应报告失败",
+                Main.applyDeletedFilesSafely(restoreDir, manifest));
+        assertTrue("删除失败的目录应当保留", nonEmptyDirectory.exists());
+        assertTrue("删除失败时清单应当保留以便定位问题", manifest.exists());
+    }
+
     // ------------------------------------------------------------------ 路径与后缀
 
     @Test
