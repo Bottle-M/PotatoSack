@@ -56,16 +56,19 @@ final class RegionFixtures {
      *
      * @param index   区块下标
      * @param sectors 扇区数，0 表示删除
+     * @param timestamp 区块时间戳
      * @param data    区块数据（删除时为 null）
      */
     static final class DeltaRecord {
         final int index;
         final int sectors;
+        final long timestamp;
         final byte[] data;
 
-        private DeltaRecord(int index, int sectors, byte[] data) {
+        private DeltaRecord(int index, int sectors, long timestamp, byte[] data) {
             this.index = index;
             this.sectors = sectors;
+            this.timestamp = timestamp;
             this.data = data;
         }
     }
@@ -74,16 +77,24 @@ final class RegionFixtures {
      * 造一条"删除区块"的 delta 记录
      */
     static DeltaRecord del(int index) {
-        return new DeltaRecord(index, 0, null);
+        return del(index, 0);
+    }
+
+    static DeltaRecord del(int index, long timestamp) {
+        return new DeltaRecord(index, 0, timestamp, null);
     }
 
     /**
      * 造一条"写入区块"的 delta 记录
      */
     static DeltaRecord chunk(int index, int sectors, byte[] data) {
+        return chunk(index, sectors, 0, data);
+    }
+
+    static DeltaRecord chunk(int index, int sectors, long timestamp, byte[] data) {
         if (data.length != sectors * SECTOR_SIZE)
             throw new IllegalArgumentException("区块数据长度必须为 扇区数 * " + SECTOR_SIZE);
-        return new DeltaRecord(index, sectors, data);
+        return new DeltaRecord(index, sectors, timestamp, data);
     }
 
     /**
@@ -109,12 +120,22 @@ final class RegionFixtures {
     static byte[] delta(int declaredCount, List<DeltaRecord> records) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         out.write(McaDeltaMerger.MAGIC, 0, McaDeltaMerger.MAGIC.length);
+        out.write((McaDeltaMerger.DELTA_FORMAT_VERSION >>> 8) & 0xFF);
+        out.write(McaDeltaMerger.DELTA_FORMAT_VERSION & 0xFF);
         out.write((declaredCount >>> 8) & 0xFF);
         out.write(declaredCount & 0xFF);
         for (DeltaRecord record : records) {
             out.write((record.index >>> 8) & 0xFF);
             out.write(record.index & 0xFF);
             out.write(record.sectors & 0xFF);
+            long timestamp = record.timestamp;
+            if (timestamp < 0 || timestamp > 0xFFFFFFFFL)
+                throw new IllegalArgumentException("时间戳必须是 uint32");
+            while ((timestamp & ~0x7FL) != 0) {
+                out.write((int) (timestamp & 0x7F) | 0x80);
+                timestamp >>>= 7;
+            }
+            out.write((int) timestamp);
             if (record.sectors > 0)
                 out.write(record.data, 0, record.data.length);
         }

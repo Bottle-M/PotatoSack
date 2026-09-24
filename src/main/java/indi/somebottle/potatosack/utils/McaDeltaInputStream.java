@@ -2,6 +2,7 @@ package indi.somebottle.potatosack.utils;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -22,11 +23,13 @@ import java.util.zip.CRC32;
  * <p>输入是「当前 `.mca`」与「上一次备份记录中该文件的 1024 个区块最后变更时间戳」，输出为（所有数值均为大端序）:</p>
  *
  * <pre>
- * [ MAGIC (50 53 4D 43 41 00) ] [ uint16 区块数量 ] [
- *     [ uint16 区块下标 (0..1023) ] [ uint8 区块占用扇区数 ] [ 区块数据 (扇区数 * 4 KiB) ]
+ * [ MAGIC (50 53 4D 43 41 00) ] [ uint16 版本 ] [ uint16 区块数量 ] [
+ *     [ uint16 区块下标 (0..1023) ] [ uint8 区块占用扇区数 ]
+ *     [ unsigned LEB128 区块时间戳 ] [ 区块数据 (扇区数 * 4 KiB) ]
  *     ...
  * ]
  * </pre>
+ *
  *
  * <p>区块占用扇区数为 0 表示该区块<b>已被删除</b>，此时不存储区块数据。</p>
  *
@@ -59,6 +62,9 @@ public class McaDeltaInputStream extends InputStream {
      * delta 格式的魔数 `PSMCA\0`，用于让解包方区分"增量 delta"和"原样存储的 .mca"
      */
     public static final byte[] MAGIC = {'P', 'S', 'M', 'C', 'A', 0};
+
+    /** 首次发布的 MCA delta 格式版本 */
+    public static final int DELTA_FORMAT_VERSION = 1;
 
     /**
      * `.mca` 区域文件中区块的数量，固定为 32 * 32
@@ -109,7 +115,7 @@ public class McaDeltaInputStream extends InputStream {
 
     /**
      * 主体数据之前要输出的内容:
-     * delta 模式是 `MAGIC + uint16 区块数量 + 各被删除区块的头部`，原 .mca 模式是整个 8 KiB 头部
+     * delta 模式是 MAGIC + 版本 + 区块数量 + 各被删除区块的记录，原 .mca 模式是整个 8 KiB 头部
      */
     private byte[] prologue = new byte[0];
 
@@ -169,14 +175,16 @@ public class McaDeltaInputStream extends InputStream {
     private ChunkRange curChunk = null;
 
     /**
-     * 待发出的区块头 (uint16 下标 + uint8 占用扇区数)，delta 文件中每个区块数据前都有个区块头
+     * 待发出的区块头 (uint16 下标 + uint8 扇区数 + unsigned LEB128/varint 时间戳)
+     * 8 字节 LEB128 varint 完全足够存放上亿年的秒级时间戳
      */
-    private final byte[] chunkHeader = new byte[3];
+    private final byte[] chunkHeader = new byte[3 + 8];
+    private int chunkHeaderLen = 0;
 
     /**
-     * {@link #chunkHeader} 中已经输出的位置，等于 3 表示没有待发的区块头
+     * {@link #chunkHeader} 中已经输出的位置，等于 chunkHeaderLen 表示没有待发的区块头
      */
-    private int chunkHeaderPos = 3;
+    private int chunkHeaderPos = 0;
 
     /**
      * {@link #read()} 单字节读取用的中转数组
@@ -315,7 +323,7 @@ public class McaDeltaInputStream extends InputStream {
                 fallbackToRaw(header);
                 return;
             }
-            changed.add(new ChunkRange(i, sectors[i], start, end));
+            changed.add(new ChunkRange(i, sectors[i], times[i], start, end));
         }
         int total = changed.size() + deleted.size();
         if (total == 0) {
@@ -335,17 +343,20 @@ public class McaDeltaInputStream extends InputStream {
         }
         chunks = changed;
 
-        // 3. 组装 delta mca 格式的 prologue: MAGIC + uint16 区块数量 + 各被删除区块的头部（它们没有扇区偏移可排序，统一放最前面）
-        prologue = new byte[8 + deleted.size() * 3];
-        System.arraycopy(MAGIC, 0, prologue, 0, MAGIC.length);
-        prologue[6] = (byte) (total >>> 8); // uint16 (6 和 7 这 2 字节) 区块数量
-        prologue[7] = (byte) total;
-        int p = 8;
+        // 删除记录没有扇区偏移，先于按文件内偏移排序的其余记录写出。
+        ByteArrayOutputStream prefix = new ByteArrayOutputStream(10 + deleted.size() * 8);
+        prefix.writeBytes(MAGIC);
+        prefix.write(DELTA_FORMAT_VERSION >>> 8);
+        prefix.write(DELTA_FORMAT_VERSION);
+        prefix.write(total >>> 8);
+        prefix.write(total);
         for (int index : deleted) {
-            prologue[p++] = (byte) (index >>> 8); // uint16 区块下标
-            prologue[p++] = (byte) index;
-            prologue[p++] = 0; // 扇区数为 0 = 该区块已删除
+            prefix.write(index >>> 8);
+            prefix.write(index);
+            prefix.write(0);
+            writeTimestamp(prefix, times[index]); // 删除后头部仍可能保留非零时间戳
         }
+        prologue = prefix.toByteArray();
     }
 
     /**
@@ -383,9 +394,9 @@ public class McaDeltaInputStream extends InputStream {
      */
     private int produce(byte[] b, int off, int len) throws IOException {
         while (true) {
-            // 1. 有待发的区块头就先发它（最多 3 字节，必然能塞下）
-            if (chunkHeaderPos < 3) {
-                int n = Math.min(len, 3 - chunkHeaderPos);
+            // 1. 有待发的区块头（最长 11 字节）就先发它
+            if (chunkHeaderPos < chunkHeaderLen) {
+                int n = Math.min(len, chunkHeaderLen - chunkHeaderPos);
                 System.arraycopy(chunkHeader, chunkHeaderPos, b, off, n);
                 chunkHeaderPos += n;
                 return n;
@@ -424,6 +435,7 @@ public class McaDeltaInputStream extends InputStream {
                 chunkHeader[0] = (byte) (c.index() >>> 8);
                 chunkHeader[1] = (byte) c.index();
                 chunkHeader[2] = (byte) c.sectors();
+                chunkHeaderLen = writeTimestamp(chunkHeader, 3, c.timestamp());
                 chunkHeaderPos = 0;
                 readPos = p;
                 // 已经攒了数据就先把数据交出去，区块头留给下一轮 produce()
@@ -469,6 +481,43 @@ public class McaDeltaInputStream extends InputStream {
     }
 
     /**
+     * 把 MCAnvil 的 uint32 时间戳编码为 unsigned LEB128（varint）。
+     * delta 文件中该字段是变长编码，不是固定 8 字节；当前受源字段限制为 uint32，最多 5 字节。
+     *
+     * @param out       输出缓冲区
+     * @param offset    开始写入的位置
+     * @param timestamp 按无符号数解释的时间戳
+     * @return 写入完成后的下一个位置
+     * @implNote 当前时间戳来自 `.mca` 头部的 uint32 字段，最多编码为 5 字节；调用方应确保
+     *           {@code out} 从 {@code offset} 开始至少有足够空间容纳编码结果。
+     */
+    private static int writeTimestamp(byte[] out, int offset, long timestamp) {
+        int pos = offset;
+        while ((timestamp & ~0x7FL) != 0) {
+            out[pos++] = (byte) ((timestamp & 0x7F) | 0x80);
+            timestamp >>>= 7;
+        }
+        out[pos++] = (byte) timestamp;
+        return pos;
+    }
+
+    /**
+     * 把按无符号数解释的时间戳编码为 unsigned LEB128（varint）并追加到输出流。
+     * delta 文件中该字段是变长编码，不是固定 8 字节；当前受源字段限制为 uint32，最多 5 字节。
+     *
+     * @param out       输出流
+     * @param timestamp 按无符号数解释的时间戳
+     * @throws NullPointerException {@code out} 为 null
+     */
+    private static void writeTimestamp(ByteArrayOutputStream out, long timestamp) {
+        while ((timestamp & ~0x7FL) != 0) {
+            out.write((int) ((timestamp & 0x7F) | 0x80));
+            timestamp >>>= 7;
+        }
+        out.write((int) timestamp);
+    }
+
+    /**
      * 把输入流读满指定数组，或读到末尾为止
      *
      * @return 实际读到的字节数
@@ -492,6 +541,6 @@ public class McaDeltaInputStream extends InputStream {
      * @param start   数据起始偏移（含）
      * @param end     数据结束偏移（不含）
      */
-    private record ChunkRange(int index, int sectors, long start, long end) {
+    private record ChunkRange(int index, int sectors, long timestamp, long start, long end) {
     }
 }

@@ -120,6 +120,25 @@ public class McaDeltaInputStreamTest {
         assertRoundTrip(prev, next, delta);
     }
 
+    @Test
+    public void testVersionAndUnsignedTimestampsIncludingDeletion() throws Exception {
+        byte[] prev = region().chunk(5, 1, 100, chunkData(5, 1)).build();
+        byte[] next = region().deleted(5, 0x80000000L)
+                .chunk(6, 1, 0xF1234567L, chunkData(6, 1)).build();
+        byte[] encoded = deltaOf(next, timesOf(prev));
+        ByteBuffer bytes = ByteBuffer.wrap(encoded).order(ByteOrder.BIG_ENDIAN);
+        bytes.position(McaDeltaInputStream.MAGIC.length);
+        assertEquals(McaDeltaInputStream.DELTA_FORMAT_VERSION, bytes.getShort() & 0xFFFF);
+        assertEquals(2, bytes.getShort() & 0xFFFF);
+        assertEquals(5, bytes.getShort() & 0xFFFF);
+        assertEquals(0, bytes.get() & 0xFF);
+        assertEquals(0x80000000L, readTimestamp(bytes));
+        assertEquals(6, bytes.getShort() & 0xFFFF);
+        assertEquals(1, bytes.get() & 0xFF);
+        assertEquals(0xF1234567L, readTimestamp(bytes));
+        assertEquals(SECTOR_SIZE, bytes.remaining());
+    }
+
     // ------------------------------------------------------------------ 输出与读取缓冲无关
 
     @Test
@@ -328,11 +347,13 @@ public class McaDeltaInputStreamTest {
         assertTrue("不是 delta 格式", isDelta(delta));
         ByteBuffer buf = ByteBuffer.wrap(delta).order(ByteOrder.BIG_ENDIAN);
         buf.position(McaDeltaInputStream.MAGIC.length);
+        assertEquals(McaDeltaInputStream.DELTA_FORMAT_VERSION, buf.getShort() & 0xFFFF);
         int count = buf.getShort() & 0xFFFF;
         Map<Integer, ChunkState> result = new HashMap<>();
         for (int i = 0; i < count; i++) {
             int index = buf.getShort() & 0xFFFF;
             int sectors = buf.get() & 0xFF;
+            readTimestamp(buf);
             if (sectors == 0) {
                 result.put(index, ChunkState.DELETED);
             } else {
@@ -343,6 +364,18 @@ public class McaDeltaInputStreamTest {
         }
         assertEquals("delta 尾部有多余数据", delta.length, buf.position());
         return result;
+    }
+
+    private static long readTimestamp(ByteBuffer bytes) {
+        long timestamp = 0;
+        int shift = 0;
+        while (true) {
+            int b = bytes.get() & 0xFF;
+            timestamp |= (long) (b & 0x7F) << shift;
+            if ((b & 0x80) == 0)
+                return timestamp;
+            shift += 7;
+        }
     }
 
     private static boolean isDelta(byte[] bytes) {
@@ -466,6 +499,11 @@ public class McaDeltaInputStreamTest {
             }
             byte[] file = new byte[nextSector * SECTOR_SIZE];
             for (int i = 0; i < CHUNK_COUNT; i++) {
+                int t = CHUNK_COUNT * 4 + i * 4;
+                file[t] = (byte) (times[i] >> 24);
+                file[t + 1] = (byte) (times[i] >> 16);
+                file[t + 2] = (byte) (times[i] >> 8);
+                file[t + 3] = (byte) times[i];
                 if (data[i] == null)
                     continue;
                 int offset = (int) offsets[i];
@@ -474,11 +512,6 @@ public class McaDeltaInputStreamTest {
                 file[p + 1] = (byte) (offset >> 8);
                 file[p + 2] = (byte) offset;
                 file[p + 3] = (byte) sectors[i];
-                int t = CHUNK_COUNT * 4 + i * 4;
-                file[t] = (byte) (times[i] >> 24);
-                file[t + 1] = (byte) (times[i] >> 16);
-                file[t + 2] = (byte) (times[i] >> 8);
-                file[t + 3] = (byte) times[i];
                 System.arraycopy(data[i], 0, file, offset * SECTOR_SIZE, data[i].length);
             }
             return file;

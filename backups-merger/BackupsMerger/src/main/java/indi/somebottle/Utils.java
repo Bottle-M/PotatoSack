@@ -106,7 +106,7 @@ public class Utils {
      * <p>条目分三类处理:</p>
      * <ul>
      *     <li>普通文件（含 `.mcc`、`deleted.files`）: 原样覆盖目标文件；</li>
-     *     <li>原样存储的 `.mca`（旧版增量包，或生产端退化输出的情况）: 原样覆盖目标文件；</li>
+     *     <li>原样存储的 `.mca`（包括生产端退化输出的情况）: 原样覆盖目标文件；</li>
      *     <li>{@code PSMCA\0} 开头的 `.mca` delta: 读取目标位置上已有的完整区域文件作为基线，
      *     应用 delta 后重建出完整的 Anvil 区域文件再覆盖（见 {@link McaDeltaMerger#apply(File, File, File)}）。</li>
      * </ul>

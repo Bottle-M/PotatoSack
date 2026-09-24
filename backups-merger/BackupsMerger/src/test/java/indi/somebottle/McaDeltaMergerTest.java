@@ -54,7 +54,7 @@ public class McaDeltaMergerTest {
                 .chunk(5, 2, 500, chunkData(5, 2))
                 .chunk(7, 1, 700, chunkData(7, 1))
                 .build();
-        byte[] deltaBytes = delta(chunk(5, 3, chunkData(55, 3)));
+        byte[] deltaBytes = delta(chunk(5, 3, 501, chunkData(55, 3)));
         File[] files = prepare(base, deltaBytes);
 
         File outFile = new File(files[0], "out.mca");
@@ -67,10 +67,34 @@ public class McaDeltaMergerTest {
         assertEquals("变动区块应当等于 delta 里的数据", new ChunkState(3, chunkData(55, 3)), stateOf(state, 5));
         assertEquals("未变动区块应当保留", new ChunkState(1, chunkData(0, 1)), stateOf(state, 0));
         assertEquals("未变动区块应当保留", new ChunkState(1, chunkData(7, 1)), stateOf(state, 7));
-        assertArrayEquals("时间戳表必须逐字节沿用基线", timestampTable(base), timestampTable(out));
+        assertEquals(501L, RegionFixtures.timesOf(out)[5]);
+        assertEquals(100L, RegionFixtures.timesOf(out)[0]);
+        assertEquals(700L, RegionFixtures.timesOf(out)[7]);
         assertNoTempFilesLeft(files[0]);
         // 紧凑重排: 2 个头部扇区 + 1 + 3 + 1
         assertEquals((2 + 1 + 3 + 1) * SECTOR_SIZE, out.length);
+    }
+
+    @Test
+    public void testVersionedDeltaRestoresChangedAndDeletedTimestamps() throws Exception {
+        byte[] base = region()
+                .chunk(1, 1, 100, chunkData(1, 1))
+                .chunk(2, 1, 200, chunkData(2, 1))
+                .chunk(3, 1, 300, chunkData(3, 1))
+                .build();
+        long[] updatedTimes = RegionFixtures.timesOf(base);
+        updatedTimes[1] = 0xF1234567L; // uint32 最高位为 1，编码恰好 5 字节
+        updatedTimes[2] = 201; // 删除后的非零时间戳也必须恢复
+        byte[] newDelta = delta(chunk(1, 2, updatedTimes[1], chunkData(11, 2)), del(2, updatedTimes[2]));
+        File[] files = prepare(base, newDelta);
+        File outFile = new File(files[0], "versioned.mca");
+        McaDeltaMerger.apply(files[1], files[2], outFile);
+        byte[] restored = Files.readAllBytes(outFile.toPath());
+        assertEquals(new ChunkState(2, chunkData(11, 2)), stateOf(parseRegion(restored), 1));
+        assertEquals(ChunkState.DELETED, stateOf(parseRegion(restored), 2));
+        assertEquals(updatedTimes[1], RegionFixtures.timesOf(restored)[1]);
+        assertEquals(updatedTimes[2], RegionFixtures.timesOf(restored)[2]);
+        assertEquals(300L, RegionFixtures.timesOf(restored)[3]);
     }
 
     @Test
@@ -83,7 +107,8 @@ public class McaDeltaMergerTest {
                 .gap(2)
                 .build();
         // 记录顺序故意是: 删除、大下标、小下标，且与扇区顺序无关
-        byte[] deltaBytes = delta(del(3), chunk(9, 4, chunkData(99, 4)), chunk(1, 2, chunkData(11, 2)));
+        byte[] deltaBytes = delta(del(3, 300), chunk(9, 4, 900, chunkData(99, 4)),
+                chunk(1, 2, 100, chunkData(11, 2)));
         File[] files = prepare(base, deltaBytes);
         File outFile = new File(files[0], "out.mca");
         McaDeltaMerger.apply(files[1], files[2], outFile);
@@ -101,7 +126,7 @@ public class McaDeltaMergerTest {
                 .chunk(2, 1, 200, chunkData(2, 1))
                 .chunk(4, 2, 400, chunkData(4, 2))
                 .build();
-        File[] files = prepare(base, delta(del(2)));
+        File[] files = prepare(base, delta(del(2, 201)));
         File outFile = new File(files[0], "out.mca");
         McaDeltaMerger.apply(files[1], files[2], outFile);
         byte[] out = Files.readAllBytes(outFile.toPath());
@@ -112,8 +137,7 @@ public class McaDeltaMergerTest {
         // 位置表对应 4 字节应全部为 0
         for (int p = 2 * 4; p < 2 * 4 + 4; p++)
             assertEquals("区块 2 的位置表项应当清零", 0, out[p]);
-        // 但时间戳表仍保留基线的值（delta 没有携带新的时间戳）
-        assertEquals(200L, RegionFixtures.timesOf(out)[2]);
+        assertEquals("被删除区块的时间戳应由 delta 恢复", 201L, RegionFixtures.timesOf(out)[2]);
     }
 
     @Test
@@ -157,14 +181,14 @@ public class McaDeltaMergerTest {
     @Test
     public void testNewChunkAppears() throws Exception {
         byte[] base = region().chunk(1, 1, 100, chunkData(1, 1)).build();
-        File[] files = prepare(base, delta(chunk(100, 2, chunkData(100, 2))));
+        File[] files = prepare(base, delta(chunk(100, 2, 101, chunkData(100, 2))));
         File outFile = new File(files[0], "out.mca");
         McaDeltaMerger.apply(files[1], files[2], outFile);
 
         Map<Integer, ChunkState> state = parseRegion(outFile);
         assertEquals(new ChunkState(2, chunkData(100, 2)), stateOf(state, 100));
         assertEquals(new ChunkState(1, chunkData(1, 1)), stateOf(state, 1));
-        assertEquals("新出现的区块在基线里没有时间戳，不能伪造", 0L, RegionFixtures.timesOf(Files.readAllBytes(outFile.toPath()))[100]);
+        assertEquals("新出现的区块必须采用 delta 时间戳", 101L, RegionFixtures.timesOf(Files.readAllBytes(outFile.toPath()))[100]);
     }
 
     @Test
@@ -219,12 +243,13 @@ public class McaDeltaMergerTest {
                 .build();
         File dir = tmp.newFolder();
         File baseFile = writeTemp(dir, "base.mca", base);
-        File delta1 = writeTemp(dir, "delta1.mca", delta(chunk(2, 3, chunkData(22, 3)), del(3)));
+        File delta1 = writeTemp(dir, "delta1.mca", delta(chunk(2, 3, 201, chunkData(22, 3)), del(3, 301)));
         File out1 = new File(dir, "out1.mca");
         McaDeltaMerger.apply(baseFile, delta1, out1);
 
         // 第二份 delta 以第一份的输出为基线，不能依赖原文件里的扇区偏移
-        File delta2 = writeTemp(dir, "delta2.mca", delta(chunk(1, 4, chunkData(111, 4)), chunk(3, 1, chunkData(33, 1))));
+        File delta2 = writeTemp(dir, "delta2.mca", delta(chunk(1, 4, 101, chunkData(111, 4)),
+                chunk(3, 1, 302, chunkData(33, 1))));
         File out2 = new File(dir, "out2.mca");
         McaDeltaMerger.apply(out1, delta2, out2);
 
@@ -232,7 +257,10 @@ public class McaDeltaMergerTest {
         assertEquals(new ChunkState(4, chunkData(111, 4)), stateOf(state, 1));
         assertEquals("第一份 delta 的改动应当保留", new ChunkState(3, chunkData(22, 3)), stateOf(state, 2));
         assertEquals("第一份 delta 删除的区块应当能被第二份恢复", new ChunkState(1, chunkData(33, 1)), stateOf(state, 3));
-        assertArrayEquals("时间戳表始终沿用最初的基线", timestampTable(base), timestampTable(Files.readAllBytes(out2.toPath())));
+        long[] restoredTimes = RegionFixtures.timesOf(Files.readAllBytes(out2.toPath()));
+        assertEquals(101L, restoredTimes[1]);
+        assertEquals(201L, restoredTimes[2]);
+        assertEquals(302L, restoredTimes[3]);
     }
 
     // ------------------------------------------------------------------ MAGIC 检测
@@ -400,6 +428,23 @@ public class McaDeltaMergerTest {
         deltaBytes[5] = 'X';
         File[] files = prepare(base, deltaBytes);
         assertApplyFails(files[0], files[1], files[2], "PSMCA magic");
+    }
+
+    @Test
+    public void testUnsupportedDeltaVersionFails() throws Exception {
+        byte[] base = region().chunk(5, 1, 100, chunkData(5, 1)).build();
+        byte[] deltaBytes = delta(chunk(5, 1, chunkData(9, 1)));
+        deltaBytes[7] = 2;
+        File[] files = prepare(base, deltaBytes);
+        assertApplyFails(files[0], files[1], files[2], "Unsupported PSMCA delta format version");
+    }
+
+    @Test
+    public void testDeltaWithoutVersionFails() throws Exception {
+        byte[] base = region().chunk(5, 1, 100, chunkData(5, 1)).build();
+        byte[] unversionedEmptyDelta = {'P', 'S', 'M', 'C', 'A', 0, 0, 0};
+        File[] files = prepare(base, unversionedEmptyDelta);
+        assertApplyFails(files[0], files[1], files[2], "too short");
     }
 
     // ------------------------------------------------------------------ 扇区分配上限

@@ -25,10 +25,12 @@ import java.util.Map;
  *
  * <pre>
  * 6 bytes  MAGIC = 50 53 4d 43 41 00   （ASCII: PSMCA\0）
+ * uint16   version
  * uint16   count                            （0..1024）
  * 重复 count 次：
  *   uint16 chunkIndex                       （0..1023）
  *   uint8  sectorCount                      （0 表示删除；否则 1..255）
+ *   unsigned LEB128 timestamp               （varint；当前限制为原 .mca 头部中的 uint32）
  *   byte[] payload                          （sectorCount * 4096，包含填充）
  * </pre>
  *
@@ -39,8 +41,9 @@ import java.util.Map;
  * 然后按区块下标 {@code 0..1023} 从扇区 2 开始紧凑重排扇区，最后整文件原子替换。
  * 之所以不原地覆盖，是因为同一个区块在新旧版本中占用的扇区数可能不同（可大可小）。</p>
  *
- * <p><b>时间戳</b>: delta 格式不携带新的区块时间戳表，因此输出头部的时间戳表逐字节沿用基线，
- * 只改写前面的位置表。</p>
+ * <p><b>时间戳</b>: delta .mca 文件中每个区块的时间戳以 unsigned LEB128（varint）存储，
+ * 不是固定长度字段。由于原始 `.mca` 头部的时间戳目前只有 4 字节，当前实现暂时限制为
+ * {@code uint32}，因此最多读取 5 字节；恢复时再写回 `.mca` 的 4 字节时间戳表。</p>
  *
  * @apiNote 本类不去读取 PotatoSack 的目录记录文件（`_*.bin`）；恢复某个增量截止点只需要基线文件本身。
  */
@@ -50,6 +53,9 @@ public final class McaDeltaMerger {
      * delta 格式的魔数 {@code PSMCA\0}
      */
     public static final byte[] MAGIC = {'P', 'S', 'M', 'C', 'A', 0};
+
+    /** 目前的 MCA delta 格式版本 */
+    public static final int DELTA_FORMAT_VERSION = 1;
 
     /**
      * 一个区域文件里的区块数量: 32 * 32
@@ -236,7 +242,7 @@ public final class McaDeltaMerger {
         if (deltaFile == null || !deltaFile.isFile())
             throw new IOException("Invalid delta file: " + deltaFile + " does not exist or is not a regular file");
         long fileLength = deltaFile.length();
-        if (fileLength < MAGIC.length + 2) {
+        if (fileLength < MAGIC.length + 4) {
             throw new IOException("Invalid delta file " + deltaFile + ": only " + fileLength
                     + " bytes, too short to contain the PSMCA header");
         }
@@ -251,6 +257,12 @@ public final class McaDeltaMerger {
                 throw new IOException("Invalid delta file " + deltaFile + ": it does not start with the PSMCA magic");
 
             byte[] countBuf = new byte[2];
+            requireFully(in.readFully(countBuf), countBuf.length, deltaFile, "truncated version");
+            int version = readUnsigned16(countBuf, 0);
+            if (version != DELTA_FORMAT_VERSION) {
+                throw new IOException("Unsupported PSMCA delta format version: 0x"
+                        + Integer.toHexString(version));
+            }
             requireFully(in.readFully(countBuf), countBuf.length, deltaFile, "truncated chunk count");
             int count = readUnsigned16(countBuf, 0);
             if (count > CHUNK_COUNT) {
@@ -276,9 +288,10 @@ public final class McaDeltaMerger {
                     throw new IOException("Invalid delta file " + deltaFile + ": chunk index " + index
                             + " appears more than once (delta record " + rec + ")");
                 }
+                long timestamp = readTimestamp(in, deltaFile);
                 if (sectorCount == 0) {
                     // 扇区数为 0 = 该区块已被删除，后面没有 payload
-                    chunks.put(index, DeltaChunk.deleted());
+                    chunks.put(index, DeltaChunk.deleted(timestamp));
                     continue;
                 }
                 long payloadLength = (long) sectorCount * SECTOR_SIZE;
@@ -294,7 +307,7 @@ public final class McaDeltaMerger {
                     payloadOut.write(copyBuf, 0, n);
                     copied += n;
                 }
-                chunks.put(index, DeltaChunk.present(sectorCount, payloadOffset));
+                chunks.put(index, DeltaChunk.present(sectorCount, payloadOffset, timestamp));
                 payloadOffset += payloadLength;
             }
             if (in.getCount() != fileLength) {
@@ -306,6 +319,32 @@ public final class McaDeltaMerger {
     }
 
     /**
+     * 读取 delta 记录中的 unsigned LEB128（varint）时间戳。
+     *
+     * <p>当前时间戳最终要写回 `.mca` 头部的 4 字节字段，因此暂时只接受 {@code uint32}，
+     * 即最多 5 字节的 LEB128 编码。</p>
+     *
+     * @param in        delta 输入流
+     * @param deltaFile 用于错误信息的 delta 文件
+     * @return 解码后的无符号时间戳
+     * @throws IOException 流提前结束、varint 超过 5 字节或数值超出 {@code uint32} 范围
+     */
+    private static long readTimestamp(CountingInput in, File deltaFile) throws IOException {
+        long value = 0;
+        byte[] one = new byte[1];
+        for (int i = 0; i < 5; i++) {
+            requireFully(in.readFully(one), 1, deltaFile, "truncated chunk timestamp");
+            int b = one[0] & 0xFF;
+            if (i == 4 && (b & 0xF0) != 0)
+                throw new IOException("Invalid uint32 chunk timestamp in " + deltaFile);
+            value |= (long) (b & 0x7F) << (i * 7);
+            if ((b & 0x80) == 0)
+                return value;
+        }
+        throw new IOException("Chunk timestamp varint is too long in " + deltaFile);
+    }
+
+    /**
      * 按合并后的状态重排扇区并写出新的区域文件
      *
      * @param baseFile   基线文件
@@ -314,7 +353,7 @@ public final class McaDeltaMerger {
      * @param payloadTmp delta payload 临时文件
      * @param mergedTmp  输出临时文件
      * @throws IOException 输出扇区偏移超过 24 位上限，或读写失败
-     * @implNote 时间戳表逐字节沿用基线；位置表按区块下标升序从扇区 2 开始紧凑重排。
+     * @implNote 位置表按区块下标升序从扇区 2 开始紧凑重排；delta 覆写变动区块的时间戳。
      */
     private static void writeMergedRegion(File baseFile, BaseRegion base, Map<Integer, DeltaChunk> delta,
                                           Path payloadTmp, Path mergedTmp) throws IOException {
@@ -331,8 +370,16 @@ public final class McaDeltaMerger {
         }
         // 2. 重新分配扇区偏移
         int[] newOffsets = allocateSectorOffsets(finalSectors, MAX_SECTOR_OFFSET);
-        // 3. 组装新头部: 位置表全部重写，时间戳表沿用基线
+        // 3. 组装新头部: 位置表全部重写，先复制基线时间戳，再覆写新 delta 指定的表项
         byte[] newHeader = buildMergedHeader(base.header, newOffsets, finalSectors);
+        for (Map.Entry<Integer, DeltaChunk> record : delta.entrySet()) {
+            long timestamp = record.getValue().timestamp;
+            int p = CHUNK_COUNT * LOCATION_ENTRY_SIZE + record.getKey() * LOCATION_ENTRY_SIZE;
+            newHeader[p] = (byte) (timestamp >>> 24);
+            newHeader[p + 1] = (byte) (timestamp >>> 16);
+            newHeader[p + 2] = (byte) (timestamp >>> 8);
+            newHeader[p + 3] = (byte) timestamp;
+        }
 
         // 4. 先写头部，再按区块下标升序复制数据
         try (FileChannel out = FileChannel.open(mergedTmp, StandardOpenOption.WRITE,
@@ -386,8 +433,7 @@ public final class McaDeltaMerger {
      * @param offsets     新的扇区偏移
      * @param sectors     新的扇区数
      * @return 新的头部字节
-     * @implNote 后 4 KiB 的时间戳表逐字节复制基线。delta 格式没有携带新的区块时间戳，
-     * 因此这里不伪造时间；删除的区块同样保留它在基线里的时间戳。
+     * @implNote 这里先复制基线的时间戳表；调用者随后用 delta 中的时间戳覆写变动的区块
      */
     static byte[] buildMergedHeader(byte[] baseHeader, int[] offsets, int[] sectors) {
         byte[] header = new byte[HEADER_SIZE];
@@ -533,22 +579,25 @@ public final class McaDeltaMerger {
      *
      * @param sectorCount   扇区数，0 表示删除；复制 payload 时的长度由它推出（{@code sectorCount * 4096}）
      * @param payloadOffset payload 在临时文件中的偏移
+     * @param timestamp 新时间戳
      */
     static final class DeltaChunk {
         final int sectorCount;
         final long payloadOffset;
+        final long timestamp;
 
-        private DeltaChunk(int sectorCount, long payloadOffset) {
+        private DeltaChunk(int sectorCount, long payloadOffset, long timestamp) {
             this.sectorCount = sectorCount;
             this.payloadOffset = payloadOffset;
+            this.timestamp = timestamp;
         }
 
-        static DeltaChunk deleted() {
-            return new DeltaChunk(0, 0);
+        static DeltaChunk deleted(long timestamp) {
+            return new DeltaChunk(0, 0, timestamp);
         }
 
-        static DeltaChunk present(int sectorCount, long payloadOffset) {
-            return new DeltaChunk(sectorCount, payloadOffset);
+        static DeltaChunk present(int sectorCount, long payloadOffset, long timestamp) {
+            return new DeltaChunk(sectorCount, payloadOffset, timestamp);
         }
     }
 
