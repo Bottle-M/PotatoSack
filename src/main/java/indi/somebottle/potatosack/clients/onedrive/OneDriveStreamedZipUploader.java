@@ -335,6 +335,7 @@ public class OneDriveStreamedZipUploader {
     private boolean zipSpecifiedAndUpload(ZipEntryInfo[] entries, boolean quiet, boolean retry) throws IOException {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         ConsoleSender.toConsole("Calculating file size... ");
+        boolean sizeCalculated = false;
         for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
             // 重置计数器数值
             fileSizeCounter.set(0L);
@@ -346,6 +347,7 @@ public class OneDriveStreamedZipUploader {
                 // 进行模拟文件压缩，计算文件大小
                 Utils.zipSpecificFilesUtil(zout, entries, quiet);
                 // 成功了就跳出重试循环继续后续流程
+                sizeCalculated = true;
                 break;
             } catch (Utils.ZipRWConflictException e) {
                 // 发生了数据混乱问题，重试
@@ -358,6 +360,11 @@ public class OneDriveStreamedZipUploader {
                 return false;
             }
         }
+        if (!sizeCalculated) {
+            // 重试多次后仍计数失败时也不应该继续了，应显式返回失败
+            ConsoleSender.logError("Calculation failed after all compression retries.");
+            return false;
+        }
         // 注意，要在流关闭后，流内数据全部冲刷完毕，再取出结果
         long filesSize = fileSizeCounter.get();
         // 末尾还要加上填充的空白字符
@@ -369,6 +376,7 @@ public class OneDriveStreamedZipUploader {
         ConsoleSender.toConsole("Total size: " + totalSize);
         // 再进行文件压缩和上传
         ConsoleSender.toConsole("Compressing and uploading... ");
+        boolean uploaded = false;
         for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
             // 生成新的 uploadUrl
             uploadUrl = odClient.createUploadSession(targetUploadPath);
@@ -379,6 +387,7 @@ public class OneDriveStreamedZipUploader {
                 try {
                     Utils.zipSpecificFilesUtil(zout, entries, quiet);
                     // 成功压缩上传后跳出重试循环
+                    uploaded = true;
                     break;
                 } catch (Utils.ZipRWConflictException e) {
                     // 出现数据混乱问题时先直接中止流，阻止 close 时的上传，然后重试
@@ -424,6 +433,11 @@ public class OneDriveStreamedZipUploader {
                 }
                 return false;
             }
+        }
+        if (!uploaded) {
+            // 重试多次后仍失败，应显式返回失败
+            ConsoleSender.logError("Compression / upload failed after all retries.");
+            return false;
         }
         ConsoleSender.toConsole("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;
