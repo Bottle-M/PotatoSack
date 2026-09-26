@@ -43,6 +43,31 @@ final class RegionFixtures {
     }
 
     /**
+     * 造一段带合法 Anvil chunk Length/Compression 头的扇区数据。
+     *
+     * @param seed            压缩 payload 的随机种子
+     * @param sectors         占用扇区数
+     * @param chunkLength     Anvil Length 字段；包含 1 字节 Compression，不包含自身 4 字节
+     * @param compressionByte Compression 字节；external chunk 可传 {@code 0x82} 等最高位置 1 的值
+     */
+    static byte[] anvilChunkData(int seed, int sectors, int chunkLength, int compressionByte) {
+        if (chunkLength < 1 || 4L + chunkLength > (long) sectors * SECTOR_SIZE)
+            throw new IllegalArgumentException("Length 必须至少为 1 且不能超过扇区分配");
+        byte[] data = new byte[sectors * SECTOR_SIZE];
+        data[0] = (byte) (chunkLength >>> 24);
+        data[1] = (byte) (chunkLength >>> 16);
+        data[2] = (byte) (chunkLength >>> 8);
+        data[3] = (byte) chunkLength;
+        data[4] = (byte) compressionByte;
+        if (chunkLength > 1) {
+            byte[] payload = new byte[chunkLength - 1];
+            new Random(seed).nextBytes(payload);
+            System.arraycopy(payload, 0, data, 5, payload.length);
+        }
+        return data;
+    }
+
+    /**
      * 造一个 .mca 文件，区块按加入顺序依次分配扇区（前两个扇区留给 8 KiB 头部）
      */
     static RegionBuilder region() {

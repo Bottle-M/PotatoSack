@@ -22,6 +22,7 @@ import static indi.somebottle.RegionFixtures.chunkData;
 import static indi.somebottle.RegionFixtures.concat;
 import static indi.somebottle.RegionFixtures.del;
 import static indi.somebottle.RegionFixtures.delta;
+import static indi.somebottle.RegionFixtures.anvilChunkData;
 import static indi.somebottle.RegionFixtures.isDelta;
 import static indi.somebottle.RegionFixtures.parseRegion;
 import static indi.somebottle.RegionFixtures.region;
@@ -331,12 +332,45 @@ public class McaDeltaMergerTest {
     }
 
     @Test
-    public void testBaseChunkPastEofFails() throws Exception {
-        byte[] base = region().chunk(0, 1, 100, chunkData(0, 1)).build();
-        // 把区块 0 的扇区数改成 5，让它的数据范围越过文件末尾
-        base[3] = 5;
-        File[] files = prepare(base, delta());
-        assertApplyFails(files[0], files[1], files[2], "past the end");
+    public void testBaseMissingTailPaddingIsAcceptedAndZeroFilled() throws Exception {
+        int chunkLength = 353;
+        byte[] fullChunk = anvilChunkData(0, 1, chunkLength, 2);
+        byte[] fullBase = region().chunk(0, 1, 100, fullChunk).build();
+        int usedEnd = McaDeltaMerger.HEADER_SIZE + 4 + chunkLength;
+        byte[] shortBase = Arrays.copyOf(fullBase, usedEnd); // 有效数据完整，只去掉 sector 尾部 padding
+
+        File[] files = prepare(shortBase, delta());
+        File outFile = new File(files[0], "out.mca");
+        McaDeltaMerger.apply(files[1], files[2], outFile);
+
+        byte[] out = Files.readAllBytes(outFile.toPath());
+        assertEquals("合并输出应补齐完整 sector", McaDeltaMerger.HEADER_SIZE + SECTOR_SIZE, out.length);
+        assertEquals(new ChunkState(1, fullChunk), stateOf(parseRegion(out), 0));
+    }
+
+    @Test
+    public void testExternalChunkStubMissingTailPaddingIsAccepted() throws Exception {
+        // external chunk 在 .mca 中只保留 Length=1 + 1-byte Compression stub；实际 payload 在 .mcc。
+        byte[] fullChunk = anvilChunkData(0, 1, 1, 0x82);
+        byte[] fullBase = region().chunk(0, 1, 100, fullChunk).build();
+        byte[] shortBase = Arrays.copyOf(fullBase, McaDeltaMerger.HEADER_SIZE + 5);
+
+        File[] files = prepare(shortBase, delta());
+        File outFile = new File(files[0], "out.mca");
+        McaDeltaMerger.apply(files[1], files[2], outFile);
+
+        assertEquals(new ChunkState(1, fullChunk), stateOf(parseRegion(outFile), 0));
+    }
+
+    @Test
+    public void testBaseChunkPayloadPastEofFails() throws Exception {
+        int chunkLength = 100;
+        byte[] fullChunk = anvilChunkData(0, 1, chunkLength, 2);
+        byte[] fullBase = region().chunk(0, 1, 100, fullChunk).build();
+        // Length 声明还需要 100 字节（含 Compression），但实际在 payload 中途就 EOF。
+        byte[] truncatedBase = Arrays.copyOf(fullBase, McaDeltaMerger.HEADER_SIZE + 4 + 50);
+        File[] files = prepare(truncatedBase, delta());
+        assertApplyFails(files[0], files[1], files[2], "payload is past the end");
     }
 
     @Test

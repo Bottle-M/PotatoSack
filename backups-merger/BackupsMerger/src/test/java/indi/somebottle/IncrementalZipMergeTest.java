@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import static indi.somebottle.RegionFixtures.ChunkState;
+import static indi.somebottle.RegionFixtures.anvilChunkData;
 import static indi.somebottle.RegionFixtures.chunk;
 import static indi.somebottle.RegionFixtures.chunkData;
 import static indi.somebottle.RegionFixtures.del;
@@ -150,6 +152,29 @@ public class IncrementalZipMergeTest {
         assertTrue(Utils.mergeIncrementalZip(increZip, restoreDir));
         assertArrayEquals("完整 .mca 条目应当原样覆盖", increRegion, read(file(restoreDir, REGION)));
         assertEquals("motd=B", new String(read(file(restoreDir, "server.properties")), StandardCharsets.UTF_8));
+        assertNoTempFilesLeft(restoreDir);
+    }
+
+    @Test
+    public void testDeltaAcceptsBaseMcaMissingOnlyTailPadding() throws Exception {
+        File root = tmp.newFolder();
+        File restoreDir = new File(root, "restore");
+        assertTrue(restoreDir.mkdirs());
+
+        int chunkLength = 353;
+        byte[] fullChunk = anvilChunkData(7, 1, chunkLength, 2);
+        byte[] fullRegion = region().chunk(0, 1, 100, fullChunk).build();
+        byte[] shortRegion = Arrays.copyOf(fullRegion, McaDeltaMerger.HEADER_SIZE + 4 + chunkLength);
+        File fullZip = zip(root, "full.zip", entries(REGION, shortRegion));
+        File increZip = zip(root, "incre000001.zip", entries(REGION, delta()));
+
+        assertTrue(Utils.unzip(fullZip, restoreDir));
+        assertArrayEquals("全量包里的 raw MCA 应当保持原始物理长度", shortRegion, read(file(restoreDir, REGION)));
+        assertTrue("只有尾部 padding 缺失的基线应当可以应用 PSMCA", Utils.mergeIncrementalZip(increZip, restoreDir));
+
+        byte[] merged = read(file(restoreDir, REGION));
+        assertEquals(McaDeltaMerger.HEADER_SIZE + McaDeltaMerger.SECTOR_SIZE, merged.length);
+        assertEquals(new ChunkState(1, fullChunk), stateOf(parseRegion(merged), 0));
         assertNoTempFilesLeft(restoreDir);
     }
 

@@ -54,7 +54,9 @@ public final class McaDeltaMerger {
      */
     public static final byte[] MAGIC = {'P', 'S', 'M', 'C', 'A', 0};
 
-    /** 目前的 MCA delta 格式版本 */
+    /**
+     * 目前的 MCA delta 格式版本
+     */
     public static final int DELTA_FORMAT_VERSION = 1;
 
     /**
@@ -174,8 +176,8 @@ public final class McaDeltaMerger {
             offsets[i] = readUnsigned24(header, p);
             sectors[i] = header[p + 3] & 0xFF;
         }
-        validateBaseRanges(baseFile, offsets, sectors, fileLength);
-        return new BaseRegion(header, offsets, sectors);
+        long[] storedLengths = validateBaseRanges(baseFile, offsets, sectors, fileLength);
+        return new BaseRegion(header, offsets, sectors, storedLengths);
     }
 
     /**
@@ -185,31 +187,73 @@ public final class McaDeltaMerger {
      * @param offsets    各区块扇区偏移
      * @param sectors    各区块扇区数
      * @param fileLength 基线文件长度
-     * @throws IOException 偏移落在头部内、数据越过文件末尾，或不同区块的数据范围重叠
+     * @return 每个存在区块在基线文件中实际物理存在的字节数。正常情况下等于 {@code sectorCount * 4096}；
+     * 文件末尾区块数据的扇区填充可能没有实际写入硬盘，这种情况下要返回从区块起点到 EOF 的实际长度。
+     * @throws IOException 偏移落在头部内、有效区块数据被 EOF 截断、区块长度非法，或不同区块的数据范围重叠
      * @implNote 「存在」的判据与生产端 {@code McaDeltaInputStream} 一致:
      * 扇区偏移或扇区数任一为 0 都算该区块不存在（原版约定）。
+     * <p>Region 文件头里的 sectorCount 描述的是分配空间，不代表物理文件末尾一定已经写满 padding。
+     * 当最后一个区块的已分配 sector 空间越过 EOF 时（也就是缺失填充字节），本方法会读取区块开头的 4-byte 长度字段；只要
+     * {@code 4 + Length} 仍完整落在文件内，并且没有超过已分配 sector，即认为区块数据尚且没问题。</p>
      */
-    private static void validateBaseRanges(File baseFile, int[] offsets, int[] sectors, long fileLength)
+    private static long[] validateBaseRanges(File baseFile, int[] offsets, int[] sectors, long fileLength)
             throws IOException {
+        long[] storedLengths = new long[CHUNK_COUNT];
         // 按偏移排序后检查区间是否重叠
         int[] sorted = new int[CHUNK_COUNT];
         int present = 0;
-        for (int i = 0; i < CHUNK_COUNT; i++) {
-            if (offsets[i] == 0 || sectors[i] == 0)
-                continue;
-            if (offsets[i] < HEADER_SIZE / SECTOR_SIZE) {
-                throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i + " starts at sector "
-                        + offsets[i] + ", which is inside the " + (HEADER_SIZE / SECTOR_SIZE) + "-sector header");
+        try (FileChannel channel = FileChannel.open(baseFile.toPath(), StandardOpenOption.READ)) {
+            for (int i = 0; i < CHUNK_COUNT; i++) {
+                // 跳过不存在的区块
+                if (offsets[i] == 0 || sectors[i] == 0)
+                    continue;
+                // 校验区域文件头部大小
+                if (offsets[i] < HEADER_SIZE / SECTOR_SIZE) {
+                    throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i + " starts at sector "
+                            + offsets[i] + ", which is inside the " + (HEADER_SIZE / SECTOR_SIZE) + "-sector header");
+                }
+
+                long start = (long) offsets[i] * SECTOR_SIZE;
+                long allocatedLength = (long) sectors[i] * SECTOR_SIZE;
+                long end = start + allocatedLength;
+                if (end <= fileLength) {
+                    storedLengths[i] = allocatedLength;
+                } else {
+                    // 最后一个区块数据末尾的填充可能没有写入硬盘，
+                    // 这种情况用区块自身的 4-byte 长度判断区块有效数据是否完整
+                    if (start + 4 > fileLength) {
+                        throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i
+                                + " is past the end of the " + fileLength
+                                + "-byte file before its 4-byte length field is complete");
+                    }
+                    long chunkLength = readUnsigned32(channel, start, baseFile, i);
+                    // 区块头部的“长度”字段是从第 5 个字节，即 compression type 这个字节开始算的
+                    // 因此至少有 1 个字节
+                    if (chunkLength < 1) {
+                        throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i
+                                + " has invalid length " + chunkLength);
+                    }
+                    // 计算区块实际占用的字节数
+                    long usedLength = 4L + chunkLength;
+                    if (usedLength > allocatedLength) {
+                        throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i
+                                + " declares " + usedLength + " bytes including its length field, exceeding its "
+                                + allocatedLength + "-byte sector allocation");
+                    }
+                    // 区块数据不完整
+                    if (start + usedLength > fileLength) {
+                        throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i
+                                + " payload is past the end of the " + fileLength + "-byte file (needs through byte "
+                                + (start + usedLength) + ")");
+                    }
+                    // 有效数据完整，只是 EOF 截掉了后续 padding
+                    // 这里按分配的扇区字节数记，合并输出时会补回 0
+                    storedLengths[i] = fileLength - start;
+                }
+                sorted[present++] = i;
             }
-            long end = ((long) offsets[i] + sectors[i]) * SECTOR_SIZE;
-            if (end > fileLength) {
-                throw new IOException("Invalid base region file " + baseFile + ": chunk #" + i + " occupies sectors ["
-                        + offsets[i] + ", " + (offsets[i] + sectors[i]) + "), which is past the end of the "
-                        + fileLength + "-byte file");
-            }
-            sorted[present++] = i;
         }
-        // 按 offset 升序插入排序（1024 个元素，不值得引入装箱排序）
+        // 按 offset 升序插入排序（1024 个元素，插入排序够用了）
         for (int i = 1; i < present; i++) {
             int key = sorted[i];
             int j = i - 1;
@@ -219,6 +263,7 @@ public final class McaDeltaMerger {
             }
             sorted[j + 1] = key;
         }
+        // 排序后检查区块数据是否有交叠
         for (int i = 1; i < present; i++) {
             int prev = sorted[i - 1];
             int curr = sorted[i];
@@ -228,6 +273,7 @@ public final class McaDeltaMerger {
                         + " (sectors [" + offsets[curr] + ", " + (offsets[curr] + sectors[curr]) + "))");
             }
         }
+        return storedLengths;
     }
 
     /**
@@ -393,7 +439,12 @@ public final class McaDeltaMerger {
                 long length = (long) finalSectors[i] * SECTOR_SIZE;
                 DeltaChunk chunk = delta.get(i);
                 if (chunk == null) {
-                    copyRange(baseChannel, (long) base.offsets[i] * SECTOR_SIZE, length, out, baseFile, i);
+                    // 这个区块没有发生变化，沿用 baseline 的
+                    // 原 .mca 文件末尾可能有有效 chunk 数据而没有完整的扇区填充
+                    // 这种时候要先复制实际存在的部分，再补 0，保证新 .mca 文件大小可被 4096 整除
+                    long storedLength = base.storedLengths[i];
+                    copyRange(baseChannel, (long) base.offsets[i] * SECTOR_SIZE, storedLength, out, baseFile, i);
+                    writeZeroes(out, length - storedLength);
                 } else {
                     copyRange(payloadChannel, chunk.payloadOffset, length, out, null, i);
                 }
@@ -429,9 +480,9 @@ public final class McaDeltaMerger {
     /**
      * 组装合并后的 8 KiB 头部
      *
-     * @param baseHeader  基线头部
-     * @param offsets     新的扇区偏移
-     * @param sectors     新的扇区数
+     * @param baseHeader 基线头部
+     * @param offsets    新的扇区偏移
+     * @param sectors    新的扇区数
      * @return 新的头部字节
      * @implNote 这里先复制基线的时间戳表；调用者随后用 delta 中的时间戳覆写变动的区块
      */
@@ -456,12 +507,12 @@ public final class McaDeltaMerger {
     /**
      * 从输入通道复制固定长度的数据到输出通道
      *
-     * @param src    源通道
-     * @param srcPos 源起始偏移
-     * @param length 要复制的字节数
-     * @param out    输出通道（当前位置即写入位置）
+     * @param src     源通道
+     * @param srcPos  源起始偏移
+     * @param length  要复制的字节数
+     * @param out     输出通道（当前位置即写入位置）
      * @param srcFile 源文件（仅用于错误信息，可为 null）
-     * @param index  区块下标（仅用于错误信息）
+     * @param index   区块下标（仅用于错误信息）
      * @throws IOException 源数据不足
      */
     private static void copyRange(FileChannel src, long srcPos, long length, FileChannel out, File srcFile, int index)
@@ -478,6 +529,27 @@ public final class McaDeltaMerger {
             }
             pos += n;
             remaining -= n;
+        }
+    }
+
+    /**
+     * 向输出写入指定数量的 0 字节，用于补齐基线文件末尾未物理落盘的 sector padding
+     *
+     * @param out    输出 FileChannel
+     * @param length 要填充的 0 字节数
+     * @throws IOException 写入出现问题
+     */
+    private static void writeZeroes(FileChannel out, long length) throws IOException {
+        if (length <= 0)
+            return;
+        ByteBuffer zeroes = ByteBuffer.allocate((int) Math.min(COPY_BUF_SIZE, length));
+        long remaining = length;
+        while (remaining > 0) {
+            zeroes.clear();
+            int writeLength = (int) Math.min(zeroes.capacity(), remaining);
+            zeroes.limit(writeLength);
+            writeFully(out, zeroes);
+            remaining -= writeLength;
         }
     }
 
@@ -543,6 +615,28 @@ public final class McaDeltaMerger {
     }
 
     /**
+     * 从文件指定位置读取 4 字节大端无符号整数
+     */
+    private static long readUnsigned32(FileChannel channel, long pos, File file, int index) throws IOException {
+        ByteBuffer buf = ByteBuffer.allocate(4);
+        long readPos = pos;
+        while (buf.hasRemaining()) {
+            int n = channel.read(buf, readPos);
+            if (n < 0)
+                break;
+            if (n == 0)
+                throw new IOException("Failed to read chunk #" + index + " length from base region file " + file);
+            readPos += n;
+        }
+        if (buf.hasRemaining()) {
+            throw new IOException("Invalid base region file " + file + ": chunk #" + index
+                    + " has a truncated 4-byte length field");
+        }
+        buf.flip();
+        return Integer.toUnsignedLong(buf.getInt());
+    }
+
+    /**
      * 删除文件，忽略失败（临时文件清理用）
      */
     private static void deleteQuietly(Path path) {
@@ -556,21 +650,24 @@ public final class McaDeltaMerger {
     }
 
     /**
-     * 基线区域文件的头部和区块范围
+     * baseline 区域文件的头部和区块范围
      *
-     * @param header  8 KiB 头部
-     * @param offsets 各区块的扇区偏移
-     * @param sectors 各区块的扇区数
+     * @param header        8 KiB 头部
+     * @param offsets       各区块的扇区偏移
+     * @param sectors       各区块的扇区数
+     * @param storedLengths 各区块在 baseline 文件中实际存在的字节数；通常只有物理上最后一个区块数据没有填充到扇区大小时会有小于分配扇区字节数的情况
      */
     static final class BaseRegion {
         final byte[] header;
         final int[] offsets;
         final int[] sectors;
+        final long[] storedLengths;
 
-        BaseRegion(byte[] header, int[] offsets, int[] sectors) {
+        BaseRegion(byte[] header, int[] offsets, int[] sectors, long[] storedLengths) {
             this.header = header;
             this.offsets = offsets;
             this.sectors = sectors;
+            this.storedLengths = storedLengths;
         }
     }
 
@@ -579,7 +676,7 @@ public final class McaDeltaMerger {
      *
      * @param sectorCount   扇区数，0 表示删除；复制 payload 时的长度由它推出（{@code sectorCount * 4096}）
      * @param payloadOffset payload 在临时文件中的偏移
-     * @param timestamp 新时间戳
+     * @param timestamp     新时间戳
      */
     static final class DeltaChunk {
         final int sectorCount;
