@@ -661,6 +661,7 @@ public class BackupMaker {
         // 若没有文件变更则不进行本次增量备份
         if (increEntryInfos.isEmpty() && deletedPaths.isEmpty()) {
             ConsoleSender.toConsole("No new files found, skip this incremental backup.");
+            skipIncreBackup(); // 跳过本次增量备份
             return true;
         }
         // 2. 压缩
