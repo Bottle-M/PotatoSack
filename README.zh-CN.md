@@ -268,6 +268,17 @@ a/**/c
 
 如果还有其他问题，欢迎提 Issue。  
 
+## Maven 编译和打包
+
+本插件会被编译成 Java 17 字节码，且使用了 ProGuard 精简了产物 jar 包体积，而 ProGuard 要求找到 Java 17 JDK 的 jmods，因此在打包前需要指定一个环境变量:  
+
+```bash
+# 指定 Java 17 所在目录
+export JAVA17_HOME='/c/Program Files/Java/jdk-17.0.4.1'
+
+mvn clean package
+```
+
 ## 开源协议
 
 本插件采用 MIT 开源协议。

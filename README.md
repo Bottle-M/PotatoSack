@@ -285,6 +285,17 @@ See [BackupsMerger](backups-merger/README.md).
 
 Feel free to raise an issue if you have any other questions.  
 
+## Maven Build and Packaging
+
+This plugin is compiled to Java 17 bytecode, and ProGuard is used to reduce the size of the final JAR file. Since ProGuard requires access to the `jmods` directory of a Java 17 JDK, you need to set the following environment variable before packaging:
+
+```bash
+# Specify the Java 17 installation directory
+export JAVA17_HOME='/c/Program Files/Java/jdk-17.0.4.1'
+
+mvn clean package
+```
+
 ## License
 
 MIT Licensed.
