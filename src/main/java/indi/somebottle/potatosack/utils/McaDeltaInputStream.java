@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -40,16 +41,21 @@ import java.util.zip.CRC32;
  * 每个区块自带 uint16 下标，所以顺序不影响正确性。
  * 被删除的区块没有扇区偏移，统一排在最前面（紧跟在 MAGIC 和区块数量之后）。
  *
- * <p><b>整文件一遍顺序读，不做随机访问:</b>
- * 本类还会给出整个原始文件的 {@link #sourceCRC32()}，供调用方沿用
+ * <p><b>主体数据一遍顺序读:</b>
+ * 正常情况下本类只顺序读取源文件；仅当某个待打包区块声明的扇区范围越过物理 EOF 时，
+ * 会额外随机读取该区块开头的 4 字节 Length。
+ * 这是因为，虽然偏移单位是扇区，但是最后一个区块可能没有填充，区块数据之后就是 EOF。</p>
+ *
+ * <p>本类还会给出整个原始文件的 {@link #sourceCRC32()}，供调用方沿用
  * {@link Utils#zipSpecificFilesUtil} 里会校验压缩前后文件 CRC32 是否发生变化，如果使用本类读取文件，读取的是处理后的数据，计算 CRC32 肯定不一致
- * （见 {@link Utils#fileCRC32(File)}），所以本类会提供原始文件的 CRC32。
+ * （见 {@link Utils#fileCRC32(File)}），所以本类会提供原始文件的 CRC32。</p>
  *
  * <p><b>退化（原样输出整个文件）:</b> 下列情况会放弃 delta、把文件原样吐出去，
  * 此时输出与输入逐字节相同，而 MAGIC 不会出现在输出开头:</p>
  * <ul>
  *     <li>没有任何区块的时间戳发生变动 —— 文件哈希变了却一个区块都没变，说明时间戳判据失效了，肯定还有别的地方发生变动，原样输出</li>
- *     <li>某个待打包区块的扇区区间越过文件末尾 —— 说明文件本身被截断，按偏移取数据会取到不完整内容</li>
+ *     <li>某个待打包区块的有效数据（4 字节 Length + Length 指定的内容）越过文件末尾 —— 说明文件本身被截断</li>
+ *     <li>某个待打包区块的 Length 非法，或声明的有效数据超过该区块获分配的扇区范围</li>
  *     <li>某个待打包区块的扇区起始位置落在 8 KiB 头部之内 —— MCAnvil 文件头异常</li>
  *     <li>待打包区块的扇区区间互相重叠 —— 也算文件头异常</li>
  *     <li>文件不足 8 KiB，连头部都不完整</li>
@@ -158,6 +164,17 @@ public class McaDeltaInputStream extends InputStream {
      * {@link #readBuf}[0] 对应的源文件偏移
      */
     private long sourceFileOffset = 0;
+
+    /**
+     * 源 `.mca` 的物理文件长度。某些合法文件的最后一个扇区只写到有效数据末尾，
+     * 没有把剩余 padding 真正写入硬盘；delta mca 文件中会仍按完整扇区输出，并为这部分补 0
+     */
+    private long sourceFileLength = 0;
+
+    /**
+     * 当前区块在物理 EOF 之后还需要补出的零填充字节数
+     */
+    private long tailPaddingRemaining = 0;
 
     /**
      * 需要输出数据的区块区间，按源文件中的扇区偏移升序排列
@@ -304,6 +321,7 @@ public class McaDeltaInputStream extends InputStream {
         }
         long[] times = parseChunkTimes(header);
         long fileLength = mcaFile.length();
+        sourceFileLength = fileLength;
 
         // 1. 按时间戳判据挑出发生变动的区块
         List<ChunkRange> changed = new ArrayList<>();
@@ -318,8 +336,15 @@ public class McaDeltaInputStream extends InputStream {
             }
             long start = (long) offsets[i] * SECTOR_SIZE;
             long end = start + (long) sectors[i] * SECTOR_SIZE;
-            if (start < HEADER_SIZE || end > fileLength) {
-                // 扇区区间落在头部里，或者越过文件末尾（文件被截断），按偏移取数据会取到损坏的数据
+            if (start < HEADER_SIZE) {
+                // 扇区区间落在 8 KiB 头部里，文件头异常
+                fallbackToRaw(header);
+                return;
+            }
+            if (end > fileLength && !hasCompleteChunkData(start, sectors[i], fileLength)) {
+                // 声明的扇区范围越过物理 EOF 时，不能直接判断损坏：Minecraft/RegionFile 实现可能没有把
+                // 最后一个扇区剩余的零填充真正写到硬盘。只有区块数据头部的 4-byte Length 指向的有效数据也
+                // 越过 EOF（或 Length 本身非法）时，才说明这个 chunk 确实不完整
                 fallbackToRaw(header);
                 return;
             }
@@ -357,6 +382,36 @@ public class McaDeltaInputStream extends InputStream {
             writeTimestamp(prefix, times[index]); // 删除后头部仍可能保留非零时间戳
         }
         prologue = prefix.toByteArray();
+    }
+
+    /**
+     * 检查一个区块的数据在长度上是否完整
+     *
+     * <p>Region 文件中区块数据头部的 4 字节是大端 uint32 长度字段；长度从后面的
+     * compression 字节开始算起。</p>
+     *
+     * @param start       区块起始位置在文件中的偏移字节数
+     * @param sectorCount location table 声明的扇区数
+     * @param fileLength  `.mca` 当前物理长度
+     * @return 有效数据完整且声明的长度没有越过已分配扇区范围时为 true
+     */
+    private boolean hasCompleteChunkData(long start, int sectorCount, long fileLength) throws IOException {
+        if (start + 4L > fileLength)
+            return false; // 连长度字段都不完整
+
+        long chunkLength;
+        try (RandomAccessFile raf = new RandomAccessFile(mcaFile, "r")) {
+            raf.seek(start);
+            chunkLength = Integer.toUnsignedLong(raf.readInt());
+        }
+
+        // 长度至少为 1 字节，因为是从 1 字节的 compression 字段开始算的；并且 4 + 长度 必须装得进已分配的扇区
+        long allocatedBytes = (long) sectorCount * SECTOR_SIZE;
+        if (chunkLength < 1 || 4L + chunkLength > allocatedBytes)
+            return false;
+
+        // 只有有效数据本身越过 EOF 才是真有数据损坏
+        return start + 4L + chunkLength <= fileLength;
     }
 
     /**
@@ -401,9 +456,19 @@ public class McaDeltaInputStream extends InputStream {
                 chunkHeaderPos += n;
                 return n;
             }
-            // 2. 窗口空了就补
-            if (readPos >= readLen && !refill())
+            // 2. 窗口空了就补。若源文件已经到 EOF，但当前区块缺扇区尾部 padding，
+            //    则按 PSMCA 格式仍需把 sectorCount * 4 KiB 补完整；这些缺失字节补 0
+            if (readPos >= readLen && !refill()) {
+                if (!rawMode && tailPaddingRemaining > 0) {
+                    int n = (int) Math.min((long) len, tailPaddingRemaining);
+                    Arrays.fill(b, off, off + n, (byte) 0);
+                    tailPaddingRemaining -= n;
+                    if (tailPaddingRemaining == 0)
+                        curChunk = null;
+                    return n;
+                }
                 return 0;
+            }
             // 3. 原样模式: 窗口里有什么就吐什么
             if (rawMode) {
                 int n = Math.min(len, readLen - readPos);
@@ -428,10 +493,11 @@ public class McaDeltaInputStream extends InputStream {
         int out = 0;
         while (p < readLen && out < len) {
             long absOff = sourceFileOffset + p;
-            // 当前位置正好是某个待打包区块的起点 → 先把它的头部准备好
+            // 当前位置正好是某个待打包区块的起点 -> 先把它的头部准备好
             if (chunkPtr < chunks.size() && chunks.get(chunkPtr).start() == absOff) {
                 ChunkRange c = chunks.get(chunkPtr++);
                 curChunk = c;
+                tailPaddingRemaining = Math.max(0L, c.end() - sourceFileLength);
                 chunkHeader[0] = (byte) (c.index() >>> 8);
                 chunkHeader[1] = (byte) c.index();
                 chunkHeader[2] = (byte) c.sectors();

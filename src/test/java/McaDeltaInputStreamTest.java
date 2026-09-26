@@ -212,17 +212,61 @@ public class McaDeltaInputStreamTest {
     }
 
     @Test
-    public void testChunkPastEofFallsBackToRaw() throws Exception {
+    public void testMissingTailPaddingStillProducesDelta() throws Exception {
         byte[] prev = region()
-                .chunk(0, 1, 100, chunkData(0, 1))
-                .chunk(1, 2, 200, chunkData(1, 2))
+                .chunk(1, 2, 200, chunkDataWithLength(1, 2, 500, 0x02))
                 .build();
         byte[] next = region()
-                .chunk(0, 1, 100, chunkData(0, 1))
-                .chunk(1, 2, 201, chunkData(11, 2))
+                .chunk(1, 2, 201, chunkDataWithLength(11, 2, 353, 0x02))
                 .build();
-        // 砍掉最后一个扇区，让下标 1 的扇区区间越过文件末尾
-        File file = writeTemp(Arrays.copyOf(next, next.length - SECTOR_SIZE));
+
+        // 有效数据在 353 字节处完整结束，但最后一个已分配扇区没有把剩余 padding 真正写入文件。
+        // 这是合法的 EOF 形态，delta 应继续生成，并把缺失的 sector padding 补 0。
+        byte[] shortNext = Arrays.copyOf(next, HEADER_SIZE + 353);
+        File file = writeTemp(shortNext);
+        McaDeltaInputStream in = new McaDeltaInputStream(file, timesOf(prev));
+        byte[] out = readAll(in, 8192);
+        long sourceCrc = in.sourceCRC32();
+        in.close();
+
+        assertEquals("补出的零 padding 不能计入源文件 CRC", Utils.fileCRC32(file), sourceCrc);
+        assertTrue("只缺扇区尾部 padding 时不应退化成 raw MCA", isDelta(out));
+        Map<Integer, ChunkState> delta = parseDelta(out);
+        assertEquals(Collections.singleton(1), delta.keySet());
+        assertEquals(2, delta.get(1).sectors());
+        assertEquals(2 * SECTOR_SIZE, delta.get(1).data().length);
+        assertRoundTrip(prev, shortNext, delta);
+    }
+
+    @Test
+    public void testExternalChunkStubMissingTailPaddingStillProducesDelta() throws Exception {
+        byte[] prev = region()
+                .chunk(1, 1, 200, chunkDataWithLength(1, 1, 5, 0x82))
+                .build();
+        byte[] next = region()
+                .chunk(1, 1, 201, chunkDataWithLength(2, 1, 5, 0x82))
+                .build();
+
+        // 外置 .mcc 的 MCA 存根只有 [uint32 Length=1][compression/version] 这 5 字节；
+        // .mca 自身无需读取 .mcc，就能确认存根完整。
+        byte[] shortNext = Arrays.copyOf(next, HEADER_SIZE + 5);
+        byte[] out = deltaOf(shortNext, timesOf(prev));
+
+        assertTrue("完整的 external-chunk stub 不应因缺少 sector padding 而退化", isDelta(out));
+        assertRoundTrip(prev, shortNext, parseDelta(out));
+    }
+
+    @Test
+    public void testChunkPayloadPastEofFallsBackToRaw() throws Exception {
+        byte[] prev = region()
+                .chunk(1, 2, 200, chunkDataWithLength(1, 2, 1200, 0x02))
+                .build();
+        byte[] next = region()
+                .chunk(1, 2, 201, chunkDataWithLength(11, 2, 1200, 0x02))
+                .build();
+
+        // Length 声明有效数据应到 1200 字节，但物理文件只保留 900 字节：这才是真正的数据截断。
+        File file = writeTemp(Arrays.copyOf(next, HEADER_SIZE + 900));
 
         byte[] out = deltaOf(file, timesOf(prev));
         assertFalse(isDelta(out));
@@ -427,6 +471,32 @@ public class McaDeltaInputStreamTest {
     private static byte[] chunkData(int seed, int sectors) {
         byte[] data = new byte[sectors * SECTOR_SIZE];
         new Random(seed).nextBytes(data);
+        return data;
+    }
+
+    /**
+     * 构造一个带合法 Region chunk Length 的扇区数据。
+     *
+     * @param usedBytes       从 chunk 起点算起的实际有效字节数，包含 4-byte Length 本身
+     * @param compressionByte compression/version byte；例如 0x02 或 external stub 的 0x82
+     */
+    private static byte[] chunkDataWithLength(int seed, int sectors, int usedBytes, int compressionByte) {
+        int allocatedBytes = sectors * SECTOR_SIZE;
+        if (usedBytes < 5 || usedBytes > allocatedBytes)
+            throw new IllegalArgumentException("usedBytes 必须位于 [5, sectors * 4096]");
+
+        byte[] data = new byte[allocatedBytes];
+        if (usedBytes > 5) {
+            byte[] payload = new byte[usedBytes - 5];
+            new Random(seed).nextBytes(payload);
+            System.arraycopy(payload, 0, data, 5, payload.length);
+        }
+        int chunkLength = usedBytes - 4; // Length 包含 compression/version byte，不包含自身 4 字节
+        data[0] = (byte) (chunkLength >>> 24);
+        data[1] = (byte) (chunkLength >>> 16);
+        data[2] = (byte) (chunkLength >>> 8);
+        data[3] = (byte) chunkLength;
+        data[4] = (byte) compressionByte;
         return data;
     }
 
