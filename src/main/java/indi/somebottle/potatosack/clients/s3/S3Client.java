@@ -791,10 +791,24 @@ public class S3Client extends Client {
         } catch (S3Exception e) {
             int status = e.statusCode();
             if (status == 403) {
-                throw new ClientInitializationException("Access denied to S3 bucket '" + bucket + "' (" + endpointDescription()
-                        + "). Please check " + Config.KEYS.CLIENT.S3.ACCESS_KEY + " / "
-                        + Config.KEYS.CLIENT.S3.SECRET_KEY + " / " + Config.KEYS.CLIENT.S3.SESSION_TOKEN
-                        + " and make sure the credentials have s3:ListBucket permission on this bucket.", e);
+                String errorCode = e.awsErrorDetails() == null
+                        ? null
+                        : e.awsErrorDetails().errorCode();
+
+                String errorMessage = e.awsErrorDetails() == null
+                        ? null
+                        : e.awsErrorDetails().errorMessage();
+
+                throw new ClientInitializationException(
+                        "Access denied to S3 bucket '" + bucket + "' ("
+                                + endpointDescription() + "). "
+                                + "HTTP 403"
+                                + (errorCode == null ? "" : ", errorCode: " + errorCode)
+                                + (errorMessage == null ? "" : ", errorMessage: " + errorMessage)
+                                + ". Please check credentials, bucket permissions, endpoint, region "
+                                + "and path-style-access.",
+                        e
+                );
             }
             if (status == 404) {
                 throw new ClientInitializationException("S3 bucket '" + bucket + "' configured in "
