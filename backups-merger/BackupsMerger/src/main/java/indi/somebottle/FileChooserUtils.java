@@ -5,7 +5,10 @@ import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.GraphicsEnvironment;
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * JFileChooser 相关工具
@@ -93,6 +96,24 @@ public final class FileChooserUtils {
             throw new IllegalStateException("Save file chooser finished without a result.");
         }
         return resultHolder[0];
+    }
+
+    /**
+     * 判断输出文件是否与已有源文件相同。
+     *
+     * <p>除了比较规范化后的路径，也会在输出文件已经存在时使用文件系统判断，
+     * 这样符号链接等情况也不会绕过源文件覆盖保护。</p>
+     *
+     * @param outputFile 输出文件
+     * @param sourceFile 源文件
+     * @return 两者是否指向同一个文件
+     * @throws IOException 无法读取文件系统信息时抛出
+     */
+    public static boolean isSameOutputFile(File outputFile, File sourceFile) throws IOException {
+        Path outputPath = outputFile.toPath().toAbsolutePath().normalize();
+        Path sourcePath = sourceFile.toPath().toAbsolutePath().normalize();
+        return outputPath.equals(sourcePath)
+                || (Files.exists(outputPath) && Files.isSameFile(outputPath, sourcePath));
     }
 
     /**

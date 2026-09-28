@@ -9,10 +9,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -139,7 +137,7 @@ public final class McaDeltaMerger {
             BaseRegion base = readBaseRegion(baseFile);
             Map<Integer, DeltaChunk> delta = readDelta(deltaFile, payloadTmp);
             writeMergedRegion(baseFile, base, delta, payloadTmp, mergedTmp);
-            moveAtomically(mergedTmp, outputPath);
+            Utils.moveAtomically(mergedTmp, outputPath);
         } finally {
             deleteQuietly(payloadTmp);
             deleteQuietly(mergedTmp);
@@ -559,21 +557,6 @@ public final class McaDeltaMerger {
     private static void writeFully(FileChannel out, ByteBuffer buf) throws IOException {
         while (buf.hasRemaining())
             out.write(buf);
-    }
-
-    /**
-     * 原子替换（同文件系统优先 ATOMIC_MOVE，不支持时退化为普通替换）
-     *
-     * @param src 源路径
-     * @param dst 目标路径
-     * @throws IOException 移动失败
-     */
-    static void moveAtomically(Path src, Path dst) throws IOException {
-        try {
-            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(src, dst, StandardCopyOption.REPLACE_EXISTING);
-        }
     }
 
     /**

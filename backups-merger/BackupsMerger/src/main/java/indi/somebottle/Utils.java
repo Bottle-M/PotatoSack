@@ -1,10 +1,11 @@
 package indi.somebottle;
 
-
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -45,7 +46,8 @@ public class Utils {
      * @return 是否解压成功
      * @apiNote 这里是给<b>全量备份</b>用的: `.mca` 条目必须是原样存储的完整区域文件；
      * 如果发现 PotatoSack 3.0.0 的 {@code PSMCA\0} 增量 delta 条目会直接失败，
-     * 因为 delta 必须配合基线区域文件才能还原（增量包请走 {@link #mergeIncrementalZip(File, File)}）。
+     * 因为 delta 必须配合基线区域文件才能还原（增量包需要调用
+     * {@link Task#mergeIncrementalZip(File, File)} 进行处理）
      */
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public static boolean unzip(File zipFile, File targetDir) {
@@ -101,86 +103,6 @@ public class Utils {
     }
 
     /**
-     * 把一份增量备份合并到已经恢复出来的目录中
-     *
-     * <p>条目分三类处理:</p>
-     * <ul>
-     *     <li>普通文件（含 `.mcc`、`deleted.files`）: 原样覆盖目标文件；</li>
-     *     <li>原样存储的 `.mca`（包括生产端退化输出的情况）: 原样覆盖目标文件；</li>
-     *     <li>{@code PSMCA\0} 开头的 `.mca` delta: 读取目标位置上已有的完整区域文件作为基线，
-     *     应用 delta 后重建出完整的 Anvil 区域文件再覆盖（见 {@link McaDeltaMerger#apply(File, File, File)}）。</li>
-     * </ul>
-     *
-     * @param zipFile   增量备份 Zip 文件
-     * @param targetDir 已经解压好全量备份（以及更早的增量）的目录
-     * @return 是否合并成功
-     */
-    public static boolean mergeIncrementalZip(File zipFile, File targetDir) {
-        try (ZipInputStream zipIn = new ZipInputStream(new FileInputStream(zipFile))) {
-            ZipEntry zipEntry = zipIn.getNextEntry();
-            while (zipEntry != null) {
-                String fileName = zipEntry.getName();
-                File currFile;
-                try {
-                    currFile = resolveZipEntryTarget(targetDir, fileName);
-                } catch (IOException e) {
-                    System.out.println("Refusing zip entry: " + e.getMessage());
-                    return false;
-                }
-                if (isDirectoryEntry(zipEntry)) {
-                    if (!currFile.exists() && !currFile.mkdirs()) {
-                        System.out.println("Failed to create directory " + currFile.getAbsolutePath());
-                        return false;
-                    }
-                } else {
-                    System.out.println("\tMerging: " + fileName);
-                    File tmpFile = null;
-                    File mergedFile = null;
-                    try {
-                        // 先落盘，才能判断条目到底是 delta 还是原样存储的 .mca
-                        // ZipInputStream.read(byte[], int, int) 是当前 ZIP 条目数据读完时返回 -1，不是整个 ZIP 流的 EOF
-                        tmpFile = spoolEntry(zipIn, currFile);
-                        if (isMcaPath(fileName) && McaDeltaMerger.hasMagic(tmpFile)) {
-                            // delta 必须应用到一个已经存在的完整区域文件上
-                            if (!currFile.isFile()) {
-                                System.out.println("Incremental region entry " + fileName
-                                        + " is a PSMCA delta, but there is no baseline region file at "
-                                        + currFile.getAbsolutePath());
-                                return false;
-                            }
-                            if (McaDeltaMerger.hasMagic(currFile)) {
-                                System.out.println("Baseline region file " + currFile.getAbsolutePath()
-                                        + " is itself a PSMCA delta, cannot apply " + fileName);
-                                return false;
-                            }
-                            mergedFile = createSiblingTempFile(currFile);
-                            McaDeltaMerger.apply(currFile, tmpFile, mergedFile);
-                            moveAtomically(mergedFile, currFile);
-                            mergedFile = null;
-                        } else {
-                            moveAtomically(tmpFile, currFile);
-                            tmpFile = null;
-                        }
-                    } catch (IOException e) {
-                        System.out.println("Failed to merge " + fileName + " into "
-                                + currFile.getAbsolutePath() + ": " + e.getMessage());
-                        return false;
-                    } finally {
-                        deleteQuietly(tmpFile);
-                        deleteQuietly(mergedFile);
-                    }
-                }
-                zipIn.closeEntry();
-                zipEntry = zipIn.getNextEntry();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
-        }
-        return true;
-    }
-
-    /**
      * 判断 zip 条目名的后缀是不是 `.mca`（不区分大小写，与备份端 {@code DirFileRecord.isMcaPath} 一致）
      *
      * @param entryName zip 条目名或相对路径
@@ -196,7 +118,7 @@ public class Utils {
      * @param zipEntry zip 条目
      * @return 是否为目录
      */
-    private static boolean isDirectoryEntry(ZipEntry zipEntry) {
+    static boolean isDirectoryEntry(ZipEntry zipEntry) {
         return zipEntry.isDirectory() || zipEntry.getName().endsWith("/");
     }
 
@@ -232,7 +154,7 @@ public class Utils {
      * @return 写完的临时文件
      * @throws IOException 读写失败
      */
-    private static File spoolEntry(ZipInputStream zipIn, File destFile) throws IOException {
+    static File spoolEntry(ZipInputStream zipIn, File destFile) throws IOException {
         File tmpFile = createSiblingTempFile(destFile);
         try (FileOutputStream out = new FileOutputStream(tmpFile)) {
             byte[] buffer = new byte[16384];
@@ -256,7 +178,7 @@ public class Utils {
      * @return 临时文件
      * @throws IOException 目录创建失败或临时文件创建失败
      */
-    private static File createSiblingTempFile(File destFile) throws IOException {
+    static File createSiblingTempFile(File destFile) throws IOException {
         File parent = destFile.getAbsoluteFile().getParentFile();
         if (parent == null)
             throw new IOException("Cannot determine the parent directory of " + destFile);
@@ -272,8 +194,23 @@ public class Utils {
      * @param dest 目标文件
      * @throws IOException 替换失败
      */
-    private static void moveAtomically(File src, File dest) throws IOException {
-        McaDeltaMerger.moveAtomically(src.toPath(), dest.toPath());
+    static void moveAtomically(File src, File dest) throws IOException {
+        moveAtomically(src.toPath(), dest.toPath());
+    }
+
+    /**
+     * 原子替换目标路径；当前文件系统不支持原子移动时退化为普通替换。
+     *
+     * @param src 临时源路径
+     * @param dest 目标路径
+     * @throws IOException 移动失败
+     */
+    static void moveAtomically(Path src, Path dest) throws IOException {
+        try {
+            Files.move(src, dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(src, dest, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /**
@@ -281,7 +218,7 @@ public class Utils {
      *
      * @param file 文件，可为 null
      */
-    private static void deleteQuietly(File file) {
+    static void deleteQuietly(File file) {
         if (file == null)
             return;
         try {

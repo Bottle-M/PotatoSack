@@ -1,22 +1,22 @@
 package indi.somebottle;
 
-import com.google.gson.Gson;
 
 import javax.swing.JFileChooser;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) {
+        // 传入命令行参数时完全走命令行模式，不初始化 Swing
+        if (args.length > 0) {
+            int exitCode = CommandLine.runCommandLine(args);
+            System.exit(exitCode);
+            return;
+        }
+
         final String executionDir = System.getProperty("user.dir");
-        // JSON 解析器
-        Gson gson = new Gson();
         // 临时目录
         File tmpDir = new File(executionDir, "potato_sack_tmp");
         if (tmpDir.exists()) {
@@ -74,12 +74,6 @@ public class Main {
                 System.out.println("You're not choosing a directory, exit.");
                 throw new Utils.ExitException(1);
             }
-            // 用于存放文件解压的临时目录
-            File unzipDir = new File(tmpDir, "unzip");
-            if (!unzipDir.exists() && !unzipDir.mkdirs()) {
-                System.out.println("Failed to create temp directory for unzip: " + unzipDir.getAbsolutePath());
-                throw new Utils.ExitException(1);
-            }
             // 检查是否有 backup.json
             File backupRecordFile = new File(selectedDir, "backup.json");
             if (!backupRecordFile.exists()) {
@@ -90,8 +84,7 @@ public class Main {
             // 读出备份记录
             BackupRecord backupRecord;
             try {
-                String backupJson = Utils.readFile(backupRecordFile);
-                backupRecord = gson.fromJson(backupJson, BackupRecord.class);
+                backupRecord = Task.readBackupRecord(selectedDir);
             } catch (IOException e) {
                 System.out.println("Failed to read backup.json.");
                 e.printStackTrace();
@@ -106,14 +99,9 @@ public class Main {
             }
             // 再扫描有没有缺失增量备份 incre*.zip
             List<BackupRecord.IncreBackupHistoryItem> increHistory =
-                    discoverAvailableIncrementals(selectedDir, backupRecord.getIncreBackupsHistory());
-            for (BackupRecord.IncreBackupHistoryItem item : increHistory) {
-                File increBackupFile = new File(selectedDir, "incre" + item.getId() + ".zip");
-                if (!increBackupFile.exists()) {
-                    // 有增量备份缺失了
-                    System.out.println("Incremental backup " + item.getId() + " is missing, unable to continue.");
-                    throw new Utils.ExitException(1);
-                }
+                    Task.discoverAvailableIncrementals(selectedDir, backupRecord.getIncreBackupsHistory());
+            if (!Task.validateIncrementalFiles(selectedDir, increHistory)) {
+                throw new Utils.ExitException(1);
             }
             int mergeIncreUntil = -1;
             if (increHistory.size() == 0) {
@@ -121,13 +109,7 @@ public class Main {
                 System.out.println("No incremental backup exists.");
             } else {
                 // 有增量备份的话，让用户选择一直合并到哪份增量备份
-                System.out.println("Incremental backups: ");
-                for (int i = 0; i < increHistory.size(); i++) {
-                    BackupRecord.IncreBackupHistoryItem item = increHistory.get(i);
-                    String time = item.getTime() == 0 ? " (not listed in backup.json)" :
-                            " - Time: " + Utils.timestampToDate(item.getTime());
-                    System.out.println("\t" + (i + 1) + ". incre" + item.getId() + time);
-                }
+                Task.printIncrementals(increHistory);
                 System.out.println("Up to which incremental backup do you want to merge? Type the number before the option and press enter: ");
                 int selected;
                 while (true) {
@@ -139,29 +121,6 @@ public class Main {
                 }
                 // 合并直至下标 mergeIncreUntil
                 mergeIncreUntil = selected - 1;
-            }
-            System.out.println("Unzipping and merging backups...");
-            System.out.println("Extracting full backup...");
-            // 解压全量备份
-            if (!Utils.unzip(fullBackupFile, unzipDir)) {
-                System.out.println("Failed to unzip full backup.");
-                throw new Utils.ExitException(1);
-            }
-            System.out.println("Merging incremental backup...");
-            // 在全量备份的基础上应用增量备份:
-            // - 增量 zip 里的 .mca 可能是原样存储的完整区域文件，也可能是 PSMCA delta，由 Utils 分流处理
-            // - 每个增量里所有的 zip 条目处理完之后，再按 deleted.files 清单删除文件
-            for (int i = 0; i <= mergeIncreUntil; i++) {
-                File increBackupFile = new File(selectedDir, "incre" + increHistory.get(i).getId() + ".zip");
-                if (!Utils.mergeIncrementalZip(increBackupFile, unzipDir)) {
-                    System.out.println("Failed to merge incremental backup " + increBackupFile.getAbsolutePath());
-                    throw new Utils.ExitException(1);
-                }
-                // 解压完后根据 deleted.files 清单删除文件
-                if (!applyDeletedFilesSafely(unzipDir, new File(unzipDir, "deleted.files"))) {
-                    System.out.println("Failed to apply deleted.files for " + increBackupFile.getAbsolutePath());
-                    throw new Utils.ExitException(1);
-                }
             }
             // 让用户选择把压缩包输出到哪里
             System.out.println("Save the merged backup as...");
@@ -203,14 +162,13 @@ public class Main {
                 // 如果用户选择的是一个目录，在末尾加上文件名
                 zipOutputFile = new File(zipOutputFile, "merged.zip");
             }
-            System.out.println("\n> Output file path: " + zipOutputFile.getAbsolutePath() + "\n");
-            // 合并备份后再打包成一个压缩包
-            System.out.println("Zipping merged backups...");
-            if (!Utils.zip(unzipDir.listFiles(), zipOutputFile, unzipDir)) {
-                System.out.println("Failed to zip merged backups.");
+            if (Task.validateOutputFile(zipOutputFile, fullBackupFile, selectedDir, increHistory) != 0) {
                 throw new Utils.ExitException(1);
             }
-            System.out.println("Done! The merged backup has been saved as " + zipOutputFile.getAbsolutePath());
+            if (!Task.mergeBackups(selectedDir, fullBackupFile, increHistory,
+                    mergeIncreUntil + 1, zipOutputFile, tmpDir)) {
+                throw new Utils.ExitException(1);
+            }
         } catch (Utils.ExitException e) {
             exitCode = e.getExitCode();
         } catch (Throwable e) {
@@ -241,90 +199,4 @@ public class Main {
         }
     }
 
-    /**
-     * 寻找可用的增量备份
-     *
-     * backup.json 上传失败时，已完成上传的下一份增量 ZIP 可能未存入历史记录
-     *
-     * @param groupDir 备份组目录
-     * @param declared backup.json 中声明存在的增量备份 zip
-     * @return 实际存在的增量备份项
-     */
-    static List<BackupRecord.IncreBackupHistoryItem> discoverAvailableIncrementals(
-            File groupDir, List<BackupRecord.IncreBackupHistoryItem> declared) {
-        List<BackupRecord.IncreBackupHistoryItem> available =
-                declared == null ? new ArrayList<>() : new ArrayList<>(declared);
-        long next = 1;
-        if (!available.isEmpty()) {
-            // backup.json 有可用的增量备份
-            try {
-                // 检查最后一个声明的 .zip 文件的下一个增量备份存不存在（上传失败时可能最后一个增量 zip 没有成果写入 backup.json 元数据）
-                next = Long.parseLong(available.get(available.size() - 1).getId()) + 1;
-            } catch (NumberFormatException e) {
-                return available;
-            }
-        }
-        while (next > 0) {
-            // 如果存在 backup.json 中遗漏的增量备份 zip 就算入。
-            String id = String.format("%06d", next);
-            if (!new File(groupDir, "incre" + id + ".zip").isFile())
-                break;
-            BackupRecord.IncreBackupHistoryItem item = new BackupRecord.IncreBackupHistoryItem();
-            item.setId(id);
-            available.add(item);
-            next++;
-        }
-        return available;
-    }
-
-    /**
-     * 按 deleted.files 清单删除文件，然后删掉清单本身
-     *
-     * <p>清单里每行是一个相对于服务端根目录的路径。这里会对路径做规范化，拒绝绝对路径、`..` 穿越
-     * 以及指向恢复目录本身的条目，避免清单被写坏时误删恢复目录之外的文件。</p>
-     *
-     * @param unzipDir          恢复目录
-     * @param deletedRecordFile deleted.files 文件
-     * @return 是否成功删除清单中的文件以及清单本身
-     */
-    static boolean applyDeletedFilesSafely(File unzipDir, File deletedRecordFile) {
-        if (!deletedRecordFile.isFile())
-            return true;
-        Path root = unzipDir.getAbsoluteFile().toPath().normalize();
-        // 读出被删除的文件，进行删除
-        String[] deletedFilePaths = Utils.readLines(deletedRecordFile);
-        for (String deletedFilePath : deletedFilePaths) {
-            Path resolved;
-            try {
-                resolved = root.resolve(deletedFilePath).normalize();
-            } catch (InvalidPathException e) {
-                System.out.println("!!WARNING!! Ignoring invalid path in deleted.files: " + deletedFilePath);
-                continue;
-            }
-            if (resolved.equals(root) || !resolved.startsWith(root)) {
-                System.out.println("!!WARNING!! Ignoring unsafe path in deleted.files: " + deletedFilePath);
-                continue;
-            }
-            File deletedFile = resolved.toFile();
-            if (!deletedFile.exists())
-                continue;
-            System.out.println("\tDeleting " + deletedFile.getAbsolutePath());
-            try {
-                Files.deleteIfExists(deletedFile.toPath());
-            } catch (IOException e) {
-                System.out.println("!!WARNING!! Failed to delete file " + deletedFile.getAbsolutePath()
-                        + ": " + e.getMessage());
-                return false;
-            }
-        }
-        // 最后删掉 deleted.files（它在该增量中不是被删除的文件，只是清单本身）
-        try {
-            Files.deleteIfExists(deletedRecordFile.toPath());
-        } catch (IOException e) {
-            System.out.println("!!WARNING!! Failed to delete file " + deletedRecordFile.getAbsolutePath()
-                    + ": " + e.getMessage());
-            return false;
-        }
-        return true;
-    }
 }
