@@ -46,6 +46,24 @@ A tool to merge **a group of backups** into a full backup.
 
 7. The program will generate a merged zip archive (default filename is `merged.zip`). You can extract this package to your Minecraft server directory to restore the backed-up data.  
 
+### Non-interactive mode
+
+With command line arguments, the program runs in non-interactive mode:
+
+```bash
+java -jar BackupsMerger.jar -d /path/to/backup-group -l
+java -jar BackupsMerger.jar -d /path/to/backup-group -t 2 -o /path/to/result.zip
+
+# Show usage
+java -jar BackupsMerger.jar -h
+```
+
+`--list` (`-l`) shows the available incremental backups with numbers starting at **1**. `--merge-up-to` (`-t`) uses one of these numbers and includes that incremental backup in the merge. Both require `--group-dir` (`-d`) and cannot be used together.   
+
+`--output-file` (`-o`) is only valid with `--merge-up-to`; if omitted, the output is `merged.zip` in the current working directory, and its path is printed.   
+
+Run with `--help` (`-h`) for the full option list. With no cli arguments, the program remains interactive.  
+
 ## How each kind of entry is merged
 
 | Entry in the archive | Behaviour |

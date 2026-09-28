@@ -45,6 +45,24 @@
 
 7. 最终程序会产生一个合并后的 Zip 包，默认文件名是 `merged.zip`。你可以把这个压缩包解压到你的 Minecraft 服务端目录以恢复备份数据。  
 
+### 非交互模式
+
+提供命令行参数后，程序将以非交互模式运行，不会打开文件选择窗口，直接根据命令行参数执行操作：
+
+```bash
+java -jar BackupsMerger.jar --group-dir /path/to/backup-group --list
+java -jar BackupsMerger.jar --group-dir /path/to/backup-group --merge-up-to 2 --output-file /path/to/result.zip
+
+# 展示非交互模式用法
+java -jar BackupsMerger.jar -h
+```
+
+`--list`（`-l`）列出可用增量备份及从 **1** 开始的序号，`--merge-up-to`（`-t`）使用选定的序号，按顺序合并到指定增量备份（包含该备份）。两者都必须与 `--group-dir`（`-d`）一起使用，且不能同时使用。    
+
+`--output-file`（`-o`）只能和 `--merge-up-to`（`-t`）结合使用；省略时默认输出到当前工作目录的 `merged.zip`。  
+
+使用 `--help`（`-h`）可查看参数说明；没有参数时则会进入交互模式。  
+
 ## 各类条目的合并方式说明
 
 | 压缩包中的条目                                                  | 处理方式 |
