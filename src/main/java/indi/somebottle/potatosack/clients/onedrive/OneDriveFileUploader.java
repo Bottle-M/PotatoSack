@@ -5,6 +5,7 @@ import indi.somebottle.potatosack.clients.onedrive.utils.OneDriveRequestUtils;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDrivePutOrGetSessionResp;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
+import indi.somebottle.potatosack.utils.ByteArraySliceRequestBody;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
 import indi.somebottle.potatosack.utils.Utils;
 import okhttp3.*;
@@ -30,6 +31,8 @@ public class OneDriveFileUploader {
     private final File localFile;
     private final long fileSize;
     private final String uploadUrl;
+    /** 每个块上传请求都会复用该缓冲区，以避免为每个分块分配一个大数组 */
+    private final byte[] chunkBuffer;
     private final long[] nextRange = {0, -1}; // 接下来要上传的字节范围[start, end]，end=-1代表end=start+CHUNK_SIZE
     public static int CHUNK_SIZE = 1024 * 320 * 50; // 15.625MiB 一块（320 KiB 的整数倍）
 
@@ -38,6 +41,7 @@ public class OneDriveFileUploader {
         this.localFile = localFile;
         this.uploadUrl = uploadUrl;
         this.fileSize = localFile.length();
+        this.chunkBuffer = new byte[CHUNK_SIZE];
     }
 
     public boolean upload() {
@@ -83,9 +87,11 @@ public class OneDriveFileUploader {
             // 生成Range头
             String range = "bytes " + start + "-" + end + "/" + fileSize;
             // 读取当前这块的字节数据
-            byte[] chunkData = Utils.readBytesFromFile(localFile, start, (int) (end - start + 1));
+            int chunkLength = (int) (end - start + 1);
+            Utils.readBytesFromFile(localFile, start, chunkBuffer, chunkLength);
             // 建立文件内容请求体
-            RequestBody fileReqBody = RequestBody.create(chunkData, MediaType.parse("application/octet-stream"));
+            RequestBody fileReqBody = new ByteArraySliceRequestBody(
+                    chunkBuffer, 0, chunkLength, MediaType.parse("application/octet-stream"));
             // 构造请求
             Request req = new Request.Builder()
                     .url(uploadUrl)

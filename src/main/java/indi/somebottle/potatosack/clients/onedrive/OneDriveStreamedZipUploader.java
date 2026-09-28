@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipOutputStream;
@@ -73,6 +74,37 @@ public class OneDriveStreamedZipUploader {
         }
 
         /**
+         * 非递归、支持重试的分块请求方法
+         *
+         * <p>之所以非递归：如果在递归函数内部持有资源，并且在递归栈还没有展开时直接重试，那么上层调用栈帧不会退出，栈帧里持有的资源一直无法释放，持有的引用也是</p>
+         *
+         * @param req okhttp Request 对象
+         * @param retry 重试次数
+         * @return 请求响应
+         * @throws IOException 请求异常
+         */
+        private Response executeChunkRequest(Request req, int retry) throws IOException {
+            int currentRetry = retry;
+            while (true) {
+                try {
+                    return client.newCall(req).execute();
+                } catch (IOException e) {
+                    if (currentRetry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
+                        throw e;
+                    }
+                    try {
+                        System.out.println("Failed to request, retrying to upload in 10 seconds...");
+                        Thread.sleep(10000);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted while waiting to retry upload", interrupted);
+                    }
+                    currentRetry++;
+                }
+            }
+        }
+
+        /**
          * 将缓冲区中的块上传，并清空缓冲区
          *
          * @param retry       该块的上传重试次数
@@ -94,9 +126,10 @@ public class OneDriveStreamedZipUploader {
             String range = "bytes " + chunkOffset + "-" + currRangeEnd + "/" + totalSize;
             ConsoleSender.toConsole("Compressing + Uploading chunk: " + range + " Byte(s)");
             try {
-                // 建立文件内容请求体
-                // 用Arrays.copyOfRange复制缓冲区切片，防止多余数据被上传
-                RequestBody fileReqBody = RequestBody.create(Arrays.copyOfRange(buffer, bufStartPos, bufEndPos), MediaType.parse("application/octet-stream"));
+                // 建立文件内容请求体。请求同步完成后才会继续复用 buffer，因而无需复制分块数据。
+                RequestBody fileReqBody = new ByteArraySliceRequestBody(
+                        buffer, bufStartPos, bufEndPos - bufStartPos,
+                        MediaType.parse("application/octet-stream"));
                 // 构造请求
                 Request req = new Request.Builder()
                         .url(uploadUrl)
@@ -104,29 +137,8 @@ public class OneDriveStreamedZipUploader {
                         .header("Content-Range", range)
                         .put(fileReqBody)
                         .build();
-                // 发送请求
-                Response resp;
-                try {
-                    resp = client.newCall(req).execute();
-                } catch (IOException e) {
-                    // 虽然 OKHttp 请求我已经写了拦截器进行重试
-                    // 但有时候拦截器重试后还是没能成功（拿不到响应）
-                    // 对于流式压缩上传来说最好是不要中断，因此这里还需进行一次完整的重试，递归调用 uploadBuf
-                    if (retry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
-                        // 如果已经重试多次了，抛出错误
-                        throw e;
-                    } else {
-                        try {
-                            System.out.println("Failed to request, retrying to upload in 10 seconds...");
-                            Thread.sleep(10000);
-                        } catch (InterruptedException e1) {
-                            System.out.println(e1.getMessage());
-                        }
-                        // 否则重试 uploadBuf
-                        uploadBuf(retry + 1, bufStartPos, bufEndPos);
-                        return;
-                    }
-                }
+                // 发送请求；网络失败时在循环中重试，避免递归栈帧保留请求对象。
+                Response resp = executeChunkRequest(req, retry);
                 if (resp.isSuccessful()) {
                     ConsoleSender.toConsole(" --> Chunk successfully uploaded.");
                     int respCode = resp.code();
@@ -251,6 +263,37 @@ public class OneDriveStreamedZipUploader {
             // 如果正好写满一块
             if (writePos == buffer.length) {
                 uploadBuf(); // 上传缓冲区并冲刷掉
+            }
+        }
+
+        /**
+         * 批量写入字节到缓冲区，写满时阻塞，进行块上传
+         * @param b     字节数据
+         * @param off   写入的偏移量
+         * @param len   写入的字节数
+         * @throws IOException IO 异常
+         */
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            Objects.checkFromIndexSize(off, len, b.length);
+            if (streamClosed || len == 0)
+                return;
+            if (uploadSessionClosed)
+                throw new IOException("Unexpected: Upload session closed.");
+            int pos = off;
+            int remaining = len;
+            while (remaining > 0) {
+                if (writePos >= buffer.length) {
+                    uploadBuf();
+                }
+                int copyLength = Math.min(remaining, buffer.length - writePos);
+                System.arraycopy(b, pos, buffer, writePos, copyLength);
+                writePos += copyLength;
+                pos += copyLength;
+                remaining -= copyLength;
+                if (writePos == buffer.length) {
+                    uploadBuf();
+                }
             }
         }
 

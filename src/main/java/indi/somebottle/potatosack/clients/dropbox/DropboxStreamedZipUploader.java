@@ -7,6 +7,7 @@ import indi.somebottle.potatosack.utils.Utils;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.Objects;
 import java.util.zip.ZipOutputStream;
 
 /**
@@ -113,6 +114,29 @@ public class DropboxStreamedZipUploader {
             buffer[writePos++] = (byte) b;
             if (writePos == buffer.length) {
                 uploadBuf();
+            }
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            Objects.checkFromIndexSize(off, len, b.length);
+            if (streamClosed || terminated || len == 0) {
+                return;
+            }
+            int pos = off;
+            int remaining = len;
+            while (remaining > 0) {
+                if (writePos >= buffer.length) {
+                    uploadBuf();
+                }
+                int copyLength = Math.min(remaining, buffer.length - writePos);
+                System.arraycopy(b, pos, buffer, writePos, copyLength);
+                writePos += copyLength;
+                pos += copyLength;
+                remaining -= copyLength;
+                if (writePos == buffer.length) {
+                    uploadBuf();
+                }
             }
         }
 

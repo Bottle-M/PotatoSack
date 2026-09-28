@@ -69,7 +69,7 @@ public class Utils {
      * @param file 文件 File 对象
      * @return 64 位哈希值（按无符号处理）
      * @throws IOException 文件读不了（被锁定等），且退避重试次数耗尽时抛出
-     * @apiNote <p>读文件遇到锁定时会指数退避重试，与 {@link #zipSpecificFilesUtil} 一致；
+     * @apiNote <p>读文件遇到锁定时会指数退避重试，与 {@link #zipSpecificFilesUtil} 一致；g191
      * 扫描时应当捕获异常并<b>跳过实在无法读取的文件</b>，不要让整个备份失败
      * —— Windows 下的 `session.lock` 就是典型的读不了的文件。</p>
      */
@@ -162,7 +162,7 @@ public class Utils {
     /**
      * 原子移动文件（如果没法原子移动就普通移动）
      *
-     * @param srcPath 源路径
+     * @param srcPath  源路径
      * @param destPath 目标路径
      * @throws IOException 无法移动时抛出
      */
@@ -176,22 +176,21 @@ public class Utils {
     }
 
     /**
-     * 从文件中指定位置开始读取指定字节数
+     * 将文件的指定范围读入调用方提供的缓冲区，避免每个分块重新分配 byte[]
      *
-     * @param file   文件
-     * @param start  开始位置
-     * @param length 读取字节数
-     * @return 读取的字节数组
-     * @throws IOException IO
+     * @param file        文件对象
+     * @param start       起始位置
+     * @param destination 调用方提供的缓冲区
+     * @param length      要读取的长度
+     * @throws IOException IO 异常
      */
-    public static byte[] readBytesFromFile(File file, long start, int length) throws IOException {
+    public static void readBytesFromFile(File file, long start, byte[] destination, int length) throws IOException {
         try (RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
-            // 分配一个字节数组来存储读取的数据
-            byte[] chunkData = new byte[length];
-            // 将文件的特定部分读入字节数组
-            randomAccessFile.seek(start); // 将文件指针移动到指定位置
-            randomAccessFile.read(chunkData, 0, length); // 读取指定字节数
-            return chunkData;
+            if (length < 0 || length > destination.length) {
+                throw new IndexOutOfBoundsException("length: " + length + ", destination length: " + destination.length);
+            }
+            randomAccessFile.seek(start);
+            randomAccessFile.readFully(destination, 0, length);
         } catch (IOException e) {
             throw new IOException("Error reading bytes from file", e);
         }
@@ -310,9 +309,9 @@ public class Utils {
     /**
      * 获取指定目录下所有文件的修改时间快照
      *
-     * @param srcDir 待扫描目录（File 对象）
+     * @param srcDir  待扫描目录（File 对象）
      * @param ignorer 用于跳过被忽略的文件/目录（目录命中即剪枝）
-     * @param res    存储结果的 Map
+     * @param res     存储结果的 Map
      */
     public static void updateFilesModificationSnapshot(File srcDir, IgnoreMatcher ignorer, Map<String, Long> res) throws IOException {
         if (res == null)
@@ -337,7 +336,7 @@ public class Utils {
     /**
      * 获取所有指定路径下文件的修改时间快照
      *
-     * @param paths  路径列表（绝对或相对服务端根）
+     * @param paths   路径列表（绝对或相对服务端根）
      * @param ignorer 用于跳过被忽略的文件/目录
      * @return Map<文件相对路径, 最后修改时间戳>
      */
@@ -375,13 +374,15 @@ public class Utils {
     /**
      * 将指定的文件加入Zip流
      *
-     * @param zos          Zip输出流
+     * @param zos     Zip输出流
      * @param entries 要打包进 zip 的条目
-     * @param quiet        是否静默打包（不显示 Adding... 信息)
+     * @param quiet   是否静默打包（不显示 Adding... 信息)
      */
     public static void zipSpecificFilesUtil(ZipOutputStream zos, ZipEntryInfo[] entries, boolean quiet) throws IOException, ZipRWConflictException {
         // CRC 校验和计算器
         CRC32 crc32 = new CRC32();
+        // 复用同一个 buffer
+        byte[] buffer = new byte[1048576];
         for (ZipEntryInfo entry : entries) {
             // 重置 CRC
             crc32.reset();
@@ -399,7 +400,6 @@ public class Utils {
             long fileSizeBefore = file.length();
             long checksumBefore; // 读取过程中对【原始文件】算出的 CRC32
             try (InputStream in = openInputStream4Zip(entry, file)) {
-                byte[] buffer = new byte[1048576];
                 int len;
                 while ((len = in.read(buffer)) > 0) {
                     crc32.update(buffer, 0, len);
@@ -443,9 +443,9 @@ public class Utils {
     /**
      * 将指定的文件打包成Zip
      *
-     * @param entries 要打包进 zip 的条目
-     * @param outputPath   输出Zip包的路径
-     * @param quiet        是否静默打包（不显示 Adding... 信息)
+     * @param entries    要打包进 zip 的条目
+     * @param outputPath 输出Zip包的路径
+     * @param quiet      是否静默打包（不显示 Adding... 信息)
      * @return 是否打包成功
      */
     public static boolean zipSpecificFiles(ZipEntryInfo[] entries, String outputPath, boolean quiet) {
@@ -487,7 +487,7 @@ public class Utils {
      * </p>
      *
      * @param backupConfPaths 配置的备份路径列表
-     * @param ignorer          IgnoreMatcher，用于判断世界目录是否被整体忽略
+     * @param ignorer         IgnoreMatcher，用于判断世界目录是否被整体忽略
      * @return 与备份路径有交叠且未被忽略的世界名列表；若存在世界目录无法解析，返回 null，表示无法判断交叠关系，调用方应关闭所有世界的自动保存
      */
     public static List<String> getWorldNamesOverlappingBackupPaths(List<String> backupConfPaths, IgnoreMatcher ignorer) {
