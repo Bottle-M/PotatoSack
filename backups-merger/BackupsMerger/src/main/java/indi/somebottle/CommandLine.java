@@ -126,14 +126,14 @@ public final class CommandLine {
     }
 
     private static void printCommandLineUsage() {
-        System.out.println("Usage:");
+        System.out.println("Non-interactive Mode Usage:");
         System.out.println("  java -jar BackupsMerger.jar -d <group-dir> -l");
         System.out.println("  java -jar BackupsMerger.jar -d <group-dir> -t <number> [-o <output-file>]");
         System.out.println();
         System.out.println("Options:");
-        System.out.println("  -d, --group-dir <dir>       Backup group directory (required in CLI mode)");
+        System.out.println("  -d, --group-dir <dir>       Backup group directory (required in non-interactive mode)");
         System.out.println("  -l, --list                  List available incremental backups");
-        System.out.println("  -t, --merge-up-to <number>  Merge through the listed incremental number");
+        System.out.println("  -t, --merge-up-to <number>  Up to which incremental backup (identified by the number in the list) should we merge");
         System.out.println("  -o, --output-file <file>    Output zip path (default: ./merged.zip)");
         System.out.println("  -h, --help                 Show this help");
     }
