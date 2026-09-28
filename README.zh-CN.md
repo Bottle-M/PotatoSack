@@ -22,7 +22,7 @@ Lang: 中文简体 | [English](README.md)
 
 <details>
 
-<summary>展开查看</summary>
+<summary>展开查看：关于 “一组备份”，“流式压缩上传” 以及 “区块级增量备份”</summary>
 
 ### 一组备份
 
@@ -30,7 +30,7 @@ Lang: 中文简体 | [English](README.md)
 
 每新产生一次全量备份，就会新创建“一组备份”。随后直至下次全量备份前的增量备份都会算在这一组里。  
 
-详见[备份目录结构](memos/backup-mechanism.md#云端备份存储结构)。
+详见[备份目录结构](memos/backup-mechanism.md#dir-structure)。
 
 ### 流式压缩上传
 
@@ -43,6 +43,21 @@ Lang: 中文简体 | [English](README.md)
 传统的备份方式是将待备份文件先临时压缩为压缩包，再上传到云端，这种方式要求硬盘空间能容纳下待备份文件 + 产生的压缩包。  
 
 然而，很多 Minecraft 服务器托管提供方会限制硬盘的可用空间。假如可用空间只有 10 GiB 而世界存档数据就占用了 7 GiB，那么硬盘剩余的空间是不太能容纳下产生的压缩包的，也就会导致备份失败。
+
+### 区块级增量备份
+
+自 3.0.0 开始，PotatoSack 以较小的代价和维护复杂度实现了区块级的增量备份。PotatoSack 会在备份记录文件中存放区域时间戳表，根据区块时间戳是否变化来判断是否需要增量备份。同时增量备份包中也会以特制的 PSMCA (delta mca) 格式存储每个 `.mca` 文件，仅存储发生变化的区块。  
+
+* 详细实现细节请见[备份机制](./memos/backup-mechanism.md)和 [3.0.0 设计文档](./memos/potatosack-3.0.0-design.md)的说明。    
+
+> **注**：受制于维护复杂度，咱没有做更细粒度的变更检测，比如剥离区块的 `InhabitedTime`, `LastUpdate` 等易变字段后再对区块进行哈希，或甚至更细粒度地拆分到方块级。这些都涉及到对区块数据的解压和 NBT 的解析，**引入额外运算复杂度的同时也会显著增大维护难度**（mojang 底层这些数据字段真的可能过一个版本就变样了），更不提这些更细粒度的哈希字节串是难以压缩的，如果记录文件中对于每个区块都要记录这么细粒度的状态，当区域文件变多时，记录文件的体积也会显著膨胀。  
+> 
+> 测试中，3.0.0 增量备份压缩包的体积相比 2.x.x 在**较优情况下**已经能减小 **85%**（**具体取决于玩家行动范围**），且记录文件因为换作了二进制紧凑格式并压缩存储，体积也显著减小了不少。这样目前怎么说也已经够用了。  
+>
+> 以时间戳作为判据主要的缺点是，玩家只要在区块附近，区块的数据（对 region 目录下的文件来说主要是 `InhabitedTime`）就可能发生变化，这个区块也就会被更新，时间戳也就会发生变化。但相比原本 2.x.x 只要有一点变化就备份整个区域 `.mca` 文件的机制，3.0.0 还是减少了不少的冗余部分。  
+
+---
+
 
 </details>
 
@@ -159,11 +174,11 @@ use-streaming-compression-upload: false
 #   - world
 #   - ./world_nether
 #   - world_the_end
+#   - plugins/GroupManager
 #
-# After Minecraft JE 26.1, it can be:
+# 在 Minecraft JE 26.1 之后可以是:
 # paths:
 #   - /workspace/server/world
-#   - plugins/GroupManager
 #
 # 注 1: 如果 paths 留空，插件就不会工作辣！(∪.∪ )...zzz
 # 注 2: 所有的路径都应该指向服务端根目录下级的目录
@@ -260,7 +275,7 @@ a/**/c
 
     * 如果是 S3: `<bucket>/<base-dir>/PotatoSack/...`。S3 本身没有真正的目录，而是由 object key 前缀表达，插件也不会为目录创建零字节 marker object。删除一组旧备份时会按前缀批量、递归删除该组下的所有对象。
 
-    * (`<base-dir>` 即你在 `configs.yml` 中配置的 `client.base-dir`)  
+    > (`<base-dir>` 即你在 `configs.yml` 中配置的 `client.base-dir`)  
 
 3. *为什么叫 PotatoSack*？  
     
@@ -281,6 +296,6 @@ mvn clean package
 
 ## 开源协议
 
-本插件采用 MIT 开源协议。
+本插件采用 Apache-2.0 开源协议。
 
 感谢你的使用 (￣▽￣)"  

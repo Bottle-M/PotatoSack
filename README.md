@@ -22,7 +22,7 @@ Backed-up archives are not stored locally, but are uploaded to cloud storage ser
 
 <details>
 
-<summary>Expand / Collapse</summary>
+<summary>Expand / Collapse: About "A Group of Backups", "Streaming Compression Upload", and "Chunk-level Incremental Backup"</summary>
 
 ### A Group of Backups
 
@@ -30,7 +30,7 @@ Backed-up archives are not stored locally, but are uploaded to cloud storage ser
 
 Every time a new full backup is created, a new "group of backups" is created. Subsequent incremental backups before the next full backup will be stored in this group.  
 
-For more details, see [Backup Directory Structure](memos/backup-mechanism.md#云端备份存储结构).  
+For more details, see [Backup Directory Structure (Chinese only)](memos/backup-mechanism.md#dir-structure).  
 
 ### Streaming Compression Upload
 
@@ -43,6 +43,20 @@ The "Streaming Compression Upload" of this plugin refers to the backup method of
 The traditional backup method temporarily compresses the files to be backed up into zip archives before uploading them to the cloud, which requires disk space enough to accommodate the files to be backed up and the resulting zip archives.  
 
 However, many Minecraft server hosting providers limit the available space of disk. If the available space is only 10 GiB and the world data takes up 7 GiB, the remaining space on the disk won't be able to accommodate the temporary zip archive and the backup will fail.
+
+### Chunk-level Incremental Backup
+
+Starting with version 3.0.0, PotatoSack implements *chunk-level incremental backups* with relatively low cost and maintenance complexity. PotatoSack stores a region timestamp table in the backup record files and determines whether an incremental backup is needed by checking whether chunk timestamps have changed. Incremental backup archives also store each `.mca` file in a specialized PSMCA (delta mca) format, containing only the chunks that have changed.
+
+* For implementation details, see [Backup Mechanism (Chinese only)](./memos/backup-mechanism.md) and the [3.0.0 Design Document (Chinese only)](./memos/potatosack-3.0.0-design.md).
+
+> **Note**: To keep maintenance manageable, we did not implement finer-grained change detection, such as hashing chunks after removing volatile fields like `InhabitedTime` and `LastUpdate`, or even splitting them down to the block level. These approaches require decompressing chunk data and parsing NBT, which would **increase computational complexity while significantly increasing maintenance difficulty** (Mojang may change these underlying data fields from one version to the next). Finer-grained hash byte strings are also difficult to compress, if the record files stored such fine-grained state for every chunk, their size would grow significantly as more `.mca` files were generated.
+>
+> In testing, under **favorable conditions**, 3.0.0 incremental backup archives were already **85%** smaller than those in 2.x.x (**the exact reduction depends on the area in which players move**). The record files also became significantly smaller after switching to a compact binary format and compressing them. This is sufficient for current use.
+>
+> The main drawback of using timestamps as the criterion is that a chunk may be changed whenever a player is near it (for region files, this is mainly reflected by `InhabitedTime`), which updates the chunk and its timestamp. Compared with the 2.x.x mechanism, which backed up an entire `.mca` region file whenever anything changed, 3.0.0 still removes a substantial amount of redundant data from incremental backup archives.
+
+---
 
 </details>
 
@@ -163,11 +177,11 @@ use-streaming-compression-upload: false
 #   - world
 #   - ./world_nether
 #   - world_the_end
+#   - plugins/GroupManager
 #
 # After Minecraft JE 26.1, it can be:
 # paths:
 #   - /workspace/server/world
-#   - plugins/GroupManager
 #
 # Note 1: if you leave this blank, the plugin won't work.
 # Note 2: all paths must be located under the server root directory.
@@ -277,7 +291,7 @@ See [BackupsMerger](backups-merger/README.md).
 
     * **S3**: `<bucket>/<base-dir>/PotatoSack/...`. S3 has no real directories — the path is expressed by object key prefixes, and no zero-byte marker objects are created by the plugin. Deleting an old backup group will delete every object under its prefix in batches.
 
-    (`<base-dir>` refers to the `client.base-dir` setting in `configs.yml`)
+    > (`<base-dir>` refers to the `client.base-dir` setting in `configs.yml`)
 
 3. Q: *Why the plugin is called* 'PotatoSack'？    
     
@@ -298,6 +312,6 @@ mvn clean package
 
 ## License
 
-MIT Licensed.
+Apache-2.0 Licensed.
 
 Thanks for using. (￣▽￣)"  
