@@ -4,7 +4,7 @@ import com.google.gson.Gson;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDrivePutOrGetSessionResp;
 import indi.somebottle.potatosack.clients.onedrive.utils.OneDriveRequestUtils;
 import indi.somebottle.potatosack.exceptions.DataSizeOverflowException;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.*;
 import okhttp3.*;
 
@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipOutputStream;
@@ -73,6 +74,37 @@ public class OneDriveStreamedZipUploader {
         }
 
         /**
+         * 非递归、支持重试的分块请求方法
+         *
+         * <p>之所以非递归：如果在递归函数内部持有资源，并且在递归栈还没有展开时直接重试，那么上层调用栈帧不会退出，栈帧里持有的资源一直无法释放，持有的引用也是</p>
+         *
+         * @param req okhttp Request 对象
+         * @param retry 重试次数
+         * @return 请求响应
+         * @throws IOException 请求异常
+         */
+        private Response executeChunkRequest(Request req, int retry) throws IOException {
+            int currentRetry = retry;
+            while (true) {
+                try {
+                    return client.newCall(req).execute();
+                } catch (IOException e) {
+                    if (currentRetry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
+                        throw e;
+                    }
+                    try {
+                        System.out.println("Failed to request, retrying to upload in 10 seconds...");
+                        Thread.sleep(10000);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted while waiting to retry upload", interrupted);
+                    }
+                    currentRetry++;
+                }
+            }
+        }
+
+        /**
          * 将缓冲区中的块上传，并清空缓冲区
          *
          * @param retry       该块的上传重试次数
@@ -94,9 +126,10 @@ public class OneDriveStreamedZipUploader {
             String range = "bytes " + chunkOffset + "-" + currRangeEnd + "/" + totalSize;
             ConsoleSender.toConsole("Compressing + Uploading chunk: " + range + " Byte(s)");
             try {
-                // 建立文件内容请求体
-                // 用Arrays.copyOfRange复制缓冲区切片，防止多余数据被上传
-                RequestBody fileReqBody = RequestBody.create(Arrays.copyOfRange(buffer, bufStartPos, bufEndPos), MediaType.parse("application/octet-stream"));
+                // 建立文件内容请求体。请求同步完成后才会继续复用 buffer，因而无需复制分块数据。
+                RequestBody fileReqBody = new ByteArraySliceRequestBody(
+                        buffer, bufStartPos, bufEndPos - bufStartPos,
+                        MediaType.parse("application/octet-stream"));
                 // 构造请求
                 Request req = new Request.Builder()
                         .url(uploadUrl)
@@ -104,29 +137,8 @@ public class OneDriveStreamedZipUploader {
                         .header("Content-Range", range)
                         .put(fileReqBody)
                         .build();
-                // 发送请求
-                Response resp;
-                try {
-                    resp = client.newCall(req).execute();
-                } catch (IOException e) {
-                    // 虽然 OKHttp 请求我已经写了拦截器进行重试
-                    // 但有时候拦截器重试后还是没能成功（拿不到响应）
-                    // 对于流式压缩上传来说最好是不要中断，因此这里还需进行一次完整的重试，递归调用 uploadBuf
-                    if (retry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
-                        // 如果已经重试多次了，抛出错误
-                        throw e;
-                    } else {
-                        try {
-                            System.out.println("Failed to request, retrying to upload in 10 seconds...");
-                            Thread.sleep(10000);
-                        } catch (InterruptedException e1) {
-                            System.out.println(e1.getMessage());
-                        }
-                        // 否则重试 uploadBuf
-                        uploadBuf(retry + 1, bufStartPos, bufEndPos);
-                        return;
-                    }
-                }
+                // 发送请求；网络失败时在循环中重试，避免递归栈帧保留请求对象。
+                Response resp = executeChunkRequest(req, retry);
                 if (resp.isSuccessful()) {
                     ConsoleSender.toConsole(" --> Chunk successfully uploaded.");
                     int respCode = resp.code();
@@ -255,6 +267,37 @@ public class OneDriveStreamedZipUploader {
         }
 
         /**
+         * 批量写入字节到缓冲区，写满时阻塞，进行块上传
+         * @param b     字节数据
+         * @param off   写入的偏移量
+         * @param len   写入的字节数
+         * @throws IOException IO 异常
+         */
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            Objects.checkFromIndexSize(off, len, b.length);
+            if (streamClosed || len == 0)
+                return;
+            if (uploadSessionClosed)
+                throw new IOException("Unexpected: Upload session closed.");
+            int pos = off;
+            int remaining = len;
+            while (remaining > 0) {
+                if (writePos >= buffer.length) {
+                    uploadBuf();
+                }
+                int copyLength = Math.min(remaining, buffer.length - writePos);
+                System.arraycopy(b, pos, buffer, writePos, copyLength);
+                writePos += copyLength;
+                pos += copyLength;
+                remaining -= copyLength;
+                if (writePos == buffer.length) {
+                    uploadBuf();
+                }
+            }
+        }
+
+        /**
          * 填充空白字符以完成上传
          *
          * @throws IOException IO异常
@@ -316,25 +359,26 @@ public class OneDriveStreamedZipUploader {
     /**
      * 将指定的文件打包成Zip并上传
      *
-     * @param zipFilePaths 要打包的文件路径对 ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 是否打包上传成功
      */
-    public boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet) throws IOException {
-        return zipSpecifiedAndUpload(zipFilePaths, quiet, false);
+    public boolean zipSpecifiedAndUpload(ZipEntryInfo[] entries, boolean quiet) throws IOException {
+        return zipSpecifiedAndUpload(entries, quiet, false);
     }
 
     /**
      * 将指定的文件打包成Zip并上传
      *
-     * @param zipFilePaths 要打包的文件路径对ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @param retry        是否是重试
      * @return 是否打包上传成功
      */
-    private boolean zipSpecifiedAndUpload(ZipFilePath[] zipFilePaths, boolean quiet, boolean retry) throws IOException {
+    private boolean zipSpecifiedAndUpload(ZipEntryInfo[] entries, boolean quiet, boolean retry) throws IOException {
         AtomicLong fileSizeCounter = new AtomicLong(0L); // 文件总大小计数
         ConsoleSender.toConsole("Calculating file size... ");
+        boolean sizeCalculated = false;
         for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
             // 重置计数器数值
             fileSizeCounter.set(0L);
@@ -344,8 +388,9 @@ public class OneDriveStreamedZipUploader {
                     ZipOutputStream zout = new ZipOutputStream(cos)
             ) {
                 // 进行模拟文件压缩，计算文件大小
-                Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                Utils.zipSpecificFilesUtil(zout, entries, quiet);
                 // 成功了就跳出重试循环继续后续流程
+                sizeCalculated = true;
                 break;
             } catch (Utils.ZipRWConflictException e) {
                 // 发生了数据混乱问题，重试
@@ -358,6 +403,11 @@ public class OneDriveStreamedZipUploader {
                 return false;
             }
         }
+        if (!sizeCalculated) {
+            // 重试多次后仍计数失败时也不应该继续了，应显式返回失败
+            ConsoleSender.logError("Calculation failed after all compression retries.");
+            return false;
+        }
         // 注意，要在流关闭后，流内数据全部冲刷完毕，再取出结果
         long filesSize = fileSizeCounter.get();
         // 末尾还要加上填充的空白字符
@@ -369,6 +419,7 @@ public class OneDriveStreamedZipUploader {
         ConsoleSender.toConsole("Total size: " + totalSize);
         // 再进行文件压缩和上传
         ConsoleSender.toConsole("Compressing and uploading... ");
+        boolean uploaded = false;
         for (int zipRetryCnt = 0; zipRetryCnt <= Constants.ZIP_MAX_RETRY_COUNT; zipRetryCnt++) {
             // 生成新的 uploadUrl
             uploadUrl = odClient.createUploadSession(targetUploadPath);
@@ -377,8 +428,9 @@ public class OneDriveStreamedZipUploader {
                     ZipOutputStream zout = new ZipOutputStream(uos)
             ) {
                 try {
-                    Utils.zipSpecificFilesUtil(zout, zipFilePaths, quiet);
+                    Utils.zipSpecificFilesUtil(zout, entries, quiet);
                     // 成功压缩上传后跳出重试循环
+                    uploaded = true;
                     break;
                 } catch (Utils.ZipRWConflictException e) {
                     // 出现数据混乱问题时先直接中止流，阻止 close 时的上传，然后重试
@@ -404,7 +456,7 @@ public class OneDriveStreamedZipUploader {
                 // 末尾填充的空白字节数 = 5 × 平均溢出的字节数
                 paddingSize = 5 * streamedOverflowBytesTracker.getAvg();
                 // 立即重试一次
-                return zipSpecifiedAndUpload(zipFilePaths, quiet, true);
+                return zipSpecifiedAndUpload(entries, quiet, true);
             } catch (Exception e) {
                 // 20240611 如果这里 uos 抛出了异常，会被捕捉
                 // 但是捕捉后，会关闭 zout 资源和 uos 资源
@@ -424,6 +476,11 @@ public class OneDriveStreamedZipUploader {
                 }
                 return false;
             }
+        }
+        if (!uploaded) {
+            // 重试多次后仍失败，应显式返回失败
+            ConsoleSender.logError("Compression / upload failed after all retries.");
+            return false;
         }
         ConsoleSender.toConsole("Compression / upload success. Total size: " + totalSize + " Byte(s)");
         return true;

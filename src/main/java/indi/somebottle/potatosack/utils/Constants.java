@@ -11,8 +11,8 @@ public class Constants {
     public static int STREAMING_UPLOAD_MIN_WAIT_SECONDS = 10; // 流式上传前最小等待时间（秒）
     public static int STREAMING_UPLOAD_MAX_TOTAL_WAIT_SECONDS = 120; // 流式上传前总等待时间上限（秒）
     // 以下是 OKHttpClient 的超时设置
-    public static long OKHTTP_CONNECT_TIMEOUT = 20L; // in seconds
-    public static long OKHTTP_WRITE_TIMEOUT = 30L; // in seconds
-    public static long OKHTTP_READ_TIMEOUT = 10L; // in seconds
-    public static long OKHTTP_CALL_TIMEOUT = 70L; // in seconds
+    public static long OKHTTP_CONNECT_TIMEOUT = 30L; // in seconds
+    public static long OKHTTP_WRITE_TIMEOUT = 120L; // in seconds
+    public static long OKHTTP_READ_TIMEOUT = 30L; // in seconds
+    public static long OKHTTP_CALL_TIMEOUT = 600L; // in seconds
 }

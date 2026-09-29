@@ -11,8 +11,9 @@ import indi.somebottle.potatosack.clients.dropbox.entities.DropboxUploadSessionS
 import indi.somebottle.potatosack.clients.dropbox.utils.DropboxErrorUtils;
 import indi.somebottle.potatosack.clients.dropbox.utils.DropboxPathUtils;
 import indi.somebottle.potatosack.exceptions.ClientInitializationException;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.Config;
+import indi.somebottle.potatosack.utils.ByteArraySliceRequestBody;
 import indi.somebottle.potatosack.utils.ConsoleSender;
 import indi.somebottle.potatosack.utils.Constants;
 import indi.somebottle.potatosack.utils.HttpRetryInterceptor;
@@ -31,7 +32,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -249,12 +249,12 @@ public class DropboxClient extends Client {
     }
 
     @Override
-    protected boolean streamCompressAndUploadInternal(ZipFilePath[] zipFilePaths, String fullRemotePath, boolean quiet) {
-        if (zipFilePaths.length == 0 || fullRemotePath.equals("")) {
+    protected boolean streamCompressAndUploadInternal(ZipEntryInfo[] entries, String fullRemotePath, boolean quiet) {
+        if (entries.length == 0 || fullRemotePath.equals("")) {
             return false;
         }
         DropboxStreamedZipUploader uploader = new DropboxStreamedZipUploader(this, fullRemotePath);
-        return uploader.zipSpecifiedAndUpload(zipFilePaths, quiet);
+        return uploader.zipSpecifiedAndUpload(entries, quiet);
     }
 
     @Override
@@ -383,46 +383,57 @@ public class DropboxClient extends Client {
     }
 
     private long appendUploadSession(String sessionId, long offset, byte[] buffer, int bufferStart, int length, int retry) throws IOException {
-        if (length <= 0) {
-            return offset;
-        }
-        JsonObject arg = new JsonObject();
-        arg.add("cursor", uploadSessionCursor(sessionId, offset));
-        arg.addProperty("close", false);
-        byte[] chunkData = Arrays.copyOfRange(buffer, bufferStart, bufferStart + length);
-        Request req = contentRequest(DROPBOX_CONTENT_ENDPOINT + "/files/upload_session/append_v2", arg, RequestBody.create(chunkData, OCTET_STREAM));
-        Response resp;
-        try {
-            resp = client.newCall(req).execute();
-        } catch (IOException e) {
-            if (retry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
-                throw e;
+        long currentOffset = offset;
+        int currentStart = bufferStart;
+        int remaining = length;
+        int currentRetry = retry;
+        // 迭代而不是递归，递归的话如果发生重试，上层调用栈帧不会退出，栈帧里持有的资源确实可能一直无法释放，引用也会一直存在
+        while (remaining > 0) {
+            JsonObject arg = new JsonObject();
+            arg.add("cursor", uploadSessionCursor(sessionId, currentOffset));
+            arg.addProperty("close", false);
+            Request req = contentRequest(
+                    DROPBOX_CONTENT_ENDPOINT + "/files/upload_session/append_v2", arg,
+                    new ByteArraySliceRequestBody(buffer, currentStart, remaining, OCTET_STREAM));
+            Response resp;
+            try {
+                resp = client.newCall(req).execute();
+            } catch (IOException e) {
+                if (currentRetry >= Constants.MAX_STREAMED_CHUNK_UPLOAD_RETRY) {
+                    throw e;
+                }
+                waitBeforeChunkRetry();
+                currentRetry++;
+                continue;
             }
-            waitBeforeChunkRetry();
-            return appendUploadSession(sessionId, offset, buffer, bufferStart, length, retry + 1);
-        }
-        try (Response response = resp) {
-            ResponseBody respBody = response.body();
-            String bodyText = respBody == null ? "" : respBody.string();
-            if (response.isSuccessful()) {
-                return offset + length;
-            }
-            if (response.code() == 409) {
-                Long correctOffset = DropboxErrorUtils.getCorrectOffset(bodyText);
-                if (correctOffset != null) {
-                    long rangeEnd = offset + length;
-                    ConsoleSender.toConsole("Dropbox upload offset mismatch. Correct offset: " + correctOffset + ", local range: " + offset + "-" + (rangeEnd - 1));
-                    if (correctOffset == rangeEnd) {
-                        return correctOffset;
-                    }
-                    if (correctOffset > offset && correctOffset < rangeEnd) {
-                        int localSkip = (int) (correctOffset - offset);
-                        return appendUploadSession(sessionId, correctOffset, buffer, bufferStart + localSkip, length - localSkip, 0);
+            try (Response response = resp) {
+                ResponseBody respBody = response.body();
+                String bodyText = respBody == null ? "" : respBody.string();
+                if (response.isSuccessful()) {
+                    return currentOffset + remaining;
+                }
+                if (response.code() == 409) {
+                    Long correctOffset = DropboxErrorUtils.getCorrectOffset(bodyText);
+                    if (correctOffset != null) {
+                        long rangeEnd = currentOffset + remaining;
+                        ConsoleSender.toConsole("Dropbox upload offset mismatch. Correct offset: " + correctOffset + ", local range: " + currentOffset + "-" + (rangeEnd - 1));
+                        if (correctOffset == rangeEnd) {
+                            return correctOffset;
+                        }
+                        if (correctOffset > currentOffset && correctOffset < rangeEnd) {
+                            int localSkip = Math.toIntExact(correctOffset - currentOffset);
+                            currentOffset = correctOffset;
+                            currentStart += localSkip;
+                            remaining -= localSkip;
+                            currentRetry = 0;
+                            continue;
+                        }
                     }
                 }
+                throw new IOException("Dropbox append upload failed, code: " + response.code() + ", message: " + response.message() + "\n Resp body: " + bodyText);
             }
-            throw new IOException("Dropbox append upload failed, code: " + response.code() + ", message: " + response.message() + "\n Resp body: " + bodyText);
         }
+        return currentOffset;
     }
 
     /**

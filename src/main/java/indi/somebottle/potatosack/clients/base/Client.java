@@ -2,7 +2,7 @@ package indi.somebottle.potatosack.clients.base;
 
 import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.exceptions.ClientInitializationException;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.Config;
 import indi.somebottle.potatosack.utils.Utils;
 
@@ -229,29 +229,29 @@ public abstract class Client {
     protected abstract boolean downloadFileInternal(String fullRemotePath, String localPath) throws IOException;
 
     /**
-     * <p>压缩的同时进行文件上传（仅用于大文件）</p><bold>此处传入的是 ZipFilePath[]，用于将指定的文件进行打包后上传。</bold>
+     * <p>压缩的同时进行文件上传（仅用于大文件）</p><bold>此处传入的是 ZipEntryInfo[]，用于将指定的文件进行打包后上传。</bold>
      *
-     * @param zipFilePaths 要打包的文件路径对 ZipFilePath[]
+     * @param entries 要打包进 zip 的条目
      * @param remotePath   远程目录路径，比如 "Documents/test.txt" 指的就是 "根目录/Documents/test.txt"
      * @param quiet        是否静默打包（不显示 Adding... 信息)
      * @return 上传是否成功
      * @throws IOException 发生网络问题 (比如 timeout) 时会抛出此错误
      * @apiNote 请在异步线程内调用此方法，可能阻塞
      */
-    public boolean streamCompressAndUpload(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException {
-        return streamCompressAndUploadInternal(zipFilePaths, buildFullPath(remotePath), quiet);
+    public boolean streamCompressAndUpload(ZipEntryInfo[] entries, String remotePath, boolean quiet) throws IOException {
+        return streamCompressAndUploadInternal(entries, buildFullPath(remotePath), quiet);
     }
 
     /**
      * 压缩的同时进行文件上传（内部实现）
      *
-     * @param zipFilePaths   要打包的文件路径对 ZipFilePath[]
+     * @param entries   要打包进 zip 的条目
      * @param fullRemotePath 完整远程路径
      * @param quiet          是否静默打包（不显示 Adding... 信息)
      * @return 上传是否成功
      * @throws IOException 发生网络问题 (比如 timeout) 时会抛出此错误
      */
-    protected abstract boolean streamCompressAndUploadInternal(ZipFilePath[] zipFilePaths, String fullRemotePath, boolean quiet) throws IOException;
+    protected abstract boolean streamCompressAndUploadInternal(ZipEntryInfo[] entries, String fullRemotePath, boolean quiet) throws IOException;
 
     /**
      * 将本地大文件上传到云存储中

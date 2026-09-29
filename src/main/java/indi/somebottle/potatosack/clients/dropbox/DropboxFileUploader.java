@@ -44,6 +44,9 @@ public class DropboxFileUploader {
      */
     private final long fileSize;
 
+    /** 每个块上传请求都会复用该缓冲区，以避免为每个分块分配一个大数组 */
+    private final byte[] chunkBuffer = new byte[DropboxClient.CHUNK_SIZE];
+
     /**
      * 构造文件上传器
      *
@@ -74,8 +77,8 @@ public class DropboxFileUploader {
             long offset = 0;
             while (offset < fileSize) {
                 int chunkLength = (int) Math.min(DropboxClient.CHUNK_SIZE, fileSize - offset);
-                byte[] chunkData = Utils.readBytesFromFile(localFile, offset, chunkLength);
-                long nextOffset = dropboxClient.appendUploadSession(sessionId, offset, chunkData, 0, chunkLength);
+                Utils.readBytesFromFile(localFile, offset, chunkBuffer, chunkLength);
+                long nextOffset = dropboxClient.appendUploadSession(sessionId, offset, chunkBuffer, 0, chunkLength);
                 ConsoleSender.toConsole("Dropbox upload in progress...(Range: " + offset + "-" + (nextOffset - 1) + ") Total size: " + fileSize + " bytes");
                 offset = nextOffset;
             }

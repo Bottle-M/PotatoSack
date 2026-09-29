@@ -6,7 +6,7 @@ import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDriveChildrenResp;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDriveItem;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDriveFolderRequest;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDriveUpSessionCreateResp;
 import indi.somebottle.potatosack.clients.onedrive.entities.OneDriveUploadRequest;
@@ -269,11 +269,11 @@ public class OneDriveClient extends Client {
     }
 
     @Override
-    protected boolean streamCompressAndUploadInternal(ZipFilePath[] zipFilePaths, String remotePath, boolean quiet) throws IOException {
-        if (zipFilePaths.length == 0 || remotePath.equals(""))
+    protected boolean streamCompressAndUploadInternal(ZipEntryInfo[] entries, String remotePath, boolean quiet) throws IOException {
+        if (entries.length == 0 || remotePath.equals(""))
             return false;
         OneDriveStreamedZipUploader uploader = new OneDriveStreamedZipUploader(this, remotePath);
-        return uploader.zipSpecifiedAndUpload(zipFilePaths, quiet);
+        return uploader.zipSpecifiedAndUpload(entries, quiet);
     }
 
     @Override

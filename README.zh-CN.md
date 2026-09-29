@@ -8,21 +8,21 @@ Lang: 中文简体 | [English](README.md)
 
 ## 这是啥子哟
 
-这是一个咱为自己 Minecraft 服务器写的一个简单实用的备份插件，可以对**指定目录的数据**进行备份。支持**增量备份/全量备份**机制。  
+这是一个咱为自己 Minecraft 服务器写的一个简单实用的备份插件，可以对**指定目录的数据**进行备份。支持**增量备份/全量备份**机制，且增量备份支持**区块级别粒度**。 
 
-备份的存档**不会留存在本地**，而是上传至 **OneDrive**、**Dropbox** 等云端存储服务的目录中。
+备份的存档**不会留存在本地**，而是上传至 **OneDrive**、**Dropbox**、**S3 / 兼容 S3 的对象存储** 等云端存储服务的目录中。
 
 * 支持的 Minecraft 版本: **1.19+**
 
 * ✨ 本插件在压缩上传文件时可以**几乎不占用**多余的本地硬盘空间，适用于服务提供商对硬盘空间进行了限制的场景。详见[概念介绍](#概念介绍)。
 
-> 本插件目前已经支持 OneDrive (**非世纪互联版**)，Dropbox。  
+> 本插件目前已经支持 OneDrive (**非世纪互联版**)，Dropbox，以及 AWS S3 / 兼容 S3 的服务（MinIO、Cloudflare R2、腾讯云 COS 等）。  
 
 ## 概念介绍
 
 <details>
 
-<summary>展开查看</summary>
+<summary>展开查看：关于 “一组备份”，“流式压缩上传” 以及 “区块级增量备份”</summary>
 
 ### 一组备份
 
@@ -30,7 +30,7 @@ Lang: 中文简体 | [English](README.md)
 
 每新产生一次全量备份，就会新创建“一组备份”。随后直至下次全量备份前的增量备份都会算在这一组里。  
 
-详见[备份目录结构](memos/backup-mechanism.md#云端备份存储结构)。
+详见[备份目录结构](memos/backup-mechanism.md#dir-structure)。
 
 ### 流式压缩上传
 
@@ -38,10 +38,26 @@ Lang: 中文简体 | [English](README.md)
 
 > 时间换空间是因为 **OneDrive API 要求大文件上传前必须知道确切的最终文件大小**，因此在选择 OneDrive 作为存储服务时，需要额外进行一趟模拟压缩来对文件大小进行计算。  
 > 如果是 Dropbox，则甚至不需要时间换空间，因为 Dropbox 并不要求提前知道文件总大小（不过服务端如果部署在中国大陆，你可能需要为其加上代理以确保可以访问到 Dropbox API （；´д｀）ゞ）。   
+> S3 同样不要求提前知道最终对象大小（multipart upload 只需要分片大小），因此在 S3 下流式模式也不需要额外花时间来预计算压缩包大小。  
 
 传统的备份方式是将待备份文件先临时压缩为压缩包，再上传到云端，这种方式要求硬盘空间能容纳下待备份文件 + 产生的压缩包。  
 
-然而，很多服务提供商会限制硬盘的可用空间。假如可用空间只有 10 GiB，而世界存档数据就占用了 7 GiB，那么硬盘剩余的空间是不太能容纳下产生的压缩包的，也就会导致备份失败。
+然而，很多 Minecraft 服务器托管提供方会限制硬盘的可用空间。假如可用空间只有 10 GiB 而世界存档数据就占用了 7 GiB，那么硬盘剩余的空间是不太能容纳下产生的压缩包的，也就会导致备份失败。
+
+### 区块级增量备份
+
+自 3.0.0 开始，PotatoSack 以较小的代价和维护复杂度实现了区块级的增量备份。PotatoSack 会在备份记录文件中存放区域时间戳表，根据区块时间戳是否变化来判断是否需要增量备份。同时增量备份包中也会以特制的 PSMCA (delta mca) 格式存储每个 `.mca` 文件，仅存储发生变化的区块。  
+
+* 详细实现细节请见[备份机制](./memos/backup-mechanism.md)和 [3.0.0 设计文档](./memos/potatosack-3.0.0-design.md)的说明。    
+
+> **注**：受制于维护复杂度，咱没有做更细粒度的变更检测，比如剥离区块的 `InhabitedTime`, `LastUpdate` 等易变字段后再对区块进行哈希，或甚至更细粒度地拆分到方块级。这些都涉及到对区块数据的解压和 NBT 的解析，**引入额外运算复杂度的同时也会显著增大维护难度**（mojang 底层这些数据字段真的可能过一个版本就变样了），更不提这些更细粒度的哈希字节串是难以压缩的，如果记录文件中对于每个区块都要记录这么细粒度的状态，当区域文件变多时，记录文件的体积也会显著膨胀。  
+> 
+> 测试中，3.0.0 增量备份压缩包的体积相比 2.x.x 在**较优情况下**已经能减小 **85%**（**具体取决于玩家行动范围**），且记录文件因为换作了二进制紧凑格式并压缩存储，体积也显著减小了不少。这样目前怎么说也已经够用了。  
+>
+> 以时间戳作为判据主要的缺点是，玩家只要在区块附近，区块的数据（对 region 目录下的文件来说主要是 `InhabitedTime`）就可能发生变化，这个区块也就会被更新，时间戳也就会发生变化。但相比原本 2.x.x 只要有一点变化就备份整个区域 `.mca` 文件的机制，3.0.0 还是减少了不少的冗余部分。  
+
+---
+
 
 </details>
 
@@ -62,10 +78,10 @@ Lang: 中文简体 | [English](README.md)
 
 ```yaml
 # PotatoSack 配置版本 (用于判断插件配置是否过于陈旧，需要更新)
-version: '2.0.0'
+version: '3.0.0'
 
 client:
-    # 选择你想要采用的存储服务提供方 (onedrive / dropbox)
+    # 选择你想要采用的存储服务提供方 (onedrive / dropbox / s3)
     use: onedrive
     # 在存储服务中保存备份文件的基础目录路径（默认为空，表示云端根目录下）
     # 比如你把 base-dir 设为 "my/backups"，备份数据就会被存到 "云存储/my/backups/PotatoSack/..." 目录下
@@ -93,6 +109,36 @@ client:
         app-key:
         app-secret:
         refresh-token:
+    # S3 / 兼容 S3 的对象存储配置 (AWS S3、MinIO、Cloudflare R2、腾讯云 COS 等)
+    # 注: 本版本只支持静态凭证（access key / secret key，可选 session token）
+    # 注: 目标 bucket 上需要的权限:
+    #     s3:ListBucket, s3:GetObject, s3:PutObject, s3:AbortMultipartUpload, s3:DeleteObject
+    # 注: S3 上传固定使用 32 MiB 分片（最多 10000 片），单个备份对象上限约为 312.5 GiB。
+    #     不建议使用本插件备份上百 GiB 的超大存档。
+    s3:
+        # 自定义 endpoint。留空表示使用 AWS S3，由 SDK 根据 region 选择官方 endpoint。
+        # 使用 MinIO 等自建或兼容 S3 的对象存储服务时需要填写完整地址（必须带协议头），
+        # 例如:
+        #   endpoint: "http://127.0.0.1:9000"
+        #   endpoint: "https://minio.example.com"
+        endpoint: ""
+        # 签名所用区域，需要与服务端签名配置匹配。
+        # AWS S3 用户应填写 bucket 的真实区域；多数兼容 S3 的服务可以使用默认值 "us-east-1"
+        # （MinIO 的默认 region 就是 us-east-1）。
+        region: "us-east-1"
+        # 对象存储桶名称，
+        # 插件会把数据存放在该桶内的 "<base-dir>/PotatoSack/..." 之下。
+        bucket: ""
+        # 访问 Access Key
+        access-key: ""
+        # 访问 Secret Key
+        secret-key: ""
+        # 临时凭证的 session token，只用 AK / SK 的时候这里可以留空
+        session-token: ""
+        # 是否使用 path-style 访问（http://endpoint/bucket/key），而不是
+        # virtual-hosted-style（http://bucket.endpoint/key）。
+        # MinIO 及多数自定义 endpoint 需要设为 true，AWS S3 则通常保持 false。
+        path-style-access: false
 
 # 你想要保留的历史备份组数.
 # 注："一组备份 "包括一个全量备份和其后的增量备份（在下一个全量备份之前的）。
@@ -120,6 +166,7 @@ stop-full-backup-when-no-player: false
 # 是否采用流式压缩上传
 # 注: 当服务器硬盘空间不够大时可以启用此选项。
 # 注: 这种方式下程序只会将每块压缩文件数据暂时写入内存中的缓冲区，代价并不高。
+#     OneDrive/Dropbox 每块约 15.625 MiB，S3 每块为 32 MiB。
 use-streaming-compression-upload: false
 
 # 你想要备份的目录路径（绝对路径或相对服务端根目录的相对路径），示例如下:
@@ -127,11 +174,11 @@ use-streaming-compression-upload: false
 #   - world
 #   - ./world_nether
 #   - world_the_end
+#   - plugins/GroupManager
 #
-# After Minecraft JE 26.1, it can be:
+# 在 Minecraft JE 26.1 之后可以是:
 # paths:
 #   - /workspace/server/world
-#   - plugins/GroupManager
 #
 # 注 1: 如果 paths 留空，插件就不会工作辣！(∪.∪ )...zzz
 # 注 2: 所有的路径都应该指向服务端根目录下级的目录
@@ -226,7 +273,9 @@ a/**/c
 
     * 如果是 Dropbox: `Dropbox 根目录/<base-dir>/PotatoSack` 或者 `Dropbox 根目录/应用/<你创建的应用名>/<base-dir>/PotatoSack`。Dropbox 上创建应用时如果勾选采用 App Folder 访问限制，则就是后者（也建议这样）。  
 
-    * (`<base-dir>` 即你在 `configs.yml` 中配置的 `client.base-dir`)  
+    * 如果是 S3: `<bucket>/<base-dir>/PotatoSack/...`。S3 本身没有真正的目录，而是由 object key 前缀表达，插件也不会为目录创建零字节 marker object。删除一组旧备份时会按前缀批量、递归删除该组下的所有对象。
+
+    > (`<base-dir>` 即你在 `configs.yml` 中配置的 `client.base-dir`)  
 
 3. *为什么叫 PotatoSack*？  
     
@@ -234,8 +283,19 @@ a/**/c
 
 如果还有其他问题，欢迎提 Issue。  
 
+## Maven 编译和打包
+
+本插件会被编译成 Java 17 字节码，且使用了 ProGuard 精简了产物 jar 包体积，而 ProGuard 要求找到 Java 17 JDK 的 jmods，因此在打包前需要指定一个环境变量:  
+
+```bash
+# 指定 Java 17 所在目录
+export JAVA17_HOME='/c/Program Files/Java/jdk-17.0.4.1'
+
+mvn clean package
+```
+
 ## 开源协议
 
-本插件采用 MIT 开源协议。
+本插件采用 Apache-2.0 开源协议。
 
 感谢你的使用 (￣▽￣)"  

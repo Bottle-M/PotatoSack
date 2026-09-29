@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>indi.somebottle</groupId>
     <artifactId>PotatoSack</artifactId>
-    <version>2.0.0</version>
+    <version>3.0.0</version>
     <packaging>jar</packaging>
 
     <name>PotatoSack</name>
 
     <description>A simple plugin to automatically make backups</description>
     <properties>
-        <java.version>1.8</java.version>
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <aws.sdk.version>2.31.78</aws.sdk.version>
     </properties>
     <url>https://github.com/Bottle-M</url>
 
@@ -25,14 +26,13 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.1</version>
                 <configuration>
-                    <source>17</source>
-                    <target>17</target>
+                    <release>17</release>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.2.4</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
@@ -41,9 +41,117 @@
                         </goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <minimizeJar>false</minimizeJar>
+                            <artifactSet>
+                                <excludes>
+                                    <exclude>org.slf4j:slf4j-api</exclude>
+                                </excludes>
+                            </artifactSet>
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.github.wvengen</groupId>
+                <artifactId>proguard-maven-plugin</artifactId>
+                <version>2.7.0</version>
+
+                <executions>
+                    <execution>
+                        <id>proguard-shrink</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>proguard</goal>
+                        </goals>
+                    </execution>
+                </executions>
+
+                <configuration>
+                    <injar>${project.build.finalName}.jar</injar>
+                    <outjar>${project.build.finalName}-small.jar</outjar>
+                    <outputDirectory>${project.build.directory}</outputDirectory>
+                    <!-- 不需要依赖的 Java 21/25 专用 MRJAR 实现 -->
+                    <inFilter>!META-INF/versions/**</inFilter>
+
+                    <obfuscate>false</obfuscate>
+
+                    <!--
+                        仍然让 Maven 自动把 Paper API / provided dependencies
+                        交给 ProGuard 作为 library jars。
+                    -->
+                    <includeDependency>true</includeDependency>
+                    <generateTemporaryConfigurationFile>true</generateTemporaryConfigurationFile>
+
+                    <proguardInclude>
+                        ${project.basedir}/proguard.pro
+                    </proguardInclude>
+
+                    <!--
+                        这些依赖已经在 Shadow fat JAR 中，
+                        因此必须禁止 ProGuard 再把原始依赖当 library。
+                    -->
+                    <exclusions>
+                        <exclusion>
+                            <groupId>software.amazon.awssdk</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>software.amazon.eventstream</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>org.reactivestreams</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>com.squareup.okhttp3</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>com.squareup.okio</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>org.jetbrains.kotlin</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>com.cronutils</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>io.airlift</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+
+                        <exclusion>
+                            <groupId>com.dynatrace.hash4j</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
+
+                    <inLibsFilter>!**.jar;!module-info.class</inLibsFilter>
+
+                    <!-- Java runtime library -->
+                    <libs>
+                        <lib>${env.JAVA17_HOME}/jmods</lib>
+                    </libs>
+                </configuration>
+
+                <dependencies>
+                    <dependency>
+                        <groupId>com.guardsquare</groupId>
+                        <artifactId>proguard-base</artifactId>
+                        <version>7.10.0</version>
+                    </dependency>
+                </dependencies>
             </plugin>
         </plugins>
         <resources>
@@ -97,6 +205,43 @@
             <artifactId>junit</artifactId>
             <version>4.13.1</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>aircompressor</artifactId>
+            <version>2.0.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.dynatrace.hash4j</groupId>
+            <artifactId>hash4j</artifactId>
+            <version>0.30.0</version>
+        </dependency>
+        <!-- AWS SDK for Java v2（仅引入 S3 模块）。版本由上方 aws.sdk.version 属性锁定；
+             S3 模块所需的其他 SDK 子模块会由其传递依赖自动引入 -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.sdk.version}</version>
+            <exclusions>
+                <!-- S3 客户端只使用 url-connection-client 作为 HTTP 传输实现。
+                     下面两个可选的传输实现会被 SDK 默认传递引入，排除它们可以保证
+                     只存在一种 HTTP 实现，同时避免把 Netty / aws-crt（19 MB）/
+                     Apache HttpClient 一并打入插件 JAR -->
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- S3 客户端使用的同步 HTTP 传输实现（基于 URLConnection） -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${aws.sdk.version}</version>
         </dependency>
     </dependencies>
 </project>

@@ -5,9 +5,8 @@ import indi.somebottle.potatosack.PotatoSack;
 import indi.somebottle.potatosack.clients.base.Client;
 import indi.somebottle.potatosack.clients.base.entities.FileItem;
 import indi.somebottle.potatosack.tasks.entities.BackupRecord;
-import indi.somebottle.potatosack.tasks.entities.DirFileRecords;
 import indi.somebottle.potatosack.tasks.entities.WorldSaveState;
-import indi.somebottle.potatosack.tasks.entities.ZipFilePath;
+import indi.somebottle.potatosack.tasks.entities.ZipEntryInfo;
 import indi.somebottle.potatosack.utils.*;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
@@ -15,11 +14,13 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
- * 记录文件 .json 均放在插件目录 plugins/PotatoSack/data 下
+ * backup.json 以及各备份路径的 _备份路径标识.bin 均放在插件目录 plugins/PotatoSack/data 下
  */
 public class BackupMaker {
     private final Client client;
@@ -106,7 +107,7 @@ public class BackupMaker {
         }
         // 再检查配置的各个待备份路径的记录文件是否存在
         for (String backupConfPath : backupConfPaths) {
-            // 每个待备份路径都有一个目录下文件的哈希记录文件 _备份路径标识.json，存放上一次备份时该路径下所有文件的哈希值
+            // 每个待备份路径都有一个目录下文件的哈希记录文件 _备份路径标识.bin，存放上一次备份时该路径下所有文件的哈希值
             File dirFileRecordsFile = getDirFileRecordsFile(backupConfPath);
             System.out.println("Reading hash record file: " + dirFileRecordsFile.getAbsolutePath());
             if (getDirFileRecords(backupConfPath) == null) {
@@ -163,13 +164,13 @@ public class BackupMaker {
     }
 
     /**
-     * 根据规范的备份标识名构建对应的目录文件哈希记录文件名，文件名为 _备份路径标识，没有 .json 后缀
+     * 根据规范的备份标识名构建对应的目录文件哈希记录文件名，文件名为 _备份路径标识.bin
      *
      * @param normalizedFileName 规范的备份标识名字符串，通过 backupConfPathToNormalizedName 方法获得
-     * @return 记录文件名字符串
+     * @return 记录文件名字符串，带 .bin 后缀
      */
     private String buildDirFileRecordsFilename(String normalizedFileName) {
-        return DIR_FILE_RECORDS_FILE_PREFIX + normalizedFileName;
+        return DIR_FILE_RECORDS_FILE_PREFIX + normalizedFileName + ".bin";
     }
 
     /**
@@ -251,29 +252,71 @@ public class BackupMaker {
     }
 
     /**
-     * 写入本地的 _备份路径标识.json
+     * 写入本地的 _备份路径标识.bin
      *
      * @param backupConfPath 配置的备份路径字符串
-     * @param rec            目录文件记录 DirFileRecords 对象
+     * @param entries        该备份路径下所有文件的记录条目（键为相对服务端根目录的路径）
      * @throws IOException IO异常
      */
-    public void writeDirFileRecords(String backupConfPath, DirFileRecords rec) throws IOException {
-        rec.setFileUpdateTime(Utils.timestamp());
-        Files.write(getDirFileRecordsFile(backupConfPath).toPath(), gson.toJson(rec).getBytes());
+    public void writeDirFileRecords(String backupConfPath, Map<String, DirFileRecord.FileEntry> entries) throws IOException {
+        DirFileRecord rec = new DirFileRecord(getDirFileRecordsFile(backupConfPath));
+        for (DirFileRecord.FileEntry entry : entries.values())
+            rec.putEntry(entry);
+        // fileUpdateTime 由 save() 自己刷新
+        rec.save();
     }
 
     /**
-     * 写入本地的 _备份路径标识.json
+     * ZIP 已经上传后，上传本次备份对应的记录，包括 backup.json 和各个备份路径下的记录。
+     * 确保每份记录文件上传成功后，替换本地的
      *
-     * @param backupConfPath 配置的备份路径字符串
-     * @param recList        Map<文件相对服务端根目录的路径, 文件哈希>
-     * @throws IOException IO异常
+     * @param rec backup.json 备份记录对象
+     * @param pathsToFileEntries 【备份路径 -> 待写入 .bin 中的文件条目集合】的映射
+     * @param groupId 备份组 ID
+     * @return 备份记录是否上传成果
+     * @throws IOException IO 异常时抛出
      */
-    public void writeDirFileRecords(String backupConfPath, Map<String, String> recList) throws IOException {
-        DirFileRecords rec = new DirFileRecords();
-        rec.setFileUpdateTime(Utils.timestamp());
-        rec.setLastFileHashes(recList);
-        writeDirFileRecords(backupConfPath, rec);
+    private boolean publishBackupRecords(BackupRecord rec,
+                                         Map<String, Collection<DirFileRecord.FileEntry>> pathsToFileEntries,
+                                         String groupId) throws IOException {
+        Path dataDir = getBackupRecordFile().toPath().getParent();
+        // backup.json 的临时文件 backup-xxx.pending
+        Path tmpBackupJsonPath = Files.createTempFile(dataDir, "backup-", ".pending");
+        try {
+            rec.setFileUpdateTime(Utils.timestamp());
+            // 备份记录写入 backup-xxx.pending
+            Files.writeString(tmpBackupJsonPath, gson.toJson(rec), StandardCharsets.UTF_8);
+            String groupPath = Constants.APP_DATA_FOLDER + "/" + groupId + "/";
+            // 上传 backup.json
+            if (!client.uploadFile(tmpBackupJsonPath.toString(), groupPath + "backup.json"))
+                return false;
+            // 上传后原子替换本地 backup.json
+            Utils.moveRecordFile(tmpBackupJsonPath, getBackupRecordFile().toPath());
+
+            // 每份目录记录只暂存到自身上传完成，不提前覆盖本地旧记录。
+            for (Map.Entry<String, Collection<DirFileRecord.FileEntry>> kv : pathsToFileEntries.entrySet()) {
+                // 根据备份路径生成备份路径标识，形成 _备份路径标识.bin
+                Path destPath = getDirFileRecordsFile(kv.getKey()).toPath();
+                // 创建临时记录文件 record-xxx.pending
+                Path tmpRecordBinPath = Files.createTempFile(dataDir, "record-", ".pending");
+                try {
+                    DirFileRecord snapshot = new DirFileRecord(tmpRecordBinPath.toFile());
+                    for (DirFileRecord.FileEntry item : kv.getValue())
+                        snapshot.putEntry(item);
+                    snapshot.save();
+                    // 同样是先上传再原子移动
+                    if (!client.uploadFile(tmpRecordBinPath.toString(), groupPath + destPath.getFileName()))
+                        return false;
+                    Utils.moveRecordFile(tmpRecordBinPath, destPath);
+                } finally {
+                    Files.deleteIfExists(tmpRecordBinPath);
+                    Files.deleteIfExists(tmpRecordBinPath.resolveSibling(tmpRecordBinPath.getFileName() + ".tmp"));
+                }
+            }
+            return true;
+        } finally {
+            Files.deleteIfExists(tmpBackupJsonPath);
+        }
     }
 
     /**
@@ -286,7 +329,7 @@ public class BackupMaker {
     public BackupRecord getBackupRecord() throws IOException {
         File backupRecordFile = getBackupRecordFile();
         if (!backupRecordFile.exists()) {
-            if (!pullRecordsFile("backup")) {
+            if (!pullRecordsFile("backup.json")) {
                 ConsoleSender.logInfo("Local backup record file not found, and failed to pull from cloud. Creating new local backup record file...");
                 if (!backupRecordFile.getParentFile().exists()) // 要先把必要的目录给建立了
                     backupRecordFile.getParentFile().mkdirs();
@@ -305,15 +348,15 @@ public class BackupMaker {
     }
 
     /**
-     * 获得备份路径对应的目录下数据哈希记录（_备份路径标识.json）
+     * 获得备份路径对应的备份记录（_备份路径标识.bin）
      *
      * @param backupConfPath 配置的备份路径字符串
-     * @return DirFileRecords 对象
+     * @return 已经 load() 过的 DirFileRecord；连文件都没法新建时返回 null
      * @throws IOException IO异常
-     * @apiNote 如果不存在本地，会从云端拉取，拉取不成功会自动建立新的 _备份路径标识.json。如果连文件都没法新建就会返回 null。
+     * @apiNote 如果本地不存在，会从云端拉取；拉取不成功会自动建立一个新的空记录。
      */
     @SuppressWarnings("ResultOfMethodCallIgnored")
-    public DirFileRecords getDirFileRecords(String backupConfPath) throws IOException {
+    public DirFileRecord getDirFileRecords(String backupConfPath) throws IOException {
         File dirFileRecordsFile = getDirFileRecordsFile(backupConfPath);
         if (!dirFileRecordsFile.exists()) {
             // 如果本地没有则尝试从云端拉取
@@ -322,19 +365,17 @@ public class BackupMaker {
                 // 如果云端也没有则创建新文件
                 if (!dirFileRecordsFile.getParentFile().exists()) // 要先把必要的目录给建立了
                     dirFileRecordsFile.getParentFile().mkdirs();
-                // 在本地新建文件
-                if (dirFileRecordsFile.createNewFile()) {
-                    writeDirFileRecords(backupConfPath, new HashMap<>());
-                } else {
+                // 在本地新建一个空记录并落盘
+                new DirFileRecord(dirFileRecordsFile).save();
+                if (!dirFileRecordsFile.exists()) {
                     // 若文件都没法新建，返回 null
                     return null;
                 }
             }
         }
-        // 读入路径文件哈希记录文件 json
-        String dirFileRecordsJson = new String(Files.readAllBytes(dirFileRecordsFile.toPath()));
-        // 解析成配置对象
-        return gson.fromJson(dirFileRecordsJson, DirFileRecords.class);
+        DirFileRecord rec = new DirFileRecord(dirFileRecordsFile);
+        rec.load();
+        return rec;
     }
 
     /**
@@ -347,54 +388,72 @@ public class BackupMaker {
     }
 
     /**
-     * 根据配置的备份路径字符串获取 _备份路径标识.json 的文件（哈希）记录文件 File 对象
+     * 根据配置的备份路径字符串获取 _备份路径标识.bin 的文件（哈希）记录文件 File 对象
      *
      * @param backupConfPath 配置的备份路径字符串
      * @return File 对象
-     * @apiNote _备份路径标识.json 中存放配置的目录中所有文件的最后哈希值
+     * @apiNote _备份路径标识.bin 中存放配置的目录中所有文件的最后哈希值
      */
     public File getDirFileRecordsFile(String backupConfPath) throws IOException {
         String normalizedPathName = backupConfPathToNormalizedName(backupConfPath);
-        return new File(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedPathName) + ".json");
+        return new File(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedPathName));
     }
 
     /**
-     * 从云端拉取数据目录中的json文件 PotatoSack/备份组号/[fileName].json
+     * 从云端拉取数据目录中的记录文件 PotatoSack/备份组号/[fileName]
      *
-     * @param fileName 文件名
+     * @param fileName 文件名（含后缀）
      * @return 是否拉取成功
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
-     * @apiNote 文件名不包含.json后缀
+     * @apiNote 文件名需要带后缀，比如 backup.json 或 _备份路径标识.bin
      */
     public boolean pullRecordsFile(String fileName) throws IOException {
         return pullRecordsFile(new String[]{fileName});
     }
 
     /**
-     * 从云端拉取最新一组备份中的json文件 PotatoSack/备份组号/*.json
+     * 从云端拉取最新一组备份中的记录文件 PotatoSack/备份组号/*
      *
-     * @param fileNames 文件名数组String[]，指定要下载的一组json文件
+     * @param fileNames 文件名数组String[]，指定要下载的一组记录文件
      * @return 是否拉取成功
      * @throws IOException 发生网络问题(比如timeout)时会抛出此错误
-     * @apiNote 文件名不包含.json后缀
+     * @apiNote 文件名需要带后缀，比如 backup.json 或 _备份路径标识.bin
      */
     @SuppressWarnings("StringEqualsEmptyString")
     public boolean pullRecordsFile(String[] fileNames) throws IOException {
         // 先对OneDrive下的插件数据目录进行列表
-        List<FileItem> itemsRes;
-        String latestFolderName = ""; // 找出字典序上最大的一个子目录名，这里的目录名格式形如 020240104000001
-        itemsRes = client.listItems(Constants.APP_DATA_FOLDER);
+        List<FileItem> itemsRes = client.listItems(Constants.APP_DATA_FOLDER);
+        List<String> folderNames = new ArrayList<>();
         for (FileItem item : itemsRes) {
-            if (item.isFolder() && item.getName().compareTo(latestFolderName) > 0)
-                latestFolderName = item.getName();
+            if (item.isFolder())
+                folderNames.add(item.getName());
         }
+        folderNames.sort(Comparator.reverseOrder());
+        // 找出字典序上最大的、且其中有 backup.json 的子目录，这里的目录名格式形如 020240104000001
+        String latestFolderName = "";
+        for (String folderName : folderNames) {
+            FileItem backupJson = client.getItem(
+                    Constants.APP_DATA_FOLDER + "/" + folderName + "/backup.json");
+            if (backupJson != null && !backupJson.isFolder()) {
+                latestFolderName = folderName;
+                break;
+            }
+        }
+
         if (latestFolderName.equals(""))
             return false;
-        // 从云端拉取backup.json
+
+        // 从云端拉取记录文件
         boolean success = true;
         for (String name : fileNames) {
-            String recordFilePath = pluginDataPath + File.separator + name + ".json";
-            success = client.downloadFile(Constants.APP_DATA_FOLDER + "/" + latestFolderName + "/" + name + ".json", recordFilePath) && success;
+            String recordFilePath = pluginDataPath + File.separator + name;
+            boolean downloaded = client.downloadFile(
+                    Constants.APP_DATA_FOLDER + "/" + latestFolderName + "/" + name,
+                    recordFilePath);
+            if (!downloaded && name.equals("backup.json"))
+                throw new IOException(
+                        "Failed to download backup.json from completed group " + latestFolderName);
+            success = downloaded && success;
         }
         return success;
     }
@@ -429,7 +488,7 @@ public class BackupMaker {
      * @throws NullPointerException 空指针异常（按理来说不应该出现，和记录文件读取有关）
      * @apiNote 本方法会进行: <p>1. 压缩相应文件</p><p>2. 上传压缩后的文件</p><p>3. 检查是否有需要删除的备份组（只保留几组）</p>
      */
-    @SuppressWarnings({"StringEqualsEmptyString", "unchecked"})
+    @SuppressWarnings({"unchecked"})
     public boolean makeFullBackup() throws IOException, InterruptedException, NullPointerException {
         ConsoleSender.toConsole("Making full backup...");
         // 获得备份记录文件
@@ -438,21 +497,28 @@ public class BackupMaker {
         List<String> backupConfPaths = (List<String>) config.getConfig(Config.KEYS.PATHS);
         // 加载 .potatosackignore（若存在）；解析失败则本次备份失败（严格）
         IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
-        // 1. 扫描各备份目录生成包含每个文件最后哈希值的 _备份路径标识.json
+        // 1. 扫描各备份目录: 一遍遍历同时得到「_备份路径标识.bin 的内容」和「本次要打包的条目」
         long scanStartTime = System.currentTimeMillis();
+        List<ZipEntryInfo> backupEntries = new ArrayList<>();
+        // 暂存各备份路径的新记录，待上传成功后再写入硬盘。
+        // 若在扫描时就写入，一旦后续压缩/上传失败或进程退出，本地记录已经前移，而对应的全量备份并不存在，
+        // 那些未再变化的文件会被判为"已备份"而漏掉
+        Map<String, Collection<DirFileRecord.FileEntry>> pathsToFileEntries = new LinkedHashMap<>();
         for (String backupConfPath : backupConfPaths) {
-            // 扫描备份目录下的所有文件，计算文件哈希（为增量备份做准备），跳过被忽略的文件/目录
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
-            // _备份路径标识.json 中存放待备份数据目录中所有文件的最后哈希值
-            writeDirFileRecords(backupConfPath, currentFileHashes);
+            // 全量备份: 旧记录传空 Map，于是所有文件都被当作"新文件"，全部打包。
+            // 这也意味着全量备份会把整个世界重新哈希一遍、重建记录，是 mtime 快路径的逃生口
+            ScanUtils.ScanResult scan = ScanUtils.scanBackupPath(
+                    Utils.resolveBackupConfPath(backupConfPath), new HashMap<>(), ignorer);
+            backupEntries.addAll(scan.changed);
+            // _备份路径标识.bin 中存放该备份路径下所有文件的哈希、最后修改时间，以及 .mca 的区块时间戳
+            pathsToFileEntries.put(backupConfPath, scan.entries.values());
         }
         // 统计扫描和计算哈希所需的时间 T
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         String currFullBackupId = getNextFullBackupId(rec);
         // 全量备份文件在云端的路径
         String remotePath = Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/full.zip";
-        // 扫描 backupConfPaths 对应目录的所有文件，转换为 ZipFilePath 对象数组
-        ZipFilePath[] backupZipFilePaths = Utils.scanPeerDirsToZipPaths(backupConfPaths.toArray(new String[0]), ignorer);
+        ZipEntryInfo[] backupZipEntryInfos = backupEntries.toArray(new ZipEntryInfo[0]);
         if ((boolean) config.getConfig(Config.KEYS.USE_STREAMING_COMPRESSION_UPLOAD)) {
             // ################### 采用压缩时上传方式（内存中操作，节省硬盘空间）
             ConsoleSender.toConsole("------>[ Using Streaming Compression Upload ]<------");
@@ -473,7 +539,7 @@ public class BackupMaker {
                     putOffFullBackup(rec);
                     return false;
                 }
-                if (!client.streamCompressAndUpload(backupZipFilePaths, remotePath, true)) {
+                if (!client.streamCompressAndUpload(backupZipEntryInfos, remotePath, true)) {
                     // 如果流式压缩上传失败了就指数退避
                     putOffFullBackup(rec);
                     return false;
@@ -490,7 +556,7 @@ public class BackupMaker {
             // 临时文件路径
             String tempOutputFilePath = pluginTempPath + File.separator + "full" + Utils.timestamp() + ".zip";
             // 2. 开始压缩
-            if (!Utils.zipSpecificFiles(backupZipFilePaths, tempOutputFilePath, true))
+            if (!Utils.zipSpecificFiles(backupZipEntryInfos, tempOutputFilePath, true))
                 return false;
             // 3. 上传压缩好的文件
             ConsoleSender.toConsole("Uploading Full Backup...");
@@ -499,10 +565,7 @@ public class BackupMaker {
                 return false;
             }
         }
-        // 如果备份成功了就重置指数退避计算器
-        fullBackupBackoffCalculator.reset();
-        // 4. 更新备份记录
-        // 写入backup.json
+        // 4. 准备新备份记录，写入 backup.json
         rec.setLastFullBackupId(currFullBackupId);
         rec.setLastFullBackupTime(Utils.timestamp());
         // 全量备份后也要修改增量备份时间记录
@@ -510,7 +573,11 @@ public class BackupMaker {
         rec.setLastIncreBackupId(""); // 同时重置增量备份ID，让其从000001重新开始
         // 全量备份后重置增量备份历史
         rec.clearIncreBackupsHistory();
-        writeBackupRecord(rec);
+        ConsoleSender.toConsole("Uploading Record Files...");
+        if (!publishBackupRecords(rec, pathsToFileEntries, currFullBackupId))
+            return false;
+        // 如果备份成功了就重置指数退避计算器
+        fullBackupBackoffCalculator.reset();
         // 全量备份完成，根据在线人数决定是否重置标记位
         try {
             if (Bukkit.getOnlinePlayers().size() < 1) {
@@ -524,16 +591,7 @@ public class BackupMaker {
             ConsoleSender.logError("[LocalStatus] Failed to reset full backup flag: " + e.getMessage());
             e.printStackTrace();
         }
-        // 5. 上传备份记录
-        ConsoleSender.toConsole("Uploading Record Files...");
-        if (!client.uploadFile(pluginDataPath + File.separator + "backup.json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/backup.json"))
-            return false;
-        for (String backupConfPath : backupConfPaths) {
-            String normalizedDirFileRecordsFileName = backupConfPathToNormalizedName(backupConfPath);
-            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json", Constants.APP_DATA_FOLDER + "/" + currFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json"))
-                return false;
-        }
-        // 6. 删除过时备份
+        // 5. 删除过时备份
         // 列出云端目录中所有目录
         List<FileItem> itemsRes = client.listItems(Constants.APP_DATA_FOLDER);
         // 筛出目录
@@ -581,44 +639,29 @@ public class BackupMaker {
         IgnoreMatcher ignorer = IgnoreMatcher.loadDefault();
         // 记录相比上次增量备份时，被删除的文件的路径（相对路径）
         List<String> deletedPaths = new ArrayList<>();
-        // 所有有变动文件的 【绝对路径】（方便Zip打包）
-        List<ZipFilePath> increFilePaths = new ArrayList<>();
-        // 暂存各备份路径的新哈希，待上传成功后再写入硬盘（避免上传失败/中断时覆盖旧记录，导致下次增量漏掉本次未上传的变更）
-        Map<String, Map<String, String>> newHashesByPath = new LinkedHashMap<>();
-        // 1. 扫描每个备份目录找到有差异的文件
+        // 所有有变动的文件（文件绝对路径 + 包内相对路径；有基线的 .mca 还会带上区块时间戳）
+        List<ZipEntryInfo> increEntryInfos = new ArrayList<>();
+        // 暂存各备份路径的新记录，待上传成功后再写入硬盘（避免上传失败/中断时覆盖旧记录，导致下次增量漏掉本次未上传的变更）
+        Map<String, Collection<DirFileRecord.FileEntry>> pathsToFileEntries = new LinkedHashMap<>();
+        // 1. 扫描每个备份目录，比对旧记录找到有差异的文件
         long scanStartTime = System.currentTimeMillis();
         for (String backupConfPath : backupConfPaths) {
-            // 扫描指定目录下的所有文件，计算哈希值（为增量备份做准备），跳过被忽略的文件/目录
-            Map<String, String> currentFileHashes = Utils.getCurrentFileHashes(Utils.resolveBackupConfPath(backupConfPath), ignorer, null);
-            // 获得上一次增量备份时的文件哈希值
-            DirFileRecords prevDirFileRec = getDirFileRecords(backupConfPath);
-            Map<String, String> prevLastFileHashes = prevDirFileRec.getLastFileHashes();
-            // 旧记录中过滤掉现已忽略的条目，避免它们被误当作“删除”写入 deleted.files（透明移出备份宇宙）
-            prevLastFileHashes = Utils.filterIgnoredHashes(prevLastFileHashes, ignorer);
-            // 找到被删除的文件的路径
-            deletedPaths.addAll(
-                    Utils.getDeletedFilePaths(prevLastFileHashes, currentFileHashes)
-            );
-            // 找到发生变动的文件的绝对路径
-            for (String key : currentFileHashes.keySet()) {
-                // 新记录中新出现的文件 or 新记录中的文件哈希相比旧记录有变动
-                // key 其实是文件的相对路径
-                if (!prevLastFileHashes.containsKey(key) || !prevLastFileHashes.get(key).equals(currentFileHashes.get(key)))
-                    increFilePaths.add( // 添加到增量文件列表
-                            new ZipFilePath(
-                                    // 获得文件绝对路径以便Zip打包, key 就是文件相对于服务端根目录的相对路径
-                                    Utils.pathAbsToServer(key),
-                                    key
-                            )
-                    );
-            }
-            // 暂存新哈希，待上传成功后再落盘
-            newHashesByPath.put(backupConfPath, currentFileHashes);
+            // 获得上一次备份时该路径的记录
+            DirFileRecord prevRec = getDirFileRecords(backupConfPath);
+            // 一遍遍历同时完成: 按 mtime/哈希剪枝、找出变动的文件、给变动的 .mca 挂上旧记录的区块时间戳。
+            // scanBackupPath 内部会先把旧记录里"现已忽略"的条目过滤掉，这里不用自己处理
+            ScanUtils.ScanResult scan = ScanUtils.scanBackupPath(
+                    Utils.resolveBackupConfPath(backupConfPath), prevRec.getEntries(), ignorer);
+            increEntryInfos.addAll(scan.changed);
+            deletedPaths.addAll(scan.deleted);
+            // 暂存新记录，待上传成功后再写入硬盘
+            pathsToFileEntries.put(backupConfPath, scan.entries.values());
         }
         long scanDuration = (System.currentTimeMillis() - scanStartTime) / 1000;
         // 若没有文件变更则不进行本次增量备份
-        if (increFilePaths.size() == 0 && deletedPaths.size() == 0) {
+        if (increEntryInfos.isEmpty() && deletedPaths.isEmpty()) {
             ConsoleSender.toConsole("No new files found, skip this incremental backup.");
+            skipIncreBackup(); // 跳过本次增量备份
             return true;
         }
         // 2. 压缩
@@ -627,7 +670,7 @@ public class BackupMaker {
         String deletedFileContent = String.join("\n", deletedPaths) + "\n";
         Files.write(new File(deletedRecordPath).toPath(), deletedFileContent.getBytes());
         // 把deleted.files文件也加入压缩包
-        increFilePaths.add(new ZipFilePath(deletedRecordPath, "deleted.files"));
+        increEntryInfos.add(new ZipEntryInfo(deletedRecordPath, "deleted.files"));
         // 增量备份序号
         String increBackupId = rec.getLastIncreBackupId();
         if (increBackupId.equals("")) {
@@ -660,7 +703,7 @@ public class BackupMaker {
                     putOffIncreBackup(rec);
                     return false;
                 }
-                if (!client.streamCompressAndUpload(increFilePaths.toArray(new ZipFilePath[0]), remotePath, true)) {
+                if (!client.streamCompressAndUpload(increEntryInfos.toArray(new ZipEntryInfo[0]), remotePath, true)) {
                     // 流式压缩上传如果失败就指数退避
                     putOffIncreBackup(rec);
                     return false;
@@ -677,7 +720,7 @@ public class BackupMaker {
             // 输出文件路径
             String tempOutputFilePath = pluginTempPath + File.separator + "incre" + increBackupId + ".zip";
             // 执行压缩
-            if (!Utils.zipSpecificFiles(increFilePaths.toArray(new ZipFilePath[0]), tempOutputFilePath, true))
+            if (!Utils.zipSpecificFiles(increEntryInfos.toArray(new ZipEntryInfo[0]), tempOutputFilePath, true))
                 return false;
             // 3. 上传
             ConsoleSender.toConsole("Uploading Incremental Backup...");
@@ -686,19 +729,17 @@ public class BackupMaker {
                 return false;
             }
         }
-        // 上传成功后再把各备份路径的新哈希记录写入硬盘（写入前若上传失败/中断，不会覆盖旧记录）
-        for (Map.Entry<String, Map<String, String>> entry : newHashesByPath.entrySet()) {
-            writeDirFileRecords(entry.getKey(), entry.getValue());
-        }
-        // 如果成功了就重置指数退避计算器
-        increBackupBackoffCalculator.reset();
-        // 4. 更新备份记录
+        // 4. 准备并发布新的增量记录
         rec.setLastIncreBackupId(increBackupId);
         long currentTimestamp = Utils.timestamp();
         rec.setLastIncreBackupTime(currentTimestamp);
         // 把增量备份记录加入历史
         rec.addIncreBackupHistoryItem(increBackupId, currentTimestamp);
-        writeBackupRecord(rec);
+        ConsoleSender.toConsole("Uploading Record Files...");
+        if (!publishBackupRecords(rec, pathsToFileEntries, lastFullBackupId))
+            return false;
+        // 如果成功了就重置指数退避计算器
+        increBackupBackoffCalculator.reset();
         // 增量备份完成，根据在线人数决定是否重置标记位
         try {
             if (Bukkit.getOnlinePlayers().size() < 1) {
@@ -709,15 +750,6 @@ public class BackupMaker {
         } catch (IOException e) {
             ConsoleSender.logError("[LocalStatus] Failed to reset incremental backup flag: " + e.getMessage());
             e.printStackTrace();
-        }
-        // 5. 上传备份记录
-        ConsoleSender.toConsole("Uploading Record Files...");
-        if (!client.uploadFile(pluginDataPath + File.separator + "backup.json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/backup.json"))
-            return false;
-        for (String backupConfPath : backupConfPaths) {
-            String normalizedDirFileRecordsFileName = backupConfPathToNormalizedName(backupConfPath);
-            if (!client.uploadFile(pluginDataPath + File.separator + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json", Constants.APP_DATA_FOLDER + "/" + lastFullBackupId + "/" + buildDirFileRecordsFilename(normalizedDirFileRecordsFileName) + ".json"))
-                return false;
         }
         ConsoleSender.toConsole("Successfully made incremental backup: " + increBackupId + " in backup group " + lastFullBackupId);
         return true;

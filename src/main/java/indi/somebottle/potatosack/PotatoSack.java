@@ -49,14 +49,19 @@ public final class PotatoSack extends JavaPlugin {
             return;
         }
         System.out.println("Potato Sack Initializing...");
+        boolean initialized = true;
         // 初始化配置
         config = new Config();
-        // 初始化备份核心链（Client → BackupChecker → 定时任务）
+        // 初始化备份核心链（Client -> BackupChecker -> 定时任务）
         String err = initBackupChain();
         if (err != null) {
             ConsoleSender.logError(err);
-            getServer().getPluginManager().disablePlugin(this);
-            return;
+            // 配置不完善时没必要直接关闭插件 20260929
+            // 可以提示让用户完善后执行 reload
+            // getServer().getPluginManager().disablePlugin(this);
+            // return;
+            ConsoleSender.logError("You can fix the problem and run '/potatosack reload' to reinitialize.");
+            initialized = false;
         }
         // 注册事件、指令等（一次性）
         try {
@@ -73,7 +78,9 @@ public final class PotatoSack extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        ConsoleSender.toConsole("PotatoSack successfully initialized! Savor using it!");
+        if (initialized) {
+            ConsoleSender.toConsole("PotatoSack successfully initialized! Savor using it!  ( ˘ ³˘)～♪");
+        }
     }
 
     /**
@@ -88,8 +95,8 @@ public final class PotatoSack extends JavaPlugin {
         }
         String err = initBackupChain();
         if (err != null) {
-            ConsoleSender.logWarn(err);
-            return "Failed to reload: " + err;
+            ConsoleSender.logError(err);
+            return "Failed to initialize backuper";
         }
         return "Reloaded successfully.";
     }
@@ -128,7 +135,7 @@ public final class PotatoSack extends JavaPlugin {
             newClient.shutdown();
             return "Failed to create BackupChecker: " + e.getMessage();
         }
-        // 切换：关旧 → 换新 → 重调度
+        // 切换：关旧 -> 换新 -> 重调度
         if (fileClient != null)
             fileClient.shutdown();
         fileClient = newClient;

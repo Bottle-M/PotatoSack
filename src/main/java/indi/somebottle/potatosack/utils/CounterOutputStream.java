@@ -1,6 +1,7 @@
 package indi.somebottle.potatosack.utils;
 
 import java.io.OutputStream;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -29,6 +30,12 @@ public class CounterOutputStream extends OutputStream {
     @Override
     public void write(int b) {
         counter.incrementAndGet();
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) {
+        Objects.checkFromIndexSize(off, len, b.length);
+        counter.addAndGet(len);
     }
 
     /**

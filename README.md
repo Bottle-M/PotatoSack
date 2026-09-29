@@ -8,21 +8,21 @@ Lang: [中文简体](README.zh-CN.md) | English
 
 ## What's this?
 
-This is a simple backup plugin originally written for my Minecraft server to back up **data in specified directories**. It supports **incremental/full backup mechanism**.  
+This is a simple backup plugin originally written for my Minecraft server to back up **data in specified directories**. It supports **incremental/full backup mechanism**, and incremental backup supports **chunk-level granularity**.
 
-Backed-up archives are not stored locally, but are uploaded to cloud storage services like **OneDrive** and **Dropbox**.  
+Backed-up archives are not stored locally, but are uploaded to cloud storage services like **OneDrive**, **Dropbox** and **S3 / S3-compatible object storage**.  
 
 * Supported Minecraft Versions: **1.19+**  
 
 * ✨ This plugin can compress and upload files **with little** local disk space usage, thus is suitable for scenarios where the service provider has imposed a limit on disk space. See the [Concepts](#concepts) for more details.
 
-> Currently, the plugin supports OneDrive (**non-21Vianet version**) and Dropbox.
+> Currently, the plugin supports OneDrive (**non-21Vianet version**), Dropbox, and AWS S3 / S3-compatible services (MinIO, Cloudflare R2, Wasabi, QCloud COS, etc.).
 
 ## Concepts
 
 <details>
 
-<summary>Expand / Collapse</summary>
+<summary>Expand / Collapse: About "A Group of Backups", "Streaming Compression Upload", and "Chunk-level Incremental Backup"</summary>
 
 ### A Group of Backups
 
@@ -30,18 +30,33 @@ Backed-up archives are not stored locally, but are uploaded to cloud storage ser
 
 Every time a new full backup is created, a new "group of backups" is created. Subsequent incremental backups before the next full backup will be stored in this group.  
 
-For more details, see [Backup Directory Structure](memos/backup-mechanism.md#云端备份存储结构).  
+For more details, see [Backup Directory Structure (Chinese only)](memos/backup-mechanism.md#dir-structure).  
 
 ### Streaming Compression Upload
 
 The "Streaming Compression Upload" of this plugin refers to the backup method of compressing files and uploading them to the cloud at the same time, which adopts the idea of exchanging time for space, and only takes up a small amount of memory space (used as a buffer), and hardly takes up any extra disk space.  
 
 > Time for space is due to the fact that the OneDrive API requires the exact final file size to be known before a large file can be uploaded, so an extra process to simulate compression is needed to calculate the file size.  
-> If you are using Dropbox, you don't even need to trade time for space, because Dropbox does not require the total file size to be known in advance (however, if your server is deployed in Mainland China, you may need to set up a proxy to ensure access to the Dropbox API (；´д｀)ゞ).  
+> If you are using Dropbox, trading time for space is not needed, because Dropbox does not require the total file size to be known in advance (however, if your server is deployed in Mainland China, you may need to set up a proxy to ensure access to the Dropbox API (；´д｀)ゞ).  
+> S3 also does not require the final object size in advance (multipart upload only needs the part size), so with S3 the streaming mode needs no extra size-calculation process either.  
 
 The traditional backup method temporarily compresses the files to be backed up into zip archives before uploading them to the cloud, which requires disk space enough to accommodate the files to be backed up and the resulting zip archives.  
 
-However, many service providers limit the available space of disk. If the available space is only 10 GiB and the world data takes up 7 GiB, the remaining space on the disk won't be able to accommodate the temporary zip archive and the backup will fail.
+However, many Minecraft server hosting providers limit the available space of disk. If the available space is only 10 GiB and the world data takes up 7 GiB, the remaining space on the disk won't be able to accommodate the temporary zip archive and the backup will fail.
+
+### Chunk-level Incremental Backup
+
+Starting with version 3.0.0, PotatoSack implements *chunk-level incremental backups* with relatively low cost and maintenance complexity. PotatoSack stores a region timestamp table in the backup record files and determines whether an incremental backup is needed by checking whether chunk timestamps have changed. Incremental backup archives also store each `.mca` file in a specialized PSMCA (delta mca) format, containing only the chunks that have changed.
+
+* For implementation details, see [Backup Mechanism (Chinese only)](./memos/backup-mechanism.md) and the [3.0.0 Design Document (Chinese only)](./memos/potatosack-3.0.0-design.md).
+
+> **Note**: To keep maintenance manageable, we did not implement finer-grained change detection, such as hashing chunks after removing volatile fields like `InhabitedTime` and `LastUpdate`, or even splitting them down to the block level. These approaches require decompressing chunk data and parsing NBT, which would **increase computational complexity while significantly increasing maintenance difficulty** (Mojang may change these underlying data fields from one version to the next). Finer-grained hash byte strings are also difficult to compress, if the record files stored such fine-grained state for every chunk, their size would grow significantly as more `.mca` files were generated.
+>
+> In testing, under **favorable conditions**, 3.0.0 incremental backup archives were already **85%** smaller than those in 2.x.x (**the exact reduction depends on the area in which players move**). The record files also became significantly smaller after switching to a compact binary format and compressing them. This is sufficient for current use.
+>
+> The main drawback of using timestamps as the criterion is that a chunk may be changed whenever a player is near it (for region files, this is mainly reflected by `InhabitedTime`), which updates the chunk and its timestamp. Compared with the 2.x.x mechanism, which backed up an entire `.mca` region file whenever anything changed, 3.0.0 still removes a substantial amount of redundant data from incremental backup archives.
+
+---
 
 </details>
 
@@ -62,10 +77,11 @@ The configuration file is located at `plugins/PotatoSack/configs.yml`.
 
 ```yaml
 # PotatoSack configuration version
-version: '2.0.0'
+version: '3.0.0'
 
 client:
     # Choose the Cloud Storage Service Provider you want to use.
+    # Supported values: onedrive / dropbox / s3
     use: onedrive
     # Base directory path for storing backups in cloud storage (default: empty, meaning root directory)
     # Example: if set to "my/backups", data will be stored at "my/backups/PotatoSack/..."
@@ -95,6 +111,35 @@ client:
         app-key:
         app-secret:
         refresh-token:
+    # S3 / S3-compatible object storage Configuration (AWS S3, QCloud COS, Aliyun OSS, ...)
+    # Note: Only static credentials (access key / secret key, optionally with a session token) are supported.
+    # Note: Required IAM permissions on the target bucket:
+    #       s3:ListBucket, s3:GetObject, s3:PutObject, s3:AbortMultipartUpload, s3:DeleteObject
+    # Note: S3 uploads use fixed 32 MiB parts (up to 10,000 parts), so one backup object is limited
+    #       to about 312.5 GiB. Archives approaching hundreds of GiB are not recommended.
+    s3:
+        # Custom endpoint. Leave it empty to use the AWS S3 endpoint selected by the SDK according to "region".
+        # For MinIO / other S3-compatible services, fill in the full endpoint including the scheme, e.g.
+        #   endpoint: "http://127.0.0.1:9000"
+        #   endpoint: "https://minio.example.com"
+        endpoint: ""
+        # Region used for signing. It must match the signature configuration of the server.
+        # AWS S3 users should set it to the real region of the bucket; most S3-compatible services
+        # accept the default value "us-east-1" (MinIO's default region is also us-east-1).
+        region: "us-east-1"
+        # The object storage bucket name.
+        # The plugin stores data under "<base-dir>/PotatoSack/..." inside this bucket.
+        bucket: ""
+        # Access Key
+        access-key: ""
+        # Secret Key
+        secret-key: ""
+        # Session token, only needed for temporary credentials. Leave it empty to only use AK / SK.
+        session-token: ""
+        # Whether to use path-style access (http://endpoint/bucket/key) instead of
+        # virtual-hosted-style access (http://bucket.endpoint/key).
+        # MinIO and most custom endpoints require true; AWS S3 itself usually keeps false.
+        path-style-access: false
 
 # The number of full backups to keep, actually it refers to "groups of backups" to keep.
 # Note: "A group of backups" consists of a full backup and a set of incremental backups following it (before the next full backup).
@@ -124,7 +169,7 @@ stop-full-backup-when-no-player: false
 
 # Whether to upload files while compressing them. (Time-space trade-off)
 # Note: It will prevent zip file from being fully written to your local disk during backup creation and instead directly upload it to the cloud part by part, therefore the backup process is not constrained by disk size limitations when creating the zip file.
-# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (Each chunk of zip file is only about 15.625 MiB)
+# Note: Actually this will temporarily write each chunk of zip file to a buffer in memory, however, this typically only requires **constant** additional space, it's not costly. (About 15.625 MiB per chunk for OneDrive/Dropbox and 32 MiB for S3.)
 use-streaming-compression-upload: false
 
 # The directory paths that you would like to make backups, can be absolute or relative (relative to server root) paths, example:
@@ -132,11 +177,11 @@ use-streaming-compression-upload: false
 #   - world
 #   - ./world_nether
 #   - world_the_end
+#   - plugins/GroupManager
 #
 # After Minecraft JE 26.1, it can be:
 # paths:
 #   - /workspace/server/world
-#   - plugins/GroupManager
 #
 # Note 1: if you leave this blank, the plugin won't work.
 # Note 2: all paths must be located under the server root directory.
@@ -244,7 +289,9 @@ See [BackupsMerger](backups-merger/README.md).
 
     * **Dropbox**: `Dropbox root/<base-dir>/PotatoSack` or `Dropbox root/Apps/<your app name>/<base-dir>/PotatoSack`. If you selected App Folder access restriction when creating your Dropbox app, it will be the latter (recommended).
 
-    (`<base-dir>` refers to the `client.base-dir` setting in `configs.yml`)
+    * **S3**: `<bucket>/<base-dir>/PotatoSack/...`. S3 has no real directories — the path is expressed by object key prefixes, and no zero-byte marker objects are created by the plugin. Deleting an old backup group will delete every object under its prefix in batches.
+
+    > (`<base-dir>` refers to the `client.base-dir` setting in `configs.yml`)
 
 3. Q: *Why the plugin is called* 'PotatoSack'？    
     
@@ -252,8 +299,19 @@ See [BackupsMerger](backups-merger/README.md).
 
 Feel free to raise an issue if you have any other questions.  
 
+## Maven Build and Packaging
+
+This plugin is compiled to Java 17 bytecode, and ProGuard is used to reduce the size of the final JAR file. Since ProGuard requires access to the `jmods` directory of a Java 17 JDK, you need to set the following environment variable before packaging:
+
+```bash
+# Specify the Java 17 installation directory
+export JAVA17_HOME='/c/Program Files/Java/jdk-17.0.4.1'
+
+mvn clean package
+```
+
 ## License
 
-MIT Licensed.
+Apache-2.0 Licensed.
 
 Thanks for using. (￣▽￣)"  
